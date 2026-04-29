@@ -1,6 +1,6 @@
 ---
 name: obsidian-task-center
-description: Read and write tasks in an Obsidian vault through the Task Center plugin's CLI. Use when the user wants to list, schedule, complete, abandon, or add tasks — or when they want estimate-accuracy / tag-distribution stats. Obsidian must be running with the `obsidian-task-center` plugin enabled; all verbs are namespaced `obsidian task-center:<verb>`.
+description: Read and write tasks in an Obsidian vault through the Task Center plugin's CLI. Use when the user wants to list, schedule, complete, abandon, nest, or add tasks — or when they want estimate-accuracy / review / agent-brief stats. Obsidian must be running with the `task-center` plugin enabled; all verbs are namespaced `obsidian task-center:<verb>`.
 ---
 
 # Obsidian Task Center — CLI skill
@@ -30,10 +30,13 @@ Data stays inline markdown. Syntax:
 - "show task details" / "pull the raw line" → `task-center:show`
 - "schedule X" / "move X to tomorrow" → `task-center:schedule`
 - "mark X done" / "I finished X" → `task-center:done`
-- "drop X" / "abandon X" / "remove X" → `task-center:drop`
+- "drop X" / "abandon X" / "remove X" → `task-center:abandon`
+- "nest X under Y" / "make X a subtask of Y" → `task-center:nest`
 - "log time on X" / "I spent 45m on X" → `task-center:actual`
 - "add a task" / "remind me to …" → `task-center:add`
 - "how accurate were my estimates" / "weekly review" → `task-center:stats`
+- "what should I do next" / "brief me on today" → `task-center:brief`
+- "end-of-day review" / "what happened this week" → `task-center:review`
 
 **Do not** use `Read`/`Write` directly on task files to mutate tasks — use the CLI so `vault.process` locking + parser conventions are respected. Reading files is fine when you want broader context (the task body, surrounding notes).
 
@@ -42,7 +45,7 @@ Data stays inline markdown. Syntax:
 Verify the plugin is loaded:
 
 ```bash
-obsidian plugins:enabled | grep obsidian-task-center
+obsidian plugins:enabled | grep task-center
 ```
 
 If missing, ask the user to enable it. If Obsidian isn't running, the CLI will auto-launch (first call incurs latency).
@@ -86,6 +89,18 @@ Rolling-window estimate accuracy + tag minutes breakdown. Default `days=7`. `gro
 
 Use this to **correct planning-fallacy** when suggesting estimates. If the 7-day `ratio` is 1.3, new estimates should be scaled up by that factor vs. the user's gut feel.
 
+### `task-center:brief [today=YYYY-MM-DD] [limit=N] [format=text|json]`
+
+Agent brief for near-term planning. Shows overdue / today / unscheduled candidate counts, sample tasks, and executable next-action commands such as `done`, `abandon`, `schedule_today`, `schedule_tomorrow`, and `actual +15m`.
+
+Use this when the user asks what to do next or wants a compact status overview before planning.
+
+### `task-center:review [today=YYYY-MM-DD] [days=N] [limit=N] [format=text|json]`
+
+End-of-day / weekly retrospective summary. Reports today and rolling-week windows: done, abandoned, delayed-open tasks, estimate-vs-actual totals, grouping summaries, and sample task ids.
+
+Use this for shutdown reviews, weekly reviews, and "what actually happened?" questions. Prefer text output for user-facing summaries; use `format=json` only when you need to parse it.
+
 ### Write verbs (idempotent, safe to retry)
 
 All write verbs return `ok <id>` with a `before / after` diff, or `unchanged` if already in the target state.
@@ -104,17 +119,20 @@ obsidian task-center:actual   ref=… minutes=+15m        # additive
 
 obsidian task-center:done   ref=… [at=YYYY-MM-DD]       # [x] + ✅
 obsidian task-center:undone ref=…                        # reverse a done
-obsidian task-center:drop   ref=…                        # [-] + ❌, cascades to children
+obsidian task-center:abandon ref=…                       # [-] + ❌, cascades to todo children
+obsidian task-center:drop   ref=…                        # deprecated alias for abandon
 
 obsidian task-center:tag    ref=… tag='#基建'            # add
 obsidian task-center:tag    ref=… tag='#基建' remove     # remove
 
+obsidian task-center:nest   ref=… under=…                # make ref a subtask of under
+
 obsidian task-center:add text="处理示例任务" tag='#3象限' scheduled=2026-04-26 [to=<path>] [deadline=…] [estimate=30m] [parent=<id>]
 ```
 
-`task-center:add` target priority: explicit `to=` → parent's file (if `parent=` given) → today's daily note → settings inbox path. Default stamps `➕ today` unless `stamp-created=false`.
+`task-center:add` target priority: explicit `to=` → parent's file (if `parent=` given) → today's Daily Note. There is no inbox fallback: when neither `to=` nor `parent=` is supplied, the Daily Notes core plugin must be enabled and configured or the command fails with `daily_notes_unavailable`. Default stamps `➕ today` unless `stamp-created=false`.
 
-`drop` always cascades — dropping a parent also marks every descendant `[-] ❌`. To drop just one line, pass a leaf task.
+`abandon` / `drop` cascades to todo descendants only. Already completed / abandoned / cancelled descendants keep their historical stamps. To abandon just one line, pass a leaf task.
 
 ### Error shape
 
@@ -125,12 +143,14 @@ error  <code>
     <human message>
 ```
 
-Codes: `task_not_found`, `file_modified`, `ambiguous_slug`, `invalid_date`, `invalid_indent`.
+Common codes: `task_not_found`, `ambiguous_slug`, `invalid_date`, `daily_notes_unavailable`, `invalid_nest`, `nest_partial`.
 
 Recover by:
 - `task_not_found` → re-run `task-center:list` to get fresh ids
 - `ambiguous_slug` → the error message lists candidate ids; pick one
 - `invalid_date` → convert to `YYYY-MM-DD`
+- `daily_notes_unavailable` → enable/configure Daily Notes, or pass `to=<path>`
+- `invalid_nest` / `nest_partial` → inspect the named source/target tasks before retrying
 
 ## Recommended workflows
 
@@ -139,10 +159,11 @@ Recover by:
 1. `obsidian task-center:list done=today` → collect what got done.
 2. `toggl entry list --since today` → cross-reference actual time per task.
 3. For each completed task: `obsidian task-center:actual ref=… minutes=Nm` to record real time.
-4. `obsidian task-center:stats days=7 group=象限` → read today's calibration.
-5. `obsidian task-center:list scheduled=unscheduled` + `obsidian task-center:list scheduled=tomorrow` → candidate pool.
-6. Pick tomorrow's set (≤1 big, ≤2 small based on user's self-declared capacity), deadline-first, quadrant-2-first.
-7. `obsidian task-center:schedule ref=… date=<tomorrow>` per chosen task; use `add` for anything new.
+4. `obsidian task-center:review days=7` → read today's / week's completion, abandonment, delay, and estimate summary.
+5. `obsidian task-center:stats days=7 group=象限` → read calibration.
+6. `obsidian task-center:brief` or `obsidian task-center:list scheduled=unscheduled` + `obsidian task-center:list scheduled=tomorrow` → candidate pool.
+7. Pick tomorrow's set (≤1 big, ≤2 small based on user's self-declared capacity), deadline-first, quadrant-2-first.
+8. `obsidian task-center:schedule ref=… date=<tomorrow>` per chosen task; use `add` for anything new.
 
 ### Quick capture
 
@@ -164,10 +185,11 @@ User says "I finished Y yesterday": `obsidian task-center:done ref=<id> at=<yest
 - Monetary / time values: minutes, no conversion. Format with `formatMinutes` convention (`90m`, `1h30m`).
 - Writes print `before / after` — use this to confirm the mutation was what you intended.
 - Stats output is ASCII-bar-charted; do not JSON-ify it before showing the user.
+- `brief` and `review` default to greppable text; use `format=json` only for downstream parsing.
 
 ## Do not
 
 - Do not edit task files directly with `Read` + `Write`; use the CLI so parser + locking invariants hold.
 - Do not try to install a wrapper shell script called `obsidian-task-center`; the plugin uses Obsidian's native CLI.
 - Do not call `obsidian task` / `obsidian tasks` (those are built-in, read-only) when you mean `task-center:…`.
-- Do not stamp `✅` / `❌` / `➕` manually with `Edit` — let the plugin do it via `done` / `drop` / `add`.
+- Do not stamp `✅` / `❌` / `➕` manually with `Edit` — let the plugin do it via `done` / `abandon` / `add`.
