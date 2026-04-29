@@ -49,13 +49,12 @@ export default class TaskCenterPlugin extends Plugin {
     this.addCommand({
       id: "open",
       name: tr("cmd.open"),
-      callback: () => this.activateView(),
-      hotkeys: [{ modifiers: ["Mod", "Shift"], key: "t" }],
+      callback: () => { void this.activateView(); },
     });
     this.addCommand({
       id: "quick-add",
       name: tr("cmd.quickAdd"),
-      callback: () => new QuickAddModal(this.app, this.api, () => this.refreshOpenViews(), this.settings).open(),
+      callback: () => { new QuickAddModal(this.app, this.api, () => { void this.refreshOpenViews(); }, this.settings).open(); },
     });
     this.addCommand({
       id: "reload-tasks",
@@ -101,7 +100,7 @@ export default class TaskCenterPlugin extends Plugin {
     // Status bar — implementation in `./status-bar`. The class owns its own
     // cache subscription, debounce, and click handler.
     this.statusBar = new StatusBar(this.addStatusBarItem(), this.cache, {
-      onClick: () => this.activateView(),
+      onClick: () => { void this.activateView(); },
     });
     this.app.workspace.onLayoutReady(() => this.statusBar?.refresh());
 
@@ -176,7 +175,8 @@ export default class TaskCenterPlugin extends Plugin {
   }
 
   async loadSettings() {
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    const loaded = (await this.loadData()) as Partial<typeof DEFAULT_SETTINGS> | undefined;
+    this.settings = { ...DEFAULT_SETTINGS, ...loaded };
   }
 
   async saveSettings() {
@@ -193,7 +193,7 @@ export default class TaskCenterPlugin extends Plugin {
       leaf = workspace.getLeaf("tab");
       await leaf.setViewState({ type: VIEW_TYPE_TASK_CENTER, active: true });
     }
-    workspace.revealLeaf(leaf);
+    void workspace.revealLeaf(leaf);
   }
 
   async refreshOpenViews() {

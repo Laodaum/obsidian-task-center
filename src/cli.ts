@@ -509,7 +509,7 @@ export function buildAgentBrief(all: ParsedTask[], opts: AgentBriefOpts = {}): A
   const tomorrow = addDaysISO(today, 1);
   const actionable = all.filter((t) => t.status === "todo" && !t.inheritsTerminal);
   const overdueRaw = actionable.filter(
-    (t) => !!t.deadline && t.deadline! < today,
+    (t) => !!t.deadline && t.deadline < today,
   );
   const overdueIds = new Set(overdueRaw.map((t) => t.id));
   const todayRaw = actionable.filter(

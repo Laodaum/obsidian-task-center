@@ -18,8 +18,7 @@ export async function animateOut(el: HTMLElement, durationMs = 180): Promise<voi
   const h = el.getBoundingClientRect().height;
   const mt = cs.marginTop;
   const mb = cs.marginBottom;
-  el.style.overflow = "hidden";
-  el.style.pointerEvents = "none";
+  el.addClass("tc-animating");
   try {
     const anim = el.animate(
       [

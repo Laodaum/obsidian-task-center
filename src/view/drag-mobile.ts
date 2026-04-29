@@ -116,15 +116,12 @@ export class MobileDragController<TabKey extends string> {
     this.cloneW = rect.width;
     this.cloneH = rect.height;
     const clone = card.cloneNode(true) as HTMLElement;
-    clone.classList.add("bt-mobile-drag-clone");
-    clone.style.position = "fixed";
-    clone.style.left = "0px";
-    clone.style.top = "0px";
-    clone.style.width = `${this.cloneW}px`;
-    clone.style.pointerEvents = "none";
-    clone.style.zIndex = "9999";
-    clone.style.transform = `translate(${x - this.cloneW / 2}px, ${y - this.cloneH / 2}px)`;
-    document.body.appendChild(clone);
+    clone.classList.add("bt-mobile-drag-clone", "tc-mobile-drag-clone");
+    clone.setCssStyles({
+      width: `${this.cloneW}px`,
+      transform: `translate(${x - this.cloneW / 2}px, ${y - this.cloneH / 2}px)`,
+    });
+    activeDocument.body.appendChild(clone);
     this.clone = clone;
 
     this.lastPointerY = y;
@@ -154,7 +151,7 @@ export class MobileDragController<TabKey extends string> {
     this.lastPointerY = y;
     // Use cached clone dims — getBoundingClientRect() in this hot path
     // forces a layout. Clone size is fixed for the duration of a drag.
-    this.clone.style.transform = `translate(${x - this.cloneW / 2}px, ${y - this.cloneH / 2}px)`;
+    this.clone.setCssStyles({ transform: `translate(${x - this.cloneW / 2}px, ${y - this.cloneH / 2}px)` });
 
     const hit = this.classifyHit(x, y);
     this.paintHover(hit);
@@ -202,10 +199,9 @@ export class MobileDragController<TabKey extends string> {
    */
   private classifyHit(x: number, y: number): DragHitState {
     if (!this.clone) return blankHit();
-    const cloneDisplay = this.clone.style.display;
-    this.clone.style.display = "none";
-    const raw = document.elementFromPoint(x, y) as HTMLElement | null;
-    this.clone.style.display = cloneDisplay;
+    this.clone.addClass("tc-hidden");
+    const raw = activeDocument.elementFromPoint(x, y) as HTMLElement | null;
+    this.clone.removeClass("tc-hidden");
     const result = blankHit();
     if (!raw) return result;
 

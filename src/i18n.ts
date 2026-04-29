@@ -1,30 +1,20 @@
 // Tiny i18n shim. Zero dependency.
 //
-// Obsidian stores the UI language in localStorage under the key "language".
-// It's set when the user picks a language in Settings → About → Language.
-// Fallback priority: stored value → navigator.language → "en".
+// Uses Obsidian's getLanguage() API (available since v1.1.0) to detect
+// the user's UI language. No separate plugin language toggle —
+// Task Center follows whatever the user already configured in Obsidian.
+
+import { getLanguage } from "obsidian";
 
 type Locale = "zh" | "en";
 
-// US-402: language auto-detection from Obsidian's UI language setting
-// (`localStorage.language`). No separate plugin language toggle —
-// Task Center follows whatever the user already configured in Obsidian.
+// US-402: language auto-detection from Obsidian's UI language setting.
 // US-408 calls this on every `t()` so live language switches take effect
 // without restart.
 // see USER_STORIES.md
 function detectLocale(): Locale {
-  try {
-    const stored = window.localStorage.getItem("language");
-    if (stored) {
-      if (stored.startsWith("zh")) return "zh";
-      if (stored.startsWith("en")) return "en";
-    }
-  } catch {
-    // localStorage may be unavailable in some contexts
-  }
-  if (typeof navigator !== "undefined" && navigator.language) {
-    if (navigator.language.startsWith("zh")) return "zh";
-  }
+  const lang = getLanguage();
+  if (lang.startsWith("zh")) return "zh";
   return "en";
 }
 
@@ -275,7 +265,7 @@ const EN = {
   "savedViews.dateNextWeek": "Next week",
   "savedViews.dateMonth": "This month",
   "savedViews.statusAll": "Status",
-  "savedViews.statusAny": "All statuses",
+  "savedViews.statusAny": "All",
   "savedViews.statusTodo": "Todo",
   "savedViews.statusDone": "Done",
   "savedViews.statusDropped": "Dropped",
@@ -513,7 +503,7 @@ const ZH: Partial<typeof EN> = {
   "savedViews.dateNextWeek": "下周",
   "savedViews.dateMonth": "本月",
   "savedViews.statusAll": "状态",
-  "savedViews.statusAny": "全部状态",
+  "savedViews.statusAny": "全部",
   "savedViews.statusTodo": "待办",
   "savedViews.statusDone": "完成",
   "savedViews.statusDropped": "放弃",
@@ -557,7 +547,7 @@ export function t(key: keyof typeof EN, vars?: Record<string, string | number>):
   const locale = detectLocale();
   const raw = (locale === "zh" ? ZH[key] : undefined) ?? EN[key] ?? key;
   if (!vars) return raw;
-  return raw.replace(/\{(\w+)\}/g, (_, k) => String(vars[k] ?? `{${k}}`));
+  return raw.replace(/\{(\w+)\}/g, (_match: string, k: string) => String(vars[k] ?? `{${k}}`));
 }
 
 export function getLocale(): Locale {

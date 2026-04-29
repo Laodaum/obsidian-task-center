@@ -15,7 +15,7 @@ export class TaskCenterSettingTab extends PluginSettingTab {
   display(): void {
     const { containerEl } = this;
     containerEl.empty();
-    containerEl.createEl("h2", { text: tr("settings.header") });
+    new Setting(containerEl).setName(tr("settings.header")).setHeading();
 
     // US-118: removed legacy Inbox path / grouping tag settings. Quick Add
     // writes only to Obsidian Daily Notes; tags are ordinary markdown data
@@ -91,7 +91,7 @@ export class TaskCenterSettingTab extends PluginSettingTab {
     // narrow layout regardless of viewport width).
     // see USER_STORIES.md
     {
-      containerEl.createEl("h3", { text: tr("settings.mobileHeader") });
+      new Setting(containerEl).setName(tr("settings.mobileHeader")).setHeading();
 
       new Setting(containerEl)
         .setName(tr("settings.mobileForceLayout.name"))
@@ -126,8 +126,8 @@ export class TaskCenterSettingTab extends PluginSettingTab {
       cls: "task-center-settings-command",
     });
 
-    containerEl.createEl("h3", { text: tr("settings.cliHeader") });
-    const cliHelp = containerEl.createEl("div", { cls: "setting-item-description" });
+    new Setting(containerEl).setName(tr("settings.cliHeader")).setHeading();
+    const cliHelp = containerEl.createDiv({ cls: "setting-item-description" });
     cliHelp.createEl("p", { text: tr("settings.cliHelp") });
     const pre = cliHelp.createEl("pre");
     pre.setText(

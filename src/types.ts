@@ -79,7 +79,7 @@ export interface TaskCenterSettings {
   mobileForceLayout: boolean; // default false (auto = follow viewport width)
 }
 
-export type SavedViewStatus = "all" | TaskStatus;
+export type SavedViewStatus = "all" | TaskStatus | TaskStatus[];
 export type SavedViewTimeField = "scheduled" | "deadline" | "completed" | "created";
 export type SavedViewTimeFilters = Partial<Record<SavedViewTimeField, string>>;
 

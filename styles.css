@@ -417,6 +417,7 @@
 .task-center-view .bt-status-option {
   display: flex;
   align-items: center;
+  gap: 8px;
   min-height: 30px;
   width: 100%;
   padding: 4px 8px;
@@ -432,6 +433,15 @@
 .task-center-view .bt-status-option[aria-selected="true"] {
   border-color: var(--interactive-accent);
   background: color-mix(in srgb, var(--interactive-accent) 18%, transparent);
+}
+.task-center-view .bt-status-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  flex: 0 0 16px;
+  color: var(--interactive-accent);
+  font-weight: 700;
 }
 .task-center-view .bt-status-option-label {
   min-width: 0;
@@ -2226,4 +2236,31 @@
     height: 100%;
     min-height: 0;
   }
+}
+
+/* --- Utility classes (replace inline style assignments) --- */
+
+.tc-animating {
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.tc-full-width-input {
+  width: 100%;
+}
+
+.tc-input-invalid {
+  border-color: var(--color-red);
+}
+
+.tc-mobile-drag-clone {
+  position: fixed;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+  z-index: 9999;
+}
+
+.tc-hidden {
+  display: none !important;
 }

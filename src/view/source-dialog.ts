@@ -27,7 +27,7 @@ type SourceEditShellElement = HTMLElement & {
 };
 
 function clearPreviousSourceShells(): void {
-  for (const el of Array.from(document.querySelectorAll<HTMLElement>("[data-source-edit-shell]"))) {
+  for (const el of Array.from(activeDocument.querySelectorAll<HTMLElement>("[data-source-edit-shell]"))) {
     const close = (el as SourceEditShellElement).__sourceEditClose;
     if (close) void close();
     else el.remove();
@@ -44,7 +44,7 @@ function createSourceEditorSplit(app: App): SourceEditorSplit {
   };
   internalSplit.getRoot = () => workspace.rootSplit ?? split;
   internalSplit.getContainer = () => workspace.rootSplit ?? split;
-  return split as SourceEditorSplit;
+  return split;
 }
 
 async function focusTaskLineInMarkdownView(leaf: WorkspaceLeaf, line: number): Promise<MarkdownView> {
@@ -84,7 +84,7 @@ export async function openTaskSourceEditShell(
 
   clearPreviousSourceShells();
 
-  const overlay = document.body.createDiv({ cls: "task-center-source-edit-overlay" }) as SourceEditShellElement;
+  const overlay = activeDocument.body.createDiv({ cls: "task-center-source-edit-overlay" }) as SourceEditShellElement;
   overlay.dataset.sourceEditShell = "true";
   overlay.dataset.sourceEditTaskId = task.id;
   overlay.dataset.sourceEditEditor = "obsidian-markdown-view";
@@ -136,21 +136,21 @@ export async function openTaskSourceEditShell(
     const cleanup = () => {
       if (done) return;
       done = true;
-      document.removeEventListener("keyup", suppress, true);
+      activeDocument.removeEventListener("keyup", suppress, true);
       window.removeEventListener("keyup", suppress, true);
     };
     const suppress = (e: KeyboardEvent) => {
       if (!consumeEscape(e)) return;
       cleanup();
     };
-    document.addEventListener("keyup", suppress, true);
+    activeDocument.addEventListener("keyup", suppress, true);
     window.addEventListener("keyup", suppress, true);
     window.setTimeout(cleanup, 1000);
   };
 
   const destroy = async () => {
-    document.removeEventListener("keydown", onKeydown, true);
-    document.removeEventListener("keyup", onKeyup, true);
+    activeDocument.removeEventListener("keydown", onKeydown, true);
+    activeDocument.removeEventListener("keyup", onKeyup, true);
     window.removeEventListener("keydown", onKeydown, true);
     window.removeEventListener("keyup", onKeyup, true);
     restoreHostLeaf(false);
@@ -186,8 +186,8 @@ export async function openTaskSourceEditShell(
     consumeEscape(e);
   };
 
-  document.addEventListener("keydown", onKeydown, true);
-  document.addEventListener("keyup", onKeyup, true);
+  activeDocument.addEventListener("keydown", onKeydown, true);
+  activeDocument.addEventListener("keyup", onKeyup, true);
   window.addEventListener("keydown", onKeydown, true);
   window.addEventListener("keyup", onKeyup, true);
   close.addEventListener("click", () => void destroy());
@@ -195,7 +195,7 @@ export async function openTaskSourceEditShell(
 
   try {
     restoreHostLeaf(false);
-    leaf = app.workspace.createLeafInParent(split, 0) as SourceEditorLeaf;
+    leaf = app.workspace.createLeafInParent(split, 0);
     await leaf.openFile(file, {
       active: false,
       eState: { line: task.line },

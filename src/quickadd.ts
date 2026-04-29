@@ -110,7 +110,7 @@ export class QuickAddModal extends Modal {
     const text = new TextComponent(inputHost);
     text.inputEl.addClass("task-center-quick-add-input");
     text.setPlaceholder(tr("qa.placeholder"));
-    text.inputEl.style.width = "100%";
+    text.inputEl.addClass("tc-full-width-input");
     text.onChange((v) => (this.input = v));
 
     // Inline parse hint (US-167-2, desktop only). Updates each keystroke;
@@ -148,9 +148,9 @@ export class QuickAddModal extends Modal {
       // also fire submit() and close the modal mid-word. `isComposing`
       // is the modern flag; `keyCode === 229` is the legacy fallback
       // some Electron / older WebView builds still emit.
-      if (e.key === "Enter" && !(e.isComposing || e.keyCode === 229)) {
+      if (e.key === "Enter" && !e.isComposing) {
         e.preventDefault();
-        this.submit();
+        void this.submit();
       }
       if (e.key === "Escape") this.close();
     });
@@ -419,21 +419,21 @@ export function parseQuickAdd(input: string, today: string = todayISO()): QuickA
   let estimate: number | undefined;
 
   // Extract inline fields [estimate:: Nm]
-  remaining = remaining.replace(/\[estimate::\s*([^\]]+)\]/gi, (_, v) => {
+  remaining = remaining.replace(/\[estimate::\s*([^\]]+)\]/gi, (_: string, v: string) => {
     const m = parseDurationToMinutes(v);
     if (m) estimate = m;
     return "";
   });
 
   // Extract ⏳ word
-  remaining = remaining.replace(/⏳\s*(\S+)/g, (_, v) => {
+  remaining = remaining.replace(/⏳\s*(\S+)/g, (_: string, v: string) => {
     const r = resolveRelativeDate(v, today);
     if (r) scheduled = r;
     return "";
   });
 
   // Extract 📅 word
-  remaining = remaining.replace(/📅\s*(\S+)/g, (_, v) => {
+  remaining = remaining.replace(/📅\s*(\S+)/g, (_: string, v: string) => {
     const r = resolveRelativeDate(v, today);
     if (r) deadline = r;
     return "";

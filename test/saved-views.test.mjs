@@ -29,6 +29,7 @@ const {
   clearSavedViewFilters,
   createSavedView,
   hasSavedViewFilters,
+  normalizeSavedViewStatus,
   suggestSavedViewName,
   updateSavedViewById,
   upsertSavedView,
@@ -52,7 +53,7 @@ test("US-109c: createSavedView persists the current filter conditions, not a tas
     search: "report",
     tag: "#alpha,#beta",
     time: { scheduled: "week", deadline: "overdue" },
-    status: "todo",
+    status: ["todo"],
   });
 });
 
@@ -68,7 +69,7 @@ test("US-109c: upsertSavedView replaces an existing view with the same name", ()
   assert.equal(views[1].search, "new");
   assert.equal(views[1].tag, "#alpha");
   assert.deepEqual(views[1].time, { completed: "week" });
-  assert.equal(views[1].status, "done");
+  assert.deepEqual(views[1].status, ["done"]);
 });
 
 test("US-109c: updateSavedViewById preserves the selected saved-view identity", () => {
@@ -83,7 +84,7 @@ test("US-109c: updateSavedViewById preserves the selected saved-view identity", 
   assert.equal(views[0].search, "new");
   assert.equal(views[0].tag, "#alpha");
   assert.deepEqual(views[0].time, { deadline: "overdue" });
-  assert.equal(views[0].status, "done");
+  assert.deepEqual(views[0].status, ["done"]);
 });
 
 test("US-109g: applySavedViewFilters restores saved filters", () => {
@@ -107,7 +108,7 @@ test("US-109g: applySavedViewFilters restores saved filters", () => {
       scheduled: "2026-04-01..2026-04-30",
       deadline: "overdue",
     },
-    status: "todo",
+    status: ["todo"],
   });
 });
 
@@ -124,6 +125,7 @@ test("US-109g: clearSavedViewFilters returns the current-view empty filter state
 test("US-109c: suggestSavedViewName prefers tag, then status, then fallback", () => {
   assert.equal(suggestSavedViewName({ tag: " #alpha,#beta ", status: "all" }, "Saved view"), "alpha,#beta");
   assert.equal(suggestSavedViewName({ tag: "", status: "done" }, "Saved view"), "done");
+  assert.equal(suggestSavedViewName({ tag: "", status: ["todo", "dropped"] }, "Saved view"), "todo,dropped");
   assert.equal(suggestSavedViewName({ tag: "", status: "all" }, "Saved view"), "Saved view");
 });
 
@@ -133,4 +135,12 @@ test("US-109c: empty filters are not a saveable filter view", () => {
   assert.equal(hasSavedViewFilters({ search: "", tag: "#alpha", time: {}, status: "all" }), true);
   assert.equal(hasSavedViewFilters({ search: "", tag: "", time: { scheduled: "week" }, status: "all" }), true);
   assert.equal(hasSavedViewFilters({ search: "", tag: "", time: {}, status: "done" }), true);
+  assert.equal(hasSavedViewFilters({ search: "", tag: "", time: {}, status: ["todo", "done"] }), true);
+});
+
+test("US-109h: status filters normalize legacy single-select and new multi-select values", () => {
+  assert.equal(normalizeSavedViewStatus("all"), "all");
+  assert.deepEqual(normalizeSavedViewStatus("todo"), ["todo"]);
+  assert.deepEqual(normalizeSavedViewStatus(["todo", "done", "todo"]), ["todo", "done"]);
+  assert.equal(normalizeSavedViewStatus([]), "all");
 });

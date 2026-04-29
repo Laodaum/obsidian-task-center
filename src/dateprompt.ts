@@ -33,7 +33,7 @@ export class DatePromptModal extends Modal {
     contentEl.createEl("h3", { text: this.title });
 
     const input = new TextComponent(contentEl);
-    input.inputEl.style.width = "100%";
+    input.inputEl.addClass("tc-full-width-input");
     input.setValue(this.initialValue);
     input.onChange((v) => (this.value = v));
 
@@ -49,7 +49,7 @@ export class DatePromptModal extends Modal {
     input.inputEl.addEventListener("keydown", (e) => {
       // US-413: skip the Enter commit while IME composition is active —
       // see src/quickadd.ts for the same pattern.
-      if (e.key === "Enter" && !(e.isComposing || e.keyCode === 229)) {
+      if (e.key === "Enter" && !e.isComposing) {
         e.preventDefault();
         const resolved = resolveDateInput(this.value);
         // resolved: string (ISO) | null (blank → clear) | undefined (invalid → reject)
@@ -57,7 +57,7 @@ export class DatePromptModal extends Modal {
           this.onResolve(resolved);
           this.close();
         } else {
-          input.inputEl.style.borderColor = "var(--color-red)";
+          input.inputEl.addClass("tc-input-invalid");
         }
       } else if (e.key === "Escape") {
         this.close();

@@ -20,3 +20,10 @@ export function normalizePath(p) {
 // device. For unit-testing the pure parsing logic we don't care, so the
 // stub reports "desktop" — quickadd.ts's mobile branch never runs.
 export const Platform = { isMobile: false, isMobileApp: false, isDesktop: true };
+export function getLanguage() {
+  try {
+    const stored = globalThis.window?.localStorage?.getItem("language");
+    if (stored) return stored;
+  } catch { /* ignore */ }
+  return "en";
+}

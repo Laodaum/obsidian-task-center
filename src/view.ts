@@ -43,11 +43,12 @@ import {
   clearSavedViewFilters as emptySavedViewFilters,
   createSavedView,
   hasSavedViewFilters,
+  normalizeSavedViewStatus,
   suggestSavedViewName as suggestSavedViewNameForFilters,
   upsertSavedView,
   updateSavedViewById,
 } from "./saved-views";
-import type { SavedTaskView, SavedViewStatus } from "./types";
+import type { SavedTaskView, SavedViewStatus, TaskStatus } from "./types";
 import type { SavedViewTimeField, SavedViewTimeFilters } from "./types";
 import type TaskCenterPlugin from "./main";
 
@@ -282,11 +283,13 @@ export class TaskCenterView extends ItemView {
 
   private scheduleRefresh() {
     if (this.refreshTimer !== null) window.clearTimeout(this.refreshTimer);
-    this.refreshTimer = window.setTimeout(async () => {
-      this.refreshTimer = null;
-      await this.reloadTasks();
-      this.bumpCacheVersion();
-      this.render();
+    this.refreshTimer = window.setTimeout(() => {
+      void (async () => {
+        this.refreshTimer = null;
+        await this.reloadTasks();
+        this.bumpCacheVersion();
+        this.render();
+      })();
     }, 400);
   }
 
@@ -298,7 +301,7 @@ export class TaskCenterView extends ItemView {
   private findCardEl(taskId: string): HTMLElement | null {
     return this.contentEl.querySelector(
       `[data-task-id="${CSS.escape(taskId)}"]`,
-    ) as HTMLElement | null;
+    );
   }
 
   private async openSourceEditShell(task: ParsedTask): Promise<void> {
@@ -484,7 +487,7 @@ export class TaskCenterView extends ItemView {
 
     // Restore scroll after layout settles
     if (savedScrollTop > 0) {
-      const newBody = el.querySelector(".bt-body") as HTMLElement | null;
+      const newBody = el.querySelector(".bt-body");
       if (newBody) {
         // rAF ensures contents are laid out so scrollTop clamps correctly
         window.requestAnimationFrame(() => {
@@ -698,7 +701,7 @@ export class TaskCenterView extends ItemView {
       this.state.filter = search.value;
       const caret = search.selectionStart;
       this.render();
-      const el = this.contentEl.querySelector(".bt-search") as HTMLInputElement | null;
+      const el = this.contentEl.querySelector<HTMLInputElement>(".bt-search");
       if (el) {
         el.focus();
         const pos = caret ?? el.value.length;
@@ -758,18 +761,20 @@ export class TaskCenterView extends ItemView {
     const canSave = this.hasSaveableFilters();
     save.disabled = !canSave;
     if (!canSave) save.title = tr("savedViews.saveDisabled");
-    save.addEventListener("click", async () => {
-      if (!this.hasSaveableFilters()) return;
-      const latestSelectedView = this.selectedSavedView();
-      if (latestSelectedView) {
-        await this.updateCurrentSavedView(latestSelectedView);
+    save.addEventListener("click", () => {
+      void (async () => {
+        if (!this.hasSaveableFilters()) return;
+        const latestSelectedView = this.selectedSavedView();
+        if (latestSelectedView) {
+          await this.updateCurrentSavedView(latestSelectedView);
+          this.refreshFilterControls(rerenderControls);
+          return;
+        }
+        const name = await this.askSavedViewName();
+        if (!name || !name.trim()) return;
+        await this.saveCurrentView(name.trim());
         this.refreshFilterControls(rerenderControls);
-        return;
-      }
-      const name = await this.askSavedViewName();
-      if (!name || !name.trim()) return;
-      await this.saveCurrentView(name.trim());
-      this.refreshFilterControls(rerenderControls);
+      })();
     });
   }
 
@@ -1050,14 +1055,13 @@ export class TaskCenterView extends ItemView {
 
   private renderStatusFilter(parent: HTMLElement, rerenderControls?: FilterControlsRerender): void {
     const container = parent.createDiv({ cls: "bt-filter-popover-wrap" });
-    const label = this.state.savedViewStatus === "all"
-      ? tr("savedViews.statusAll")
-      : this.statusFilterOptions().find((option) => option.value === this.state.savedViewStatus)?.label
-        ?? tr("savedViews.statusAll");
+    const selected = normalizeSavedViewStatus(this.state.savedViewStatus);
+    const label = this.statusFilterSummary(selected);
     const trigger = container.createEl("button", {
       text: label,
       cls: "bt-saved-view-filter bt-status-trigger",
     });
+    if (selected !== "all") trigger.title = selected.map((value) => this.statusFilterLabel(value)).join(", ");
     trigger.dataset.savedViewFilter = "status";
     trigger.setAttribute("aria-haspopup", "listbox");
     trigger.setAttribute("aria-expanded", this.filterPopoverOpen === "status" ? "true" : "false");
@@ -1072,19 +1076,37 @@ export class TaskCenterView extends ItemView {
     for (const option of this.statusFilterOptions()) {
       const item = popover.createEl("button", { cls: "bt-status-option" });
       item.dataset.statusOption = option.value;
-      item.setAttribute("aria-selected", this.state.savedViewStatus === option.value ? "true" : "false");
+      const checked = selected === "all" ? option.value === "all" : option.value !== "all" && selected.includes(option.value);
+      item.setAttribute("role", "checkbox");
+      item.setAttribute("aria-checked", checked ? "true" : "false");
+      item.setAttribute("aria-selected", checked ? "true" : "false");
+      item.createSpan({ text: checked ? "✓" : "", cls: "bt-status-check" });
       item.createSpan({ text: option.label, cls: "bt-status-option-label" });
-      item.addEventListener("click", () => this.setStatusFilter(option.value, rerenderControls));
+      item.addEventListener("click", () => {
+        if (option.value === "all") this.setStatusFilter("all", rerenderControls);
+        else this.toggleStatusFilter(option.value, rerenderControls);
+      });
     }
   }
 
-  private statusFilterOptions(): Array<{ value: SavedViewStatus; label: string }> {
+  private statusFilterOptions(): Array<{ value: "all" | TaskStatus; label: string }> {
     return [
       { value: "all", label: tr("savedViews.statusAny") },
       { value: "todo", label: tr("savedViews.statusTodo") },
       { value: "done", label: tr("savedViews.statusDone") },
       { value: "dropped", label: tr("savedViews.statusDropped") },
     ];
+  }
+
+  private statusFilterSummary(selected: "all" | TaskStatus[]): string {
+    if (selected === "all" || selected.length === 0) return tr("savedViews.statusAll");
+    const first = this.statusFilterLabel(selected[0]);
+    if (selected.length === 1) return first;
+    return `${first} +${selected.length - 1}`;
+  }
+
+  private statusFilterLabel(status: TaskStatus): string {
+    return this.statusFilterOptions().find((option) => option.value === status)?.label ?? status;
   }
 
   private renderTagFilter(parent: HTMLElement, rerenderControls?: FilterControlsRerender): void {
@@ -1190,7 +1212,18 @@ export class TaskCenterView extends ItemView {
 
   private setStatusFilter(value: SavedViewStatus, rerenderControls?: FilterControlsRerender): void {
     this.state.savedViewStatus = value;
-    this.filterPopoverOpen = null;
+    this.filterPopoverOpen = "status";
+    this.refreshFilterControls(rerenderControls);
+  }
+
+  private toggleStatusFilter(value: TaskStatus, rerenderControls?: FilterControlsRerender): void {
+    const selected = normalizeSavedViewStatus(this.state.savedViewStatus);
+    const current = selected === "all" ? [] : selected;
+    const next = current.includes(value)
+      ? current.filter((status) => status !== value)
+      : [...current, value];
+    this.state.savedViewStatus = next.length > 0 ? next : "all";
+    this.filterPopoverOpen = "status";
     this.refreshFilterControls(rerenderControls);
   }
 
@@ -1303,7 +1336,7 @@ export class TaskCenterView extends ItemView {
         text: this.columnStats(dayTasks),
         cls: "bt-week-stats",
       });
-      stats.title = "scheduled estimate (hours)";
+      stats.title = "Scheduled estimate (hours)";
 
       const list = col.createDiv({ cls: "bt-week-list" });
       // Drop handler on the COLUMN (which carries `data-date`), not the
@@ -1524,7 +1557,7 @@ export class TaskCenterView extends ItemView {
 
         const actions = el.createDiv({ cls: "bt-sheet-actions" });
 
-        const btn = (text: string, action: () => Promise<unknown> | unknown) => {
+        const btn = (text: string, action: () => Promise<unknown>) => {
           const b = actions.createEl("button", {
             cls: "bt-sheet-action",
             text,
@@ -1807,22 +1840,24 @@ export class TaskCenterView extends ItemView {
       el.addClass("drop-hover");
     });
     el.addEventListener("dragleave", () => el.removeClass("drop-hover"));
-    el.addEventListener("drop", async (e) => {
-      const dt = e.dataTransfer;
-      if (!dt) return;
-      const id = dt.getData("text/task-id");
-      if (!id) return;
-      e.preventDefault();
-      el.removeClass("drop-hover");
-      try {
-        await this.runWithRemoveAnim(id, async () => {
-          await this.api.drop(id);
-          new Notice(tr("trash.dropped"));
-        });
-      } catch (err) {
-        new Notice(tr("notice.error", { msg: (err as Error).message }), 4000);
-        this.scheduleRefresh();
-      }
+    el.addEventListener("drop", (e) => {
+      void (async () => {
+        const dt = e.dataTransfer;
+        if (!dt) return;
+        const id = dt.getData("text/task-id");
+        if (!id) return;
+        e.preventDefault();
+        el.removeClass("drop-hover");
+        try {
+          await this.runWithRemoveAnim(id, async () => {
+            await this.api.drop(id);
+            new Notice(tr("trash.dropped"));
+          });
+        } catch (err) {
+          new Notice(tr("notice.error", { msg: (err as Error).message }), 4000);
+          this.scheduleRefresh();
+        }
+      })();
     });
   }
 
@@ -2057,13 +2092,15 @@ export class TaskCenterView extends ItemView {
     const titleRow = card.createDiv({ cls: "bt-card-title-row" });
     const check = titleRow.createDiv({ cls: "bt-check" });
     check.setText(statusIcon(t.status));
-    check.title = "Toggle done (Space)";
-    check.addEventListener("click", async (e) => {
-      e.stopPropagation();
-      await this.runWithRemoveAnim(t.id, async () => {
-        if (t.status === "done") await this.api.undone(t.id);
-        else await this.api.done(t.id);
-      });
+    check.title = "Toggle done (space)";
+    check.addEventListener("click", (e) => {
+      void (async () => {
+        e.stopPropagation();
+        await this.runWithRemoveAnim(t.id, async () => {
+          if (t.status === "done") await this.api.undone(t.id);
+          else await this.api.done(t.id);
+        });
+      })();
     });
 
     const title = titleRow.createDiv({ cls: "bt-card-title", text: t.title });
@@ -2126,7 +2163,7 @@ export class TaskCenterView extends ItemView {
             return null;
           })
           .filter((x) => x !== null);
-        console.log(
+        console.debug(
           "[task-center US-125] renderCard children diff",
           { parent: t.id, childLines, resolvedCount: resolved.length, kept: children.length, dropped },
         );
@@ -2157,10 +2194,10 @@ export class TaskCenterView extends ItemView {
         // Per US-510, swipe is opt-out via settings. When disabled the
         // gesture controller still parses left/right but never commits.
         onSwipeLeft: settings.mobileSwipeEnabled
-          ? () => this.swipeAction(t, "done")
+          ? () => { void this.swipeAction(t, "done"); }
           : undefined,
         onSwipeRight: settings.mobileSwipeEnabled
-          ? () => this.swipeAction(t, "drop")
+          ? () => { void this.swipeAction(t, "drop"); }
           : undefined,
         onDragArmed: (e) => this.mobileDragSession(card, t, e.clientX, e.clientY),
       });
@@ -2187,9 +2224,9 @@ export class TaskCenterView extends ItemView {
         edgeScrollMaxSpeed: 600,
         getCurrentTab: () => this.state.tab,
         onTabSwitch: (tab) => this.setTab(tab),
-        onScheduleDrop: (taskId, dateISO) => this.handleMobileScheduleDrop(taskId, dateISO),
-        onTrashDrop: (taskId) => this.handleMobileTrashDrop(taskId),
-        onNestDrop: (droppedId, parentId) => this.handleMobileNestDrop(droppedId, parentId),
+        onScheduleDrop: (taskId, dateISO) => { void this.handleMobileScheduleDrop(taskId, dateISO); },
+        onTrashDrop: (taskId) => { void this.handleMobileTrashDrop(taskId); },
+        onNestDrop: (droppedId, parentId) => { void this.handleMobileNestDrop(droppedId, parentId); },
       });
     }
     return this.mobileDrag.begin(card, t.id, x, y);
@@ -2338,12 +2375,14 @@ export class TaskCenterView extends ItemView {
     check.dataset.cardAction = "done";
     check.title = c.status === "done" ? tr("ctx.markTodo") : tr("ctx.markDone");
     check.setAttr("aria-label", check.title);
-    check.addEventListener("click", async (e) => {
-      e.stopPropagation();
-      await this.runWithRemoveAnim(c.id, async () => {
-        if (c.status === "done") await this.api.undone(c.id);
-        else await this.api.done(c.id);
-      });
+    check.addEventListener("click", (e) => {
+      void (async () => {
+        e.stopPropagation();
+        await this.runWithRemoveAnim(c.id, async () => {
+          if (c.status === "done") await this.api.undone(c.id);
+          else await this.api.done(c.id);
+        });
+      })();
     });
 
     const title = subCard.createDiv({ cls: "bt-subcard-title", text: c.title });
@@ -2539,41 +2578,43 @@ export class TaskCenterView extends ItemView {
         if (related && el.contains(related)) return;
         el.removeClass("nest-target");
       });
-      el.addEventListener("drop", async (e) => {
-        const dt = e.dataTransfer;
-        if (!dt) return;
-        const droppedId = dt.getData("text/task-id");
-        if (!droppedId || droppedId === t.id) return;
-        e.preventDefault();
-        e.stopPropagation();
-        el.removeClass("nest-target");
-        // Nest writes to one or two files (cross-file). Wait for metadataCache to
-        // reparse them before rendering so the new parent shows the new child.
-        const droppedTask = this.tasks.find((x) => x.id === droppedId);
-        const awaitCachePaths = [t.path];
-        if (droppedTask && droppedTask.path !== t.path) awaitCachePaths.push(droppedTask.path);
-        try {
-          await this.runWithRemoveAnim(droppedId, async () => {
-            const r = await this.api.nest(droppedId, t.id);
-            if (!r.unchanged) {
-              if (r.undoOps && r.undoOps.length > 0) {
-                this.undoStack.push({
-                  label: `nest under "${t.title.slice(0, 20)}"`,
-                  ops: r.undoOps,
-                });
+      el.addEventListener("drop", (e) => {
+        void (async () => {
+          const dt = e.dataTransfer;
+          if (!dt) return;
+          const droppedId = dt.getData("text/task-id");
+          if (!droppedId || droppedId === t.id) return;
+          e.preventDefault();
+          e.stopPropagation();
+          el.removeClass("nest-target");
+          // Nest writes to one or two files (cross-file). Wait for metadataCache to
+          // reparse them before rendering so the new parent shows the new child.
+          const droppedTask = this.tasks.find((x) => x.id === droppedId);
+          const awaitCachePaths = [t.path];
+          if (droppedTask && droppedTask.path !== t.path) awaitCachePaths.push(droppedTask.path);
+          try {
+            await this.runWithRemoveAnim(droppedId, async () => {
+              const r = await this.api.nest(droppedId, t.id);
+              if (!r.unchanged) {
+                if (r.undoOps && r.undoOps.length > 0) {
+                  this.undoStack.push({
+                    label: `nest under "${t.title.slice(0, 20)}"`,
+                    ops: r.undoOps,
+                  });
+                }
+                new Notice(
+                  tr("notice.nested", {
+                    title: t.title,
+                    where: r.crossFile ? tr("notice.crossFile") : "",
+                  }),
+                );
               }
-              new Notice(
-                tr("notice.nested", {
-                  title: t.title,
-                  where: r.crossFile ? tr("notice.crossFile") : "",
-                }),
-              );
-            }
-          }, { awaitCachePaths });
-        } catch (err) {
-          new Notice(tr("notice.error", { msg: (err as Error).message }), 6000);
-          this.scheduleRefresh();
-        }
+            }, { awaitCachePaths });
+          } catch (err) {
+            new Notice(tr("notice.error", { msg: (err as Error).message }), 6000);
+            this.scheduleRefresh();
+          }
+        })();
       });
     }
 
@@ -2588,7 +2629,7 @@ export class TaskCenterView extends ItemView {
     el.addEventListener("contextmenu", (e) => {
       e.preventDefault();
       e.stopPropagation();
-      this.openContextMenu(e as MouseEvent, t);
+      this.openContextMenu(e, t);
     });
   }
 
@@ -2603,38 +2644,40 @@ export class TaskCenterView extends ItemView {
     el.addEventListener("dragleave", () => {
       el.removeClass("drop-hover");
     });
-    el.addEventListener("drop", async (e) => {
-      const dt = e.dataTransfer;
-      if (!dt) return;
-      const id = dt.getData("text/task-id");
-      if (!id) return;
-      e.preventDefault();
-      el.removeClass("drop-hover");
-      const task = this.tasks.find((t) => t.id === id);
-      const willMove = !task || (task.scheduled ?? null) !== targetDate;
-      const work = async () => {
-        const r = await this.api.schedule(id, targetDate);
-        if (!r.unchanged && task) {
-          this.undoStack.push({
-            label: targetDate ? `⏳ ${targetDate}` : "⏳ cleared",
-            ops: [{ path: task.path, line: task.line, before: [r.before], after: [r.after] }],
-          });
-          new Notice(
-            targetDate ? tr("notice.scheduled", { date: targetDate }) : tr("notice.clearedSchedule"),
-          );
-        }
-      };
-      try {
-        if (willMove) {
-          await this.runWithRemoveAnim(id, work);
-        } else {
-          await work();
+    el.addEventListener("drop", (e) => {
+      void (async () => {
+        const dt = e.dataTransfer;
+        if (!dt) return;
+        const id = dt.getData("text/task-id");
+        if (!id) return;
+        e.preventDefault();
+        el.removeClass("drop-hover");
+        const task = this.tasks.find((t) => t.id === id);
+        const willMove = !task || (task.scheduled ?? null) !== targetDate;
+        const work = async () => {
+          const r = await this.api.schedule(id, targetDate);
+          if (!r.unchanged && task) {
+            this.undoStack.push({
+              label: targetDate ? `⏳ ${targetDate}` : "⏳ cleared",
+              ops: [{ path: task.path, line: task.line, before: [r.before], after: [r.after] }],
+            });
+            new Notice(
+              targetDate ? tr("notice.scheduled", { date: targetDate }) : tr("notice.clearedSchedule"),
+            );
+          }
+        };
+        try {
+          if (willMove) {
+            await this.runWithRemoveAnim(id, work);
+          } else {
+            await work();
+            this.scheduleRefresh();
+          }
+        } catch (err) {
+          new Notice(tr("notice.error", { msg: (err as Error).message }), 4000);
           this.scheduleRefresh();
         }
-      } catch (err) {
-        new Notice(tr("notice.error", { msg: (err as Error).message }), 4000);
-        this.scheduleRefresh();
-      }
+      })();
     });
   }
 
@@ -2642,7 +2685,7 @@ export class TaskCenterView extends ItemView {
     const q = this.state.filter.trim().toLowerCase();
     const tags = parseFilterTags(this.state.savedViewTag);
     const time = this.state.savedViewTime;
-    const status = this.state.savedViewStatus;
+    const status = normalizeSavedViewStatus(this.state.savedViewStatus);
     if (!q && tags.length === 0 && !this.hasTimeFilters(time) && status === "all") return () => true;
     return (t) => {
       if (q && !taskMatchesText(t, q)) return false;
@@ -2650,7 +2693,7 @@ export class TaskCenterView extends ItemView {
         if (!taskHasTag(t, tag)) return false;
       }
       if (!this.taskMatchesTimeFilters(t, time)) return false;
-      if (status !== "all" && t.status !== status) return false;
+      if (status !== "all" && !status.includes(t.status)) return false;
       return true;
     };
   }
@@ -2688,11 +2731,11 @@ export class TaskCenterView extends ItemView {
     };
     const q = this.state.filter.trim().toLowerCase();
     const time = this.state.savedViewTime;
-    const status = this.state.savedViewStatus;
+    const status = normalizeSavedViewStatus(this.state.savedViewStatus);
     for (const task of this.tasks) {
       if (q && !taskMatchesText(task, q)) continue;
       if (!this.taskMatchesTimeFilters(task, time)) continue;
-      if (status !== "all" && task.status !== status) continue;
+      if (status !== "all" && !status.includes(task.status)) continue;
       for (const tag of task.tags) add(tag, 1);
     }
     for (const view of this.plugin.settings.savedViews) {
@@ -2864,7 +2907,7 @@ export class TaskCenterView extends ItemView {
 
     // Undo (Ctrl/Cmd+Z) — view-scoped undo of the most recent drag/keyboard mutation.
     if ((e.ctrlKey || e.metaKey) && e.key === "z" && !e.shiftKey && !e.altKey) {
-      const active = document.activeElement;
+      const active = activeDocument.activeElement;
       if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA")) return;
       e.preventDefault();
       e.stopPropagation();
@@ -2874,10 +2917,10 @@ export class TaskCenterView extends ItemView {
 
     // Focus search
     if (e.key === "/" && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey) {
-      const active = document.activeElement;
+      const active = activeDocument.activeElement;
       if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA")) return;
       e.preventDefault();
-      const search = this.contentEl.querySelector(".bt-search") as HTMLInputElement | null;
+      const search = this.contentEl.querySelector<HTMLInputElement>(".bt-search");
       if (search) {
         search.focus();
         search.select();
@@ -2955,24 +2998,26 @@ export class TaskCenterView extends ItemView {
       this.app,
       tr("prompt.setScheduled", { title: task.title }),
       task.scheduled ?? todayISO(),
-      async (resolved) => {
-        if (resolved === undefined) return;
-        const willMove = (task.scheduled ?? null) !== (resolved ?? null);
-        const work = async () => {
-          const r = await this.api.schedule(task.id, resolved);
-          if (!r.unchanged) {
-            this.undoStack.push({
-              label: resolved ? `⏳ ${resolved}` : "⏳ cleared",
-              ops: [{ path: task.path, line: task.line, before: [r.before], after: [r.after] }],
-            });
+      (resolved) => {
+        void (async () => {
+          if (resolved === undefined) return;
+          const willMove = (task.scheduled ?? null) !== (resolved ?? null);
+          const work = async () => {
+            const r = await this.api.schedule(task.id, resolved);
+            if (!r.unchanged) {
+              this.undoStack.push({
+                label: resolved ? `⏳ ${resolved}` : "⏳ cleared",
+                ops: [{ path: task.path, line: task.line, before: [r.before], after: [r.after] }],
+              });
+            }
+          };
+          if (willMove) {
+            await this.runWithRemoveAnim(task.id, work);
+          } else {
+            await work();
+            this.scheduleRefresh();
           }
-        };
-        if (willMove) {
-          await this.runWithRemoveAnim(task.id, work);
-        } else {
-          await work();
-          this.scheduleRefresh();
-        }
+        })();
       },
     ).open();
   }
@@ -3015,11 +3060,11 @@ class SavedViewNameModal extends Modal {
 
     const input = new TextComponent(contentEl);
     input.inputEl.dataset.savedViewNameInput = "true";
-    input.inputEl.style.width = "100%";
+    input.inputEl.addClass("tc-full-width-input");
     input.setValue(this.value);
     input.onChange((value) => (this.value = value));
     input.inputEl.addEventListener("keydown", (event) => {
-      if (event.key === "Enter" && !(event.isComposing || event.keyCode === 229)) {
+      if (event.key === "Enter" && !event.isComposing) {
         event.preventDefault();
         this.commit();
       } else if (event.key === "Escape") {

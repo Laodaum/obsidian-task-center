@@ -1,4 +1,6 @@
-import type { SavedTaskView, SavedViewStatus, SavedViewTimeFilters } from "./types";
+import type { SavedTaskView, SavedViewStatus, SavedViewTimeFilters, TaskStatus } from "./types";
+
+const KNOWN_STATUS_VALUES: TaskStatus[] = ["todo", "done", "dropped", "in_progress", "cancelled", "custom"];
 
 export interface SavedViewFilters {
   search: string;
@@ -22,7 +24,7 @@ export function createSavedView(
     search: filters.search.trim(),
     tag: filters.tag.trim(),
     time: normalizeTimeFilters(filters.time),
-    status: filters.status,
+    status: normalizeSavedViewStatus(filters.status),
   };
 }
 
@@ -43,7 +45,7 @@ export function applySavedViewFilters(view: SavedTaskView): AppliedSavedViewFilt
     search: view.search,
     tag: view.tag,
     time: normalizeTimeFilters(view.time),
-    status: view.status,
+    status: normalizeSavedViewStatus(view.status),
   };
 }
 
@@ -62,14 +64,28 @@ export function hasSavedViewFilters(filters: SavedViewFilters): boolean {
     filters.search.trim()
     || filters.tag.trim()
     || Object.values(normalizeTimeFilters(filters.time)).some(Boolean)
-    || filters.status !== "all"
+    || normalizeSavedViewStatus(filters.status) !== "all"
   );
 }
 
 export function suggestSavedViewName(filters: Pick<SavedViewFilters, "tag" | "status">, fallback: string): string {
   if (filters.tag.trim()) return filters.tag.trim().replace(/^#/, "");
-  if (filters.status !== "all") return filters.status;
+  const status = normalizeSavedViewStatus(filters.status);
+  if (status !== "all") return status.join(",");
   return fallback;
+}
+
+export function normalizeSavedViewStatus(status: SavedViewStatus | null | undefined): "all" | TaskStatus[] {
+  if (!status || status === "all") return "all";
+  const raw = Array.isArray(status) ? status : [status];
+  const seen = new Set<TaskStatus>();
+  const out: TaskStatus[] = [];
+  for (const value of raw) {
+    if (!KNOWN_STATUS_VALUES.includes(value) || seen.has(value)) continue;
+    seen.add(value);
+    out.push(value);
+  }
+  return out.length > 0 ? out : "all";
 }
 
 function normalizeTimeFilters(time: SavedViewTimeFilters): SavedViewTimeFilters {

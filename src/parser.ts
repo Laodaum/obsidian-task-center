@@ -24,14 +24,14 @@ const CREATED_RE = /➕\s*(\d{4}-\d{2}-\d{2})/;
 const CHECKBOX_RE = /^(\s*(?:>\s*)*)([-+*])\s+\[(.)\]\s?(.*?)\r?$/;
 // Strip emoji metadata, inline fields, tags, block anchors, and recurrence
 // (`🔁 every week` style — consumed greedily to the next metadata boundary).
-const META_STRIP_RE = /🔁\s*[^⏳📅🛫✅❌➕#\[\^]+|(⏳|📅|🛫|✅|❌|⌛|🔺|⏫|🔼|🔽|⏬|➕)\s*(\d{4}-\d{2}-\d{2})?/gu;
+const META_STRIP_RE = /🔁\s*[^⏳📅🛫✅❌➕#[\]^]+|(⏳|📅|🛫|✅|❌|⌛|🔺|⏫|🔼|🔽|⏬|➕)\s*(\d{4}-\d{2}-\d{2})?/gu;
 // US-108: inline-field syntax is `[fieldname:: value]` (Dataview-
 // compatible). Field names are user data, not application knowledge, so
 // cleanTitle strips every inline field from the rendered title while
 // parseInlineFields preserves the exact field names for summaries.
 // see USER_STORIES.md
-const INLINE_FIELD_RE = /\[([^\[\]\n:]+)::\s*([^\]]*)\]/g;
-const INLINE_FIELD_STRIP_RE = /\[[^\[\]\n:]+::\s*[^\]]*\]/g;
+const INLINE_FIELD_RE = /\[([^[\n:]+)::\s*([^\]]*)\]/g;
+const INLINE_FIELD_STRIP_RE = /\[[^[\n:]+::\s*[^\]]*\]/g;
 // Obsidian block reference anchors: `^blockid` at a word boundary
 const BLOCK_REF_STRIP_RE = /(?:^|\s)\^[A-Za-z0-9_-]+(?=\s|$)/g;
 const BLOCK_REF_WITH_HASH_STRIP_RE = /(?:^|\s)#\^[A-Za-z0-9_-]+(?=\s|$)/g;

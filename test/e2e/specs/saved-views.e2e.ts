@@ -153,6 +153,57 @@ describe("US-724 saved views / custom filters", function () {
     expect(JSON.stringify(saved)).toContain("Alpha Today");
   });
 
+  it("US-109h: status popover includes all first and supports multi-select filters", async function () {
+    const today = todayISO();
+    await writeAndWait(
+      "Tasks/Inbox.md",
+      [
+        `- [ ] Fixture status todo #status-multi ⏳ ${today}`,
+        `- [x] Fixture status done #status-multi ✅ ${today}`,
+        `- [ ] Fixture status later #status-multi ⏳ 2099-01-01`,
+      ].join("\n") + "\n",
+    );
+
+    await browser.executeObsidianCommand("task-center:open");
+    await forFlush();
+    await $('[data-saved-views]').waitForExist({ timeout: 5000 });
+
+    await $('[data-saved-view-filter="status"]').click();
+    const statusOptions = await browser.execute(() =>
+      Array.from(document.querySelectorAll("[data-status-option]")).map((el) => ({
+        value: (el as HTMLElement).dataset.statusOption,
+        role: el.getAttribute("role"),
+        checked: el.getAttribute("aria-checked"),
+      })),
+    );
+    expect(statusOptions).toEqual([
+      { value: "all", role: "checkbox", checked: "true" },
+      { value: "todo", role: "checkbox", checked: "false" },
+      { value: "done", role: "checkbox", checked: "false" },
+      { value: "dropped", role: "checkbox", checked: "false" },
+    ]);
+
+    await $('[data-status-option="todo"]').click();
+    await expect($('[data-task-id="Tasks/Inbox.md:L1"]')).toExist();
+    await expect($('[data-task-id="Tasks/Inbox.md:L2"]')).not.toExist();
+
+    await $('[data-status-option="done"]').click();
+    await expect($('[data-status-option="todo"]')).toHaveAttribute("aria-checked", "true");
+    await expect($('[data-status-option="done"]')).toHaveAttribute("aria-checked", "true");
+    await expect($('[data-task-id="Tasks/Inbox.md:L1"]')).toExist();
+    await expect($('[data-task-id="Tasks/Inbox.md:L2"]')).toExist();
+
+    await $('[data-action="save-current-view"]').click();
+    await $('[data-saved-view-name-input]').setValue("Todo Or Done");
+    await $('[data-action="confirm-saved-view-name"]').click();
+    await forFlush();
+    const savedJson = await browser.executeObsidian(async ({ app }) => {
+      // @ts-expect-error — runtime plugin
+      return JSON.stringify((app as any).plugins.plugins["task-center"].settings.savedViews);
+    });
+    expect(savedJson).toContain('"status":["todo","done"]');
+  });
+
   it("US-109c: updates the selected saved view instead of prompting for a new name", async function () {
     const today = todayISO();
     await writeAndWait(

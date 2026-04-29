@@ -324,7 +324,7 @@ export function rebuildTaskLineWithNewTitle(
   const parsed = parseTaskLine(raw);
   if (!parsed) return null;
   const META_TOKEN_RE =
-    /#[^\s#\[\]()]+|⏳\s*\d{4}-\d{2}-\d{2}|📅\s*\d{4}-\d{2}-\d{2}|🛫\s*\d{4}-\d{2}-\d{2}|✅\s*\d{4}-\d{2}-\d{2}|❌\s*\d{4}-\d{2}-\d{2}|➕\s*\d{4}-\d{2}-\d{2}|🔁\s*[^⏳📅🛫✅❌➕#\[\^]+|[🔺⏫🔼🔽⏬]|\[[^\[\]\n:]+::\s*[^\]]+\]|\^[A-Za-z0-9_-]+/gu;
+    /#[^\s#[\] ()]+|⏳\s*\d{4}-\d{2}-\d{2}|📅\s*\d{4}-\d{2}-\d{2}|🛫\s*\d{4}-\d{2}-\d{2}|✅\s*\d{4}-\d{2}-\d{2}|❌\s*\d{4}-\d{2}-\d{2}|➕\s*\d{4}-\d{2}-\d{2}|🔁\s*[^⏳📅🛫✅❌➕#[\]^]+|[🔺⏫🔼🔽⏬]|\[[^[\n:]+::\s*[^\]]+\]|\^[A-Za-z0-9_-]+/gu;
   const tokens: string[] = [];
   let m;
   while ((m = META_TOKEN_RE.exec(parsed.content)) !== null) {

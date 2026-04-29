@@ -1,7 +1,10 @@
 import * as path from "path";
 import { parseObsidianVersions, obsidianBetaAvailable } from "wdio-obsidian-service";
-import { env } from "process";
+import { env, platform } from "process";
+import { assertE2eRunsOnlyInCi } from "./wdio-local-guard.mts";
 import { pickWdioVersions } from "./wdio-versions.mts";
+
+assertE2eRunsOnlyInCi(env, platform);
 
 const cacheDir = path.resolve(".obsidian-cache");
 

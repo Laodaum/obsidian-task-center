@@ -10,7 +10,7 @@ cannot merge while relying on a release-only e2e surprise.
 
 | Surface | Trigger | Checks | E2E coverage | Purpose |
 | --- | --- | --- | --- | --- |
-| Local quick check | Maintainer decides | Avoid local e2e while the user is active; run only explicit lightweight checks if requested | None by default | Protect the user's running Obsidian app. |
+| Local quick check | Maintainer decides | Local e2e is blocked by `wdio-local-guard.mts`; run only explicit lightweight checks if requested | None | Protect the user's running Obsidian app. |
 | `CI` | Pull request and `main` push | `pnpm install --frozen-lockfile`, typecheck, lint, unit, full e2e | Full `pnpm run test:e2e` with `OBSIDIAN_VERSIONS=latest/latest` | Merge confidence for normal code changes; same behavioral gate as release preflight. |
 | `Release` | Strict semver tag, no `v` prefix | typecheck, lint, unit, full e2e, build, GitHub Release asset upload | Full `pnpm run test:e2e` with `OBSIDIAN_VERSIONS=latest/latest` | Hard release gate. A red e2e blocks publishing assets. |
 | `CI Xvfb POC` | Manual dispatch or changes to `.github/workflows/ci-xvfb-poc.yml` only | install Xvfb/Electron deps, install deps, build | One non-timing-sensitive spec: `board-basics.e2e.ts` | Proves hosted Linux + Xvfb can boot and drive Obsidian without becoming a PR/release gate. |
@@ -21,7 +21,7 @@ cannot merge while relying on a release-only e2e surprise.
   baseline for avoiding shared-vault interference in e2e.
 - Task #52 proved `ubuntu-latest` + Xvfb can boot Obsidian and drive a minimal
   WDIO spec. That POC remains intentionally narrow.
-- While the user is actively using Obsidian, agents should not run local WDIO.
+- Local WDIO is forbidden: `wdio.conf.mts` throws unless `GITHUB_ACTIONS=true`.
   Use GitHub Actions for e2e evidence.
 - PR/main CI and Release preflight intentionally run the same behavioral gate:
   typecheck, lint, unit, then full e2e.
