@@ -204,6 +204,41 @@ describe("US-724 saved views / custom filters", function () {
     expect(savedJson).toContain('"status":["todo","done"]');
   });
 
+  it("US-109e: clicking outside the filter popover closes it", async function () {
+    const today = todayISO();
+    await writeAndWait(
+      "Tasks/Inbox.md",
+      `- [ ] Fixture outside click target #outside-click ⏳ ${today}\n`,
+    );
+
+    await browser.executeObsidianCommand("task-center:open");
+    await forFlush();
+    await $('[data-saved-views]').waitForExist({ timeout: 5000 });
+
+    await $('[data-saved-view-filter="time-scheduled"]').click();
+    await $(".bt-date-popover").waitForExist({ timeout: 3000 });
+
+    const outsideClick = await browser.execute(() => {
+      const view = document.querySelector<HTMLElement>(".task-center-view");
+      const popover = document.querySelector<HTMLElement>(".bt-date-popover");
+      const body = document.querySelector<HTMLElement>(".task-center-view .bt-body");
+      if (!view || !popover || !body) return { clicked: false, insideToolbar: true };
+      const bodyRect = body.getBoundingClientRect();
+      const x = Math.floor(bodyRect.left + 12);
+      const y = Math.floor(bodyRect.top + 12);
+      const target = document.elementFromPoint(x, y) as HTMLElement | null;
+      const clickTarget = target?.closest(".bt-filter-popover") ? body : target ?? view;
+      clickTarget.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, composed: true, clientX: x, clientY: y }));
+      clickTarget.dispatchEvent(new MouseEvent("click", { bubbles: true, composed: true, clientX: x, clientY: y }));
+      return {
+        clicked: true,
+        insideToolbar: !!clickTarget.closest("[data-saved-views]"),
+      };
+    });
+    expect(outsideClick).toEqual({ clicked: true, insideToolbar: false });
+    await expect($(".bt-date-popover")).not.toExist();
+  });
+
   it("US-109c: updates the selected saved view instead of prompting for a new name", async function () {
     const today = todayISO();
     await writeAndWait(
