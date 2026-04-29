@@ -16,6 +16,7 @@
  */
 import { browser, expect, $ } from "@wdio/globals";
 import { obsidianPage } from "wdio-obsidian-service";
+import fs from "node:fs/promises";
 
 const VAULT = "test/e2e/vaults/simple";
 
@@ -296,6 +297,7 @@ describe("US-724 saved views / custom filters", function () {
       return { rowGap: Number.parseFloat(getComputedStyle(list).rowGap) || 0 };
     });
     expect(spacing.rowGap).toBeGreaterThanOrEqual(4);
+    await fs.writeFile("/tmp/task-center-tag-gap.png", Buffer.from(await browser.takeScreenshot(), "base64"));
 
     const options = await browser.execute(() =>
       Array.from(document.querySelectorAll("[data-tag-option]")).map((el) => ({
