@@ -673,6 +673,7 @@
 .task-center-view .bt-body {
   flex: 1 1 auto;
   overflow: auto;
+  overscroll-behavior: contain;
   padding: 6px 0;
 }
 
@@ -816,6 +817,8 @@
   padding: 6px 8px;
   font-size: 12px;
   cursor: grab;
+  touch-action: pan-y;
+  will-change: transform;
   transition: transform 0.08s ease, border-color 0.1s ease, background-color 0.1s ease;
 }
 .task-center-view .bt-card:hover {
@@ -831,10 +834,6 @@
 .task-center-view .bt-card.selected {
   outline: 2px solid var(--interactive-accent);
 }
-.task-center-view .bt-card.q1 { border-left-color: #e53935; }
-.task-center-view .bt-card.q2 { border-left-color: #43a047; }
-.task-center-view .bt-card.q3 { border-left-color: #fb8c00; }
-.task-center-view .bt-card.q4 { border-left-color: #757575; }
 .task-center-view .bt-card.bt-overdue {
   box-shadow: 0 0 0 1px var(--color-red) inset;
   background: color-mix(in srgb, var(--color-red) 6%, var(--background-primary));
@@ -1011,7 +1010,7 @@
   gap: 6px;
   color: var(--text-muted);
   font-size: 11px;
-  transition: all 0.15s ease;
+  transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease;
   height: 120px;
   position: sticky;
   top: 8px;

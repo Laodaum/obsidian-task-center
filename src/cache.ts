@@ -36,6 +36,7 @@ export class TaskCache {
   private readonly listeners = new Set<ChangedListener>();
   private allLoaded = false;
   private allLoadingPromise: Promise<ParsedTask[]> | null = null;
+  private _flatCache: ParsedTask[] | null = null;
 
   // Test / perf hooks (always live; documented in ARCHITECTURE.md §8.5).
   readonly __stats = {
@@ -163,6 +164,7 @@ export class TaskCache {
     }
     this.byPath.set(path, next);
     for (const t of next.tasks) this.addToHash(t);
+    this._flatCache = null;
   }
 
   private dropPath(path: string): void {
@@ -170,6 +172,7 @@ export class TaskCache {
     if (!prev) return;
     for (const t of prev.tasks) this.removeFromHash(t);
     this.byPath.delete(path);
+    this._flatCache = null;
     this.emit(new Set([path]));
   }
 
@@ -188,6 +191,7 @@ export class TaskCache {
     this.byPath.delete(oldPath);
     this.byPath.set(newPath, { ...prev, tasks: remapped });
     for (const t of remapped) this.addToHash(t);
+    this._flatCache = null;
     this.emit(new Set([oldPath, newPath]));
   }
 
@@ -263,6 +267,7 @@ export class TaskCache {
             tasks: [],
             hasTaskListItem: false,
           });
+          this._flatCache = null;
         }
         this.__stats.skipCount++;
         continue;
@@ -292,12 +297,14 @@ export class TaskCache {
   }
 
   flatten(): ParsedTask[] {
+    if (this._flatCache) return this._flatCache;
     const out: ParsedTask[] = [];
     const paths = Array.from(this.byPath.keys()).sort();
     for (const p of paths) {
       const e = this.byPath.get(p);
       if (e) out.push(...e.tasks);
     }
+    this._flatCache = out;
     return out;
   }
 
@@ -372,6 +379,7 @@ export class TaskCache {
     this.byPath.clear();
     this.byHash.clear();
     this.pending.clear();
+    this._flatCache = null;
     this.allLoaded = false;
     this.allLoadingPromise = null;
   }

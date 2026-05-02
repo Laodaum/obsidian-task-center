@@ -129,6 +129,8 @@ export class TaskCenterView extends ItemView {
   private refreshTimer: number | null = null;
   private cacheVersion = 0;
   private cacheUnsub: (() => void) | null = null;
+  /** Prebuilt id→task index for O(1) parent lookups. Rebuilt on each render(). */
+  private _taskIndex: Map<string, ParsedTask> = new Map();
   // Cross-tab drag dwell: hovering a card over a tab head for 600ms switches
   // tabs. UX.md §6.1 / ARCHITECTURE.md §11. One tracker for the whole view —
   // tab heads route their dragover events through `update()`.
@@ -421,6 +423,9 @@ export class TaskCenterView extends ItemView {
 
     el.empty();
     el.addClass("task-center-view");
+    // Prebuild id→task index for O(1) parent/child lookups (§7.3).
+    this._taskIndex = new Map();
+    for (const t of this.tasks) this._taskIndex.set(t.id, t);
     // Settings can change between renders; recomputing the layout attr is
     // cheap and keeps the data attribute in sync without a separate hook.
     this.applyMobileLayoutAttr();
@@ -602,7 +607,7 @@ export class TaskCenterView extends ItemView {
       // performance.now() (drift-free under main-thread stalls; UX.md §6.1).
       btn.addEventListener("dragover", (e) => {
         const dt = e.dataTransfer;
-        if (!dt || !Array.from(dt.types).includes("text/task-id")) return;
+        if (!dt || !dt.types.contains("text/task-id")) return;
         e.preventDefault();
         dt.dropEffect = "move";
         btn.addClass("drag-hover");
@@ -664,16 +669,23 @@ export class TaskCenterView extends ItemView {
     const search = bar.createEl("input", { type: "text", placeholder: tr("toolbar.filter") });
     search.addClass("bt-search");
     search.value = this.state.filter;
+    // §7.3: debounce search input to avoid full teardown+rebuild per keystroke
+    let searchTimer: number | null = null;
     search.addEventListener("input", () => {
-      this.state.filter = search.value;
+      const val = search.value;
       const caret = search.selectionStart;
-      this.render();
-      const el = this.contentEl.querySelector<HTMLInputElement>(".bt-search");
-      if (el) {
-        el.focus();
-        const pos = caret ?? el.value.length;
-        el.selectionStart = el.selectionEnd = pos;
-      }
+      if (searchTimer !== null) window.clearTimeout(searchTimer);
+      searchTimer = window.setTimeout(() => {
+        searchTimer = null;
+        this.state.filter = val;
+        this.render();
+        const el = this.contentEl.querySelector<HTMLInputElement>(".bt-search");
+        if (el) {
+          el.focus();
+          const pos = caret ?? el.value.length;
+          el.selectionStart = el.selectionEnd = pos;
+        }
+      }, 150);
     });
 
     if (isMobileMode()) {
@@ -1358,9 +1370,7 @@ export class TaskCenterView extends ItemView {
         return parent ? this.hasIndependentDateFromParent(t, parent) : true;
       }
       // Parent lives in another day column (has its own ⏳).
-      const parent = this.tasks.find(
-        (x) => x.path === t.path && x.line === t.parentLine,
-      );
+      const parent = this._taskIndex.get(parentId);
       if (parent && parent.scheduled) {
         // Only hide when the child rides with the parent — no independent
         // ⏳, or matching ⏳ (which is already covered by the parent card).
@@ -1380,9 +1390,7 @@ export class TaskCenterView extends ItemView {
 
   private findParentTask(t: ParsedTask): ParsedTask | undefined {
     if (t.parentLine === null) return undefined;
-    return this.tasks.find(
-      (x) => x.path === t.path && x.line === t.parentLine,
-    );
+    return this._taskIndex.get(`${t.path}:L${t.parentLine + 1}`);
   }
 
   // ---------- Month ----------
@@ -1801,7 +1809,7 @@ export class TaskCenterView extends ItemView {
   private wireTrashDropTarget(el: HTMLElement) {
     el.addEventListener("dragover", (e) => {
       const dt = e.dataTransfer;
-      if (!dt || !Array.from(dt.types).includes("text/task-id")) return;
+      if (!dt || !dt.types.contains("text/task-id")) return;
       e.preventDefault();
       dt.dropEffect = "move";
       el.addClass("drop-hover");
@@ -2030,9 +2038,6 @@ export class TaskCenterView extends ItemView {
     card.dataset.taskId = t.id;
     if (this.contentEl.dataset.mobileLayout !== "true") card.draggable = true;
     if (this.state.selectedTaskId === t.id) card.addClass("selected");
-
-    const quad = this.quadrantClass(t.tags);
-    if (quad) card.addClass(quad);
 
     // US-115: deadline 已过 → red (`bt-overdue`); 3 days or fewer → yellow
     // (`bt-near-deadline`). Both a CSS hook AND a data attribute so e2e
@@ -2322,7 +2327,7 @@ export class TaskCenterView extends ItemView {
       const line = queue.shift()!;
       if (seen.has(line)) continue;
       seen.add(line);
-      const child = this.tasks.find((t) => t.path === c.path && t.line === line);
+      const child = this._taskIndex.get(`${c.path}:L${line + 1}`);
       if (child) {
         count++;
         queue.push(...child.childrenLines);
@@ -2349,9 +2354,7 @@ export class TaskCenterView extends ItemView {
       for (const line of parent.childrenLines) {
         if (seen.has(line)) continue;
         seen.add(line);
-        const child = this.tasks.find(
-          (t) => t.path === parent.path && t.line === line,
-        );
+        const child = this._taskIndex.get(`${parent.path}:L${line + 1}`);
         if (!child) continue;
         rows.push({ task: child, depth });
         walk(child, depth + 1);
@@ -2428,7 +2431,7 @@ export class TaskCenterView extends ItemView {
     if (acceptNestDrop) {
       el.addEventListener("dragover", (e) => {
         const dt = e.dataTransfer;
-        if (!dt || !Array.from(dt.types).includes("text/task-id")) return;
+        if (!dt || !dt.types.contains("text/task-id")) return;
         if (el.classList.contains("dragging")) return; // self
         e.preventDefault();
         e.stopPropagation();
@@ -2500,7 +2503,7 @@ export class TaskCenterView extends ItemView {
   private makeDropZone(el: HTMLElement, targetDate: string | null) {
     el.addEventListener("dragover", (e) => {
       const dt = e.dataTransfer;
-      if (!dt || !Array.from(dt.types).includes("text/task-id")) return;
+      if (!dt || !dt.types.contains("text/task-id")) return;
       e.preventDefault();
       dt.dropEffect = "move";
       el.addClass("drop-hover");
@@ -2572,10 +2575,6 @@ export class TaskCenterView extends ItemView {
       if (token && !taskMatchesTimeFilter(task, field, token, this.plugin.settings.weekStartsOn)) return false;
     }
     return true;
-  }
-
-  private quadrantClass(_tags: string[]): string | null {
-    return null;
   }
 
   private collectTagOptions(): Array<{ tag: string; count: number }> {

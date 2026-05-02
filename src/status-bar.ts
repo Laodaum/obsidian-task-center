@@ -44,9 +44,14 @@ export class StatusBar {
   refresh(): void {
     const all = this.cache.flatten();
     const today = todayISO();
-    const todo = all.filter(activeTodo);
-    const todayCount = todo.filter((t) => t.scheduled === today).length;
-    const overdue = todo.filter((t) => t.deadline && t.deadline < today).length;
+    // §7.3: single-pass to avoid 3 intermediate array allocations
+    let todayCount = 0;
+    let overdue = 0;
+    for (const t of all) {
+      if (t.status !== "todo" || t.inheritsTerminal || t.title.trim() === "") continue;
+      if (t.scheduled === today) todayCount++;
+      if (t.deadline && t.deadline < today) overdue++;
+    }
     // task #43: route status text + tooltip through tr() so a Chinese
     // Obsidian session shows Chinese strings instead of the EN literals.
     const parts = [tr("status.today", { n: todayCount })];

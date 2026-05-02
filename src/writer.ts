@@ -49,46 +49,6 @@ export function parseTaskId(id: string): { path: string; line?: number; hash?: s
   return { path: id };
 }
 
-// US-208: resolve `path:Lnnn` first, fall back to title-hash lookup so a
-//          ref keeps working after the file's lines shift.
-// US-214: ambiguous hash → throw `ambiguous_slug` with the candidate list
-//          so the caller can disambiguate; never silently pick one.
-// see USER_STORIES.md
-export function resolveTaskRef(
-  app: App,
-  id: string,
-  allTasks: ParsedTask[],
-): ParsedTask | null {
-  const parsed = parseTaskId(id);
-  if (parsed.hash) {
-    const matches = allTasks.filter((t) => t.hash === parsed.hash);
-    if (matches.length === 0) return null;
-    if (matches.length > 1) {
-      throw new TaskWriterError(
-        "ambiguous_slug",
-        `hash ${parsed.hash} matches ${matches.length} tasks: ${matches.map((t) => t.id).join(", ")}`,
-      );
-    }
-    return matches[0];
-  }
-  if (parsed.path && parsed.line !== undefined) {
-    const direct = allTasks.find(
-      (t) => t.path === parsed.path && t.line === parsed.line,
-    );
-    if (direct) return direct;
-    // fallback: try same path, closest line, but require a task line present
-    const file = app.vault.getAbstractFileByPath(parsed.path);
-    if (!file || !(file instanceof TFile)) {
-      throw new TaskWriterError("task_not_found", `file not found: ${parsed.path}`);
-    }
-    throw new TaskWriterError(
-      "task_not_found",
-      `${parsed.path}:L${parsed.line + 1} is not a task line. Use \`task-center list\` to find valid refs.`,
-    );
-  }
-  return null;
-}
-
 // Reparse one line to compute the updated ParsedTask
 // Inject or replace an emoji+date field (⏳ / 📅 / ✅ / 🛫 / ❌ / ➕).
 // Removes all occurrences (defensively — duplicates shouldn't exist but can
