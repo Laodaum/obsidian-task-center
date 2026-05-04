@@ -38,6 +38,9 @@ import type { FilterPopoverKey, TabKey, ViewState } from "./view/state";
 import { taskDisplayTags } from "./tags";
 import { formatDateFilterLabel } from "./date-filter";
 import { taskMatchesTimeToken, timeTokenAppliesToField } from "./time-filter";
+import { deriveEffectiveTasks } from "./task-tree";
+import { applyQueryFilters } from "./query/filter";
+import { applyViewProjection } from "./query/projection";
 import {
   applyQueryPresetFilters,
   builtinSavedViewId,
@@ -506,6 +509,9 @@ export class TaskCenterView extends ItemView {
         case "month":
           this.renderMonth(body);
           this.renderUnscheduledPool(body);
+          break;
+        case "matrix":
+          this.renderMatrix(body);
           break;
         case "completed":
           this.renderCompleted(body);
@@ -1137,6 +1143,7 @@ export class TaskCenterView extends ItemView {
     if (normalized.id === builtinSavedViewId("month")) return "month";
     if (normalized.id === builtinSavedViewId("completed")) return "completed";
     if (normalized.id === builtinSavedViewId("unscheduled")) return "unscheduled";
+    if (normalized.view?.type === "matrix") return "matrix";
     return normalized.view?.type === "list" ? "list" : this.tabForSavedView(normalized, "list");
   }
 
@@ -3080,6 +3087,114 @@ export class TaskCenterView extends ItemView {
     });
   }
 
+  /**
+   * Matrix view rendering (US-103 / UX §6.5).
+   *
+   * Projects the filtered EffectiveTask[] through applyViewProjection with
+   * a matrix view config, then renders a 2D grid of X-axis columns × Y-axis
+   * rows. Each cell shows tasks matching both axis bucket conditions.
+   * Unmatched tasks appear in a separate section below the grid.
+   *
+   * Uses the unified projection pipeline (EffectiveTask → filters → projection)
+   * as required by VAL-CORE-008 and ARCHITECTURE.md §4.3.
+   */
+  private renderMatrix(parent: HTMLElement): void {
+    const active = this.activeSavedView();
+    const view = active.view;
+    const mx = view?.matrix;
+    if (!mx) {
+      parent.createDiv({
+        text: tr("matrix.noConfig"),
+        cls: "bt-empty",
+      });
+      return;
+    }
+
+    // ── Projection pipeline ──
+    const effectiveTasks = deriveEffectiveTasks(this.tasks);
+    const weekStartsOn = this.plugin.settings.weekStartsOn;
+    const filtered = Object.keys(active.filters).length > 0
+      ? applyQueryFilters(effectiveTasks, active.filters, weekStartsOn)
+      : effectiveTasks;
+    const viewModel = applyViewProjection(filtered, view, weekStartsOn, this.state.anchorISO);
+
+    if (viewModel.type !== "matrix") {
+      parent.createDiv({ text: tr("matrix.noConfig"), cls: "bt-empty" });
+      return;
+    }
+
+    const wrapper = parent.createDiv({ cls: "bt-matrix" });
+    wrapper.dataset.view = "matrix";
+
+    if (viewModel.cells.length === 0 && viewModel.unmatched.length === 0) {
+      if (this.hasActiveFilters()) {
+        this.renderFilterEmptyState(wrapper);
+      } else {
+        wrapper.createDiv({ text: tr("matrix.empty"), cls: "bt-matrix-empty" });
+      }
+      return;
+    }
+
+    // ── Header row: X-axis column titles ──
+    if (viewModel.xAxis.buckets.length > 0) {
+      const headerRow = wrapper.createDiv({ cls: "bt-matrix-header" });
+      // Corner cell
+      headerRow.createDiv({ cls: "bt-matrix-corner", text: viewModel.yAxis.title || viewModel.xAxis.title });
+      for (const col of viewModel.xAxis.buckets) {
+        headerRow.createDiv({ cls: "bt-matrix-col-head", text: col.title });
+      }
+    }
+
+    // ── Grid rows: Y-axis buckets × X-axis buckets ──
+    // Group cells by rowId to render one row per Y-axis bucket
+    const grid = wrapper.createDiv({ cls: "bt-matrix-grid" });
+    const rowMap = new Map<string, typeof viewModel.cells>();
+    for (const cell of viewModel.cells) {
+      const row = rowMap.get(cell.rowId);
+      if (row) row.push(cell);
+      else rowMap.set(cell.rowId, [cell]);
+    }
+
+    for (const [_rowId, rowCells] of rowMap) {
+      const rowEl = grid.createDiv({ cls: "bt-matrix-row" });
+      // Row label (Y-axis bucket title)
+      rowEl.createDiv({ cls: "bt-matrix-row-label", text: rowCells[0]?.rowTitle ?? "" });
+
+      // Row cells (one per X-axis bucket)
+      for (const cell of rowCells) {
+        const cellEl = rowEl.createDiv({ cls: "bt-matrix-cell" });
+        cellEl.dataset.matrixRow = cell.rowId;
+        cellEl.dataset.matrixCol = cell.colId;
+
+        if (cell.tasks.length === 0) {
+          cellEl.addClass("bt-matrix-cell-empty");
+        } else {
+          const cellList = cellEl.createDiv({ cls: "bt-matrix-cell-list" });
+          for (const task of cell.tasks) {
+            this.renderCard(cellList, task);
+          }
+        }
+      }
+    }
+
+    // ── Unmatched tasks ──
+    if (viewModel.unmatched.length > 0) {
+      const unmatchedSection = wrapper.createDiv({ cls: "bt-matrix-unmatched" });
+      const unmatchedHead = unmatchedSection.createDiv({ cls: "bt-matrix-unmatched-head" });
+      unmatchedHead.createSpan({
+        text: tr("matrix.unmatched"),
+        cls: "bt-matrix-unmatched-label",
+      });
+      unmatchedHead.createSpan({
+        text: `(${viewModel.unmatched.length})`,
+        cls: "bt-matrix-unmatched-count",
+      });
+      for (const task of viewModel.unmatched) {
+        this.renderCard(unmatchedSection, task);
+      }
+    }
+  }
+
   private renderList(parent: HTMLElement): void {
     const active = this.activeSavedView();
     const filter = this.getTextFilter();
@@ -4037,6 +4152,7 @@ export class TaskCenterView extends ItemView {
     const config = normalizeQueryPreset(view).view;
     if (config?.type === "week") return "week";
     if (config?.type === "month") return "month";
+    if (config?.type === "matrix") return "matrix";
     if (config?.preset === "completed") return "completed";
     if (config?.preset === "unscheduled") return "unscheduled";
     if (config?.preset === "today") return "today";

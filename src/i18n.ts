@@ -367,6 +367,9 @@ const EN = {
   "sourceEdit.saved": "Saved",
   "sourceEdit.unsaved": "Unsaved",
   "sourceEdit.nativeFailed": "Could not open Obsidian's native editor.",
+  "matrix.noConfig": "Matrix view requires x/y axis configuration. Edit Query to set up axes.",
+  "matrix.empty": "No tasks match the matrix conditions.",
+  "matrix.unmatched": "Unmatched",
 };
 
 const ZH: Partial<typeof EN> = {
@@ -676,6 +679,9 @@ const ZH: Partial<typeof EN> = {
   "sourceEdit.saved": "已保存",
   "sourceEdit.unsaved": "未保存",
   "sourceEdit.nativeFailed": "无法打开 Obsidian 原生编辑器。",
+  "matrix.noConfig": "矩阵视图需要配置 x/y 轴。请编辑 Query 来设置轴。",
+  "matrix.empty": "没有任务匹配矩阵条件。",
+  "matrix.unmatched": "未匹配",
 };
 
 // US-408: re-detect locale on every `t()` call so that flipping the

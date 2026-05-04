@@ -82,7 +82,7 @@ export interface TaskCenterSettings {
   // left off. Read in `TaskCenterView.constructor`'s ViewState init,
   // written in `setTab`.
   // see USER_STORIES.md
-  lastTab: "today" | "week" | "month" | "completed" | "unscheduled" | null;
+  lastTab: "today" | "week" | "month" | "completed" | "unscheduled" | "list" | "matrix" | null;
   lastSavedViewId: string | null;
   // US-510: platform-conditional UI strings — shortcut hints / mouse
   // descriptions are branched per platform (desktop hint vs mobile hint),

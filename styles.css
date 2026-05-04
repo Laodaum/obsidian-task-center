@@ -989,6 +989,111 @@
   color: var(--text-muted);
 }
 
+/* Matrix View (US-103) */
+.task-center-view .bt-matrix {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow: auto;
+}
+.task-center-view .bt-matrix-header {
+  display: flex;
+  gap: 0;
+  border-bottom: 2px solid var(--background-modifier-border);
+  padding-bottom: 4px;
+}
+.task-center-view .bt-matrix-corner {
+  flex: 0 0 120px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-align: right;
+  padding-right: 8px;
+}
+.task-center-view .bt-matrix-col-head {
+  flex: 1;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-align: center;
+  min-width: 100px;
+}
+.task-center-view .bt-matrix-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.task-center-view .bt-matrix-row {
+  display: flex;
+  gap: 2px;
+  align-items: stretch;
+}
+.task-center-view .bt-matrix-row-label {
+  flex: 0 0 120px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-align: right;
+  padding: 4px 8px 4px 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+.task-center-view .bt-matrix-cell {
+  flex: 1;
+  min-width: 100px;
+  min-height: 48px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  padding: 4px;
+  background: var(--background-primary);
+}
+.task-center-view .bt-matrix-cell-empty {
+  background: var(--background-secondary);
+  border-style: dashed;
+}
+.task-center-view .bt-matrix-cell-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.task-center-view .bt-matrix-cell-list .bt-card {
+  font-size: 11px;
+  padding: 3px 5px;
+}
+.task-center-view .bt-matrix-cell-list .bt-card .bt-card-tags {
+  display: none;
+}
+.task-center-view .bt-matrix-cell-list .bt-card .bt-card-meta {
+  display: none;
+}
+.task-center-view .bt-matrix-unmatched {
+  border-top: 2px solid var(--background-modifier-border);
+  padding-top: 8px;
+  margin-top: 8px;
+}
+.task-center-view .bt-matrix-unmatched-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+.task-center-view .bt-matrix-unmatched-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.task-center-view .bt-matrix-unmatched-count {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+.task-center-view .bt-matrix-empty {
+  font-size: 13px;
+  color: var(--text-muted);
+  text-align: center;
+  padding: 24px;
+}
+
 /* Cards */
 .task-center-view .bt-card {
   background: var(--background-primary);
