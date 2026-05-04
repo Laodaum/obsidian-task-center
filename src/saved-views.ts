@@ -1424,3 +1424,111 @@ export async function executeDeleteQueryPresetFlow(
     undoNotice,
   };
 }
+
+// ── Query Editor production-path helpers ──
+
+/**
+ * Parameters for computing a QueryPreset snapshot that merges tabDrafts
+ * into the saved preset identity.
+ */
+export interface ComputeQueryPresetSnapshotParams {
+  /** The saved/existing preset (may be null for new drafts). */
+  existing?: QueryPreset | null;
+  /** The tabDrafts map (real Map<string, QueryPreset>). */
+  tabDrafts: ReadonlyMap<string, QueryPreset>;
+  /** Current search filter text. */
+  filterSearch: string;
+  /** Current tag filter string (comma-separated). */
+  filterTags: string;
+  /** Current time filters. */
+  filterTime: SavedViewTimeFilters;
+  /** Current status filter. */
+  filterStatus: SavedViewStatus;
+  /** Fallback view config when neither draft nor saved provides one. */
+  fallbackView: () => QueryPresetViewConfig;
+  /** Fallback summary when neither draft nor saved provides one. */
+  fallbackSummary: () => QueryPresetSummaryMetric[];
+  /** Optional override for the snapshot name. */
+  name?: string;
+}
+
+/**
+ * Pure computation of a QueryPreset snapshot that merges tabDrafts
+ * view/summary into the saved preset identity.  This is the testable
+ * counterpart of `TaskCenterView.currentQuerySnapshot`.
+ *
+ * Draft view/summary win over saved view/summary.  Explicit empty draft
+ * arrays ([]) win over saved arrays — they are not falsy.  All other
+ * fields come from the explicit state parameters plus the saved preset
+ * identity (id, name, builtin, hidden).
+ */
+export function computeQueryPresetSnapshot(params: ComputeQueryPresetSnapshotParams): QueryPreset {
+  const {
+    existing,
+    tabDrafts,
+    filterSearch,
+    filterTags,
+    filterTime,
+    filterStatus,
+    fallbackView,
+    fallbackSummary,
+    name,
+  } = params;
+
+  const tagArray = filterTags ? filterTags.split(",").filter(Boolean) : undefined;
+  const tabDraft = existing ? tabDrafts.get(existing.id) : undefined;
+
+  return normalizeQueryPreset({
+    id: existing?.id ?? `draft-list`,
+    name: (name ?? existing?.name ?? "").trim(),
+    builtin: existing?.builtin ?? false,
+    hidden: existing?.hidden ?? false,
+    filters: {
+      ...(filterSearch ? { search: filterSearch } : {}),
+      ...(tagArray && tagArray.length > 0 ? { tags: tagArray } : {}),
+      time: filterTime,
+      status: filterStatus,
+    },
+    view: tabDraft?.view ?? existing?.view ?? fallbackView(),
+    summary: tabDraft?.summary ?? existing?.summary ?? fallbackSummary(),
+  });
+}
+
+/**
+ * Applies a partial edit to the summary metric at index `i`, returning a
+ * new summary array.  Used by the Query Editor visual controls "edit"
+ * path (changing field/by/limit etc. on an existing metric).
+ */
+export function applySummaryMetricEdit(
+  summary: readonly QueryPresetSummaryMetric[],
+  i: number,
+  patch: Partial<QueryPresetSummaryMetric>,
+): QueryPresetSummaryMetric[] {
+  const next = [...summary];
+  if (i >= 0 && i < next.length) {
+    next[i] = { ...next[i], ...patch };
+  }
+  return next;
+}
+
+/**
+ * Removes the summary metric at index `i`, returning a new summary array.
+ * Used by the Query Editor "remove" button path.
+ */
+export function applySummaryMetricRemove(
+  summary: readonly QueryPresetSummaryMetric[],
+  i: number,
+): QueryPresetSummaryMetric[] {
+  return summary.filter((_, idx) => idx !== i);
+}
+
+/**
+ * Appends a new summary metric to the end of the array, returning a new
+ * summary array.  Used by the Query Editor "add" button path.
+ */
+export function applySummaryMetricAdd(
+  summary: readonly QueryPresetSummaryMetric[],
+  metric: QueryPresetSummaryMetric,
+): QueryPresetSummaryMetric[] {
+  return [...summary, metric];
+}

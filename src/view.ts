@@ -41,6 +41,7 @@ import { taskMatchesTimeToken, timeTokenAppliesToField } from "./time-filter";
 import {
   applyQueryPresetFilters,
   builtinSavedViewId,
+  computeQueryPresetSnapshot,
   executeDeleteQueryPresetFlow,
   executeQueryPresetDeleteUndo,
   restoreBuiltinQueryPresetById,
@@ -3926,25 +3927,16 @@ export class TaskCenterView extends ItemView {
   }
 
   private currentQuerySnapshot(existing?: QueryPreset | null, name?: string): QueryPreset {
-    const tagStr = this.state.savedViewTag;
-    const tagArray = tagStr ? tagStr.split(",").filter(Boolean) : undefined;
-    const tabDraft = existing ? this.tabDrafts.get(existing.id) : undefined;
-    // Merge tabDrafts view/summary into the snapshot so visual edits are
-    // visible to dirty checks, save-as, and update paths.  Identity fields
-    // (id/name/builtin/hidden) come from the saved existing preset.
-    return normalizeQueryPreset({
-      id: existing?.id ?? `draft-${this.state.tab}`,
-      name: (name ?? existing?.name ?? this.suggestSavedViewName()).trim(),
-      builtin: existing?.builtin ?? false,
-      hidden: existing?.hidden ?? false,
-      filters: {
-        ...(this.state.filter ? { search: this.state.filter } : {}),
-        ...(tagArray && tagArray.length > 0 ? { tags: tagArray } : {}),
-        time: this.state.savedViewTime,
-        status: this.state.savedViewStatus,
-      },
-      view: tabDraft?.view ?? existing?.view ?? this.currentQueryPresetViewConfig(),
-      summary: tabDraft?.summary ?? existing?.summary ?? this.currentSavedViewSummary(),
+    return computeQueryPresetSnapshot({
+      existing,
+      tabDrafts: this.tabDrafts,
+      filterSearch: this.state.filter,
+      filterTags: this.state.savedViewTag,
+      filterTime: this.state.savedViewTime,
+      filterStatus: this.state.savedViewStatus,
+      fallbackView: () => this.currentQueryPresetViewConfig(),
+      fallbackSummary: () => this.currentSavedViewSummary(),
+      name: name ?? (existing ? undefined : this.suggestSavedViewName()),
     });
   }
 
