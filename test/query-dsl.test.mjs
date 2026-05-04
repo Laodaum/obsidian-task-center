@@ -578,6 +578,139 @@ test("VAL-CORE-006: invalid DSL parse error does not produce a mutated preset", 
   }, /解析失败/);
 });
 
+// ── VAL-CORE-005 / VAL-CROSS-002: parseQueryDsl rejects legacy flat DSL ──
+
+test("VAL-CROSS-002: parseQueryDsl rejects legacy flat SavedTaskView DSL", () => {
+  const legacyJson = JSON.stringify({
+    name: "Legacy View",
+    search: "docs",
+    tag: "#work",
+    time: { scheduled: "today" },
+    status: "todo",
+    view: { type: "list" },
+  });
+  assert.throws(
+    () => { parseQueryDsl(legacyJson); },
+    /旧版 SavedTaskView 扁平格式/,
+    "Legacy flat search/tag/time/status DSL must throw",
+  );
+});
+
+test("VAL-CROSS-002: parseQueryDsl rejects legacy with only search", () => {
+  const legacyJson = JSON.stringify({
+    name: "Search Only",
+    search: "focus",
+    view: { type: "list" },
+  });
+  assert.throws(
+    () => { parseQueryDsl(legacyJson); },
+    /旧版 SavedTaskView 扁平格式/,
+  );
+});
+
+test("VAL-CROSS-002: parseQueryDsl rejects legacy with only status", () => {
+  const legacyJson = JSON.stringify({
+    name: "Status Only",
+    status: "todo",
+    view: { type: "list" },
+  });
+  assert.throws(
+    () => { parseQueryDsl(legacyJson); },
+    /旧版 SavedTaskView 扁平格式/,
+  );
+});
+
+test("VAL-CROSS-002: parseQueryDsl rejects legacy wrapped in query key", () => {
+  const wrappedLegacy = JSON.stringify({
+    query: {
+      name: "Wrapped Legacy",
+      search: "docs",
+      status: "todo",
+      view: { type: "list" },
+    },
+  });
+  assert.throws(
+    () => { parseQueryDsl(wrappedLegacy); },
+    /旧版 SavedTaskView 扁平格式/,
+    'Legacy shape inside {"query": {...}} wrapper must also be rejected',
+  );
+});
+
+test("VAL-CROSS-002: parseQueryDsl accepts valid QueryPreset with nested filters", () => {
+  const validJson = JSON.stringify({
+    name: "Modern Query",
+    filters: { search: "docs", tags: ["#work"], status: ["todo"] },
+    view: { type: "week" },
+    summary: [{ type: "count" }],
+  });
+  const preset = parseQueryDsl(validJson);
+  assert.equal(preset.name, "Modern Query");
+  assert.equal(preset.filters.search, "docs");
+  assert.deepEqual(preset.filters.tags, ["#work"]);
+  assert.equal(preset.view.type, "week");
+});
+
+test("VAL-CROSS-002: parseQueryDsl accepts valid QueryPreset in query wrapper", () => {
+  const wrappedJson = JSON.stringify({
+    query: {
+      name: "Wrapped Query",
+      filters: { status: ["done"] },
+      view: { type: "list" },
+      summary: [],
+    },
+  });
+  const preset = parseQueryDsl(wrappedJson);
+  assert.equal(preset.name, "Wrapped Query");
+  assert.deepEqual(preset.filters.status, ["done"]);
+});
+
+// ── VAL-CORE-006: parseQueryDsl validates after normalize ──
+
+test("VAL-CORE-006: parseQueryDsl rejects invalid view type after parse", () => {
+  const badJson = JSON.stringify({
+    name: "Bad View",
+    filters: {},
+    view: { type: "gantt" },
+    summary: [],
+  });
+  assert.throws(
+    () => { parseQueryDsl(badJson); },
+    /view.*unknown_view_type/,
+    "parseQueryDsl must call validateQueryPreset and surface view errors",
+  );
+});
+
+test("VAL-CORE-006: parseQueryDsl rejects invalid summary type after parse", () => {
+  const badJson = JSON.stringify({
+    name: "Bad Summary",
+    filters: {},
+    view: { type: "list" },
+    summary: [{ type: "bad_metric" }],
+  });
+  assert.throws(
+    () => { parseQueryDsl(badJson); },
+    /\[summary\].*invalid_metric_type/,
+    "parseQueryDsl must call validateQueryPreset and surface summary errors",
+  );
+});
+
+test("VAL-CORE-006: parseQueryDsl collects multiple section errors in message", () => {
+  const badJson = JSON.stringify({
+    name: "Multi Bad",
+    filters: { tags: 42 },
+    view: { type: "gantt" },
+    summary: [{ type: "bad" }],
+  });
+  assert.throws(
+    () => { parseQueryDsl(badJson); },
+    (err) => {
+      const msg = err.message;
+      return /\[filters\]/.test(msg) && /\[view\]/.test(msg) && /\[summary\]/.test(msg);
+    },
+    "All three sections should appear in error message",
+  );
+});
+
 test("VAL-CORE-006: validateQueryPreset on invalid preset does not mutate the input", () => {
   const input = {
     name: "Immutable",

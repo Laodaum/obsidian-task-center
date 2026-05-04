@@ -823,7 +823,7 @@ export function validateQueryPreset(raw: unknown): QueryPresetValidationResult {
  * `search` / `tag` / `time` / `status` rather than nested `filters`).
  * VAL-CORE-005 / VAL-CROSS-002: these are rejected during settings load.
  */
-export function isLegacySavedTaskView(obj: unknown): obj is Record<string, unknown> {
+export function isLegacySavedTaskView(obj: unknown): boolean {
   if (!isRecord(obj)) return false;
   // A QueryPreset has `filters` as a nested object. Legacy SavedTaskView
   // has flat `search` / `tag` / `time` / `status` at top level.
@@ -900,10 +900,31 @@ export function parseQueryDsl(
 ): QueryPreset {
   const raw = parseDslRoot(text);
   const base = "query" in raw && isRecord(raw.query) ? raw.query : raw;
+
+  // VAL-CORE-005 / VAL-CROSS-002: reject legacy SavedTaskView flat DSL
+  // (top-level search/tag/time/status without nested filters).
+  if (isLegacySavedTaskView(base)) {
+    throw new Error(
+      "无效 Query DSL：检测到旧版 SavedTaskView 扁平格式（顶层 search/tag/time/status）。请改用嵌套 filters 对象。",
+    );
+  }
+
   const name = stringOrFallback(base.name, existing.name ?? "");
   if (!name.trim()) {
     throw new Error("DSL 缺少 name。");
   }
+
+  // VAL-CORE-006: validate raw input BEFORE normalization so invalid
+  // values (e.g. unknown view type, bad tags, bad summary) are caught
+  // rather than silently coerced to defaults.
+  const validation = validateQueryPreset(base);
+  if (!validation.valid) {
+    const details = validation.errors
+      .map((e) => `[${e.section}] ${e.code}: ${e.message}`)
+      .join("；");
+    throw new Error(`Query DSL 校验失败：${details}`);
+  }
+
   return normalizeQueryPreset({
     id: stringOrFallback(base.id, existing.id ?? defaultSavedViewId()),
     name,

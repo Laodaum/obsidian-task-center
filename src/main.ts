@@ -864,7 +864,16 @@ export default class TaskCenterPlugin extends Plugin {
 
   private async cliQuerySave(args: CliArgs): Promise<string> {
     const dsl = requireArg(args.dsl, "dsl");
-    const parsed = parseQueryDsl(dsl);
+    // VAL-CORE-005 / VAL-CORE-006 / VAL-CROSS-002: shared parse+validate
+    // rejects legacy flat SavedTaskView DSL and invalid structures. Error is
+    // surfaced as `invalid_query` so agents can match the stable code.
+    let parsed: QueryPreset;
+    try {
+      parsed = parseQueryDsl(dsl);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      throw new TaskWriterError("invalid_query", message);
+    }
     const created = normalizeQueryPreset({
       ...parsed,
       id: createSavedViewId(),
@@ -880,7 +889,16 @@ export default class TaskCenterPlugin extends Plugin {
   private async cliQueryUpdate(args: CliArgs): Promise<string> {
     const id = requireArg(args.id, "id");
     const existing = this.requireQueryPreset(id);
-    const parsed = parseQueryDsl(requireArg(args.dsl, "dsl"), existing);
+    // VAL-CORE-005 / VAL-CORE-006 / VAL-CROSS-002: validate before any mutation.
+    // Invalid DSL (including legacy flat shape) leaves the existing preset
+    // completely unchanged — we throw before touching settings.
+    let parsed: QueryPreset;
+    try {
+      parsed = parseQueryDsl(requireArg(args.dsl, "dsl"), existing);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      throw new TaskWriterError("invalid_query", message);
+    }
     const normalized = normalizeQueryPreset({
       ...parsed,
       id: existing.id,
