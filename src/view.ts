@@ -593,7 +593,8 @@ export class TaskCenterView extends ItemView {
     // VAL-GUI-005: when there are more than MAX_VISIBLE_TABS, overflow
     // tabs go into a "更多" button. Overflow tabs retain order, badges,
     // default behavior, and keyboard shortcuts.
-    const MAX_VISIBLE_TABS = 7;
+    // Keyboard shortcuts ⌃1–⌃9 map to the first 9 visible tabs.
+    const MAX_VISIBLE_TABS = 9;
     const visibleTabs = tabs.slice(0, MAX_VISIBLE_TABS);
     const overflowTabs = tabs.slice(MAX_VISIBLE_TABS);
 
@@ -601,21 +602,34 @@ export class TaskCenterView extends ItemView {
       this.renderTabButton(bar, view, index);
     }
 
-    // Overflow "更多" button
+    // Overflow "更多" button — first-class tab metadata
     if (overflowTabs.length > 0) {
       const moreBtn = bar.createDiv({ cls: "bt-tab bt-tab-more" });
+      // data-tab-id anchors this as a first-class entry for e2e selectors
+      moreBtn.dataset.queryTabId = "__overflow__";
+      moreBtn.dataset.tabId = "__overflow__";
+      // Aggregate metadata: show dirty/default if ANY overflow tab carries it
+      if (overflowTabs.some((v) => this.isSavedViewDirty(v))) {
+        moreBtn.dataset.queryTabDirty = "true";
+      }
+      if (overflowTabs.some((v) => this.plugin.settings.defaultSavedViewId === v.id)) {
+        moreBtn.dataset.queryTabDefault = "true";
+      }
       const label = moreBtn.createDiv({ cls: "bt-tab-label" });
       label.createSpan({ text: tr("savedViews.tabMore"), cls: "bt-tab-name" });
+      if (overflowTabs.some((v) => this.isSavedViewDirty(v))) {
+        label.createSpan({ text: "•", cls: "bt-tab-dirty-dot" });
+      }
       // Show total count of overflow tabs plus their badges
       const overflowCount = overflowTabs.reduce((sum, v) => sum + this.countForSavedView(v), 0);
       if (overflowCount > 0) {
         moreBtn.createSpan({ text: String(overflowCount), cls: "bt-tab-count" });
       }
       moreBtn.title = overflowTabs.map((v) => v.name).join(", ");
-      moreBtn.addEventListener("click", () => this.openOverflowTabsMenu(moreBtn, overflowTabs));
+      moreBtn.addEventListener("click", () => this.openOverflowTabsSheet(overflowTabs));
       moreBtn.addEventListener("contextmenu", (event) => {
         event.preventDefault();
-        this.openOverflowTabsMenu(event.target as HTMLElement, overflowTabs);
+        this.openOverflowTabsSheet(overflowTabs);
       });
     }
   }
@@ -669,29 +683,97 @@ export class TaskCenterView extends ItemView {
     });
   }
 
-  private openOverflowTabsMenu(anchor: HTMLElement, overflowTabs: QueryPreset[]): void {
-    const menu = new Menu();
-    for (const [index, view] of overflowTabs.entries()) {
-      const badge = this.savedViewBadges(view);
+  /**
+   * VAL-GUI-005: overflow tabs are first-class Query Tabs rendered in a sheet.
+   * Each entry carries data-tab-id, badge/dirty/default metadata, and full
+   * management actions (rename, copy, set default, move, hide, delete).
+   */
+  private openOverflowTabsSheet(overflowTabs: QueryPreset[]): void {
+    const sheet = new BottomSheet(this.app, {
+      title: tr("savedViews.tabMore"),
+      populate: (el) => {
+        const body = el.createDiv({ cls: "bt-overflow-tabs-sheet" });
+        this.renderOverflowTabEntries(body, overflowTabs, () => sheet.close());
+      },
+    });
+    sheet.open();
+  }
+
+  private renderOverflowTabEntries(
+    parent: HTMLElement,
+    overflowTabs: QueryPreset[],
+    closeSheet: () => void,
+  ): void {
+    for (const view of overflowTabs) {
+      const row = parent.createDiv({ cls: "bt-overflow-tab-row" });
+      // First-class data attributes: same as visible tab buttons
+      row.dataset.tabId = view.id;
+      row.dataset.queryTabId = view.id;
+      const dirty = this.isSavedViewDirty(view);
+      if (dirty) row.dataset.queryTabDirty = "true";
+      if (this.plugin.settings.defaultSavedViewId === view.id) row.dataset.queryTabDefault = "true";
+      if (view.id === this.state.savedViewId) row.addClass("bt-overflow-tab-row-active");
+
+      // Main row: name, dirty dot, count
+      const main = row.createDiv({ cls: "bt-overflow-tab-main" });
+      const titleWrap = main.createDiv({ cls: "bt-overflow-tab-title" });
+      titleWrap.createSpan({ text: view.name, cls: "bt-overflow-tab-name" });
+      if (dirty) {
+        titleWrap.createSpan({ text: "•", cls: "bt-tab-dirty-dot" });
+      }
       const count = this.countForSavedView(view);
-      const label = count > 0 ? `${view.name} (${count})` : view.name;
-      menu.addItem((item) => {
-        item.setTitle(label);
-        if (badge.length > 0) item.setSection("tab-overflow");
-        item.onClick(() => this.activateSavedView(view));
+      if (count > 0) {
+        main.createSpan({ text: String(count), cls: "bt-overflow-tab-count" });
+      }
+
+      // Badges: 当前 / 默认 / 已修改 / 已隐藏 / 预设
+      const badges = this.savedViewBadges(view);
+      if (badges.length > 0) {
+        const badgeRow = main.createDiv({ cls: "bt-overflow-tab-badges" });
+        for (const badge of badges) {
+          badgeRow.createSpan({ cls: "bt-overflow-tab-badge", text: badge });
+        }
+      }
+
+      // Click to activate: close sheet and switch to this tab
+      row.addEventListener("click", () => {
+        closeSheet();
+        this.activateSavedView(view);
       });
-      void index; // intentional no-op, index preserved for shortcut order
-    }
-    // Separator + manage option
-    if (overflowTabs.length > 0) {
-      menu.addSeparator();
-      menu.addItem((item) =>
-        item.setTitle(tr("savedViews.manage")).onClick(() => this.openManageTabsSheet()),
+
+      // Context menu with full management actions
+      row.addEventListener("contextmenu", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        this.openSavedViewMenu(event, view);
+      });
+
+      // Quick action buttons for management
+      const actions = row.createDiv({ cls: "bt-overflow-tab-actions" });
+      const makeAction = (label: string, handler: () => void | Promise<void>) => {
+        const btn = actions.createEl("button", { text: label, cls: "bt-overflow-tab-btn" });
+        btn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          Promise.resolve(handler()).then(() => {
+            closeSheet();
+          }).catch((error) =>
+            new Notice(tr("notice.error", { msg: error instanceof Error ? error.message : String(error) }), 4000),
+          );
+        });
+      };
+
+      makeAction(tr("savedViews.rename"), () => this.renameSavedView(view));
+      makeAction(tr("savedViews.copy"), () => this.copySavedView(view));
+      makeAction(tr("savedViews.setDefault"), () => this.setDefaultSavedView(view.id));
+      makeAction(tr("savedViews.moveLeft"), () => this.moveSavedView(view, -1));
+      makeAction(tr("savedViews.moveRight"), () => this.moveSavedView(view, 1));
+      makeAction(view.hidden ? tr("savedViews.show") : tr("savedViews.hide"), () =>
+        this.toggleSavedViewHidden(view, !view.hidden),
       );
+      if (!view.builtin) {
+        makeAction(tr("savedViews.delete"), () => this.deleteSavedViewWithConfirm(view));
+      }
     }
-    // Position the menu near the "更多" button
-    const rect = anchor.getBoundingClientRect();
-    menu.showAtPosition({ x: rect.left + rect.width / 2, y: rect.bottom + 4 });
   }
 
   private renderToolbar(parent: HTMLElement) {

@@ -2146,6 +2146,87 @@
   color: var(--text-normal);
 }
 
+/* ── Overflow tabs sheet (VAL-GUI-005) ── */
+.task-center-bottom-sheet .bt-overflow-tabs-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+.task-center-bottom-sheet .bt-overflow-tab-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--background-modifier-border);
+  cursor: pointer;
+}
+.task-center-bottom-sheet .bt-overflow-tab-row:hover {
+  background: var(--background-modifier-hover);
+  border-radius: 6px;
+  padding-left: 6px;
+  padding-right: 6px;
+}
+.task-center-bottom-sheet .bt-overflow-tab-row-active {
+  background: var(--background-modifier-hover);
+  border-radius: 6px;
+  padding-left: 6px;
+  padding-right: 6px;
+}
+.task-center-bottom-sheet .bt-overflow-tab-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.task-center-bottom-sheet .bt-overflow-tab-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.task-center-bottom-sheet .bt-overflow-tab-name {
+  font-weight: 600;
+  color: var(--text-normal);
+  font-size: 13px;
+}
+.task-center-bottom-sheet .bt-overflow-tab-count {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--text-accent);
+  color: var(--text-on-accent);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.4;
+  margin-left: 4px;
+}
+.task-center-bottom-sheet .bt-overflow-tab-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.task-center-bottom-sheet .bt-overflow-tab-badge {
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: var(--background-modifier-hover);
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 600;
+}
+.task-center-bottom-sheet .bt-overflow-tab-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.task-center-bottom-sheet .bt-overflow-tab-btn {
+  min-height: 28px;
+  padding: 4px 8px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-secondary);
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
 /* ============================================================================
  * Quick Add — mobile bottom-sheet variant (US-509). Inherits the bottom-sheet
  * shell (.task-center-bottom-sheet handles bottom-anchor + width); this
