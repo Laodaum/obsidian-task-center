@@ -574,6 +574,78 @@ test("resolveRef — stale path:Lnn recovery works when task is deleted then re-
   assert.equal(recovered.line, 2, "recovered task should be at the new line (0-indexed)");
 });
 
+test("resolveRef — different task at same line after edit is not incorrectly returned (identity check)", async () => {
+  // Bug: When the original task at a line is replaced by a DIFFERENT task
+  // at the same position, resolveRef should NOT return the new occupant.
+  // It must detect the hash mismatch and recover by stored hash or return
+  // not_found — never silently return the wrong task.
+  const app = makeApp([
+    { path: "Tasks/t1.md", hasTask: true, metaIndexed: true, content: "- [ ] Original task\n" },
+  ]);
+  const cache = new TaskCache(app);
+  cache.bind();
+  await cache.ensureAll();
+
+  const tasks = cache.flatten();
+  assert.equal(tasks.length, 1);
+  const originalRef = tasks[0].id; // "Tasks/t1.md:L1"
+  const originalHash = tasks[0].hash;
+  const originalTitle = tasks[0].title;
+
+  // Replace with a DIFFERENT task at the same line (different title → different hash).
+  app._setContent("Tasks/t1.md", "- [ ] Completely different\n");
+  app._fireMetaChanged("Tasks/t1.md");
+  await cache.forFlush();
+
+  // The original task is gone, replaced by a different one.
+  // resolveRef should NOT return the new occupant as if it were the original.
+  // Since the original hash no longer matches any task in the cache,
+  // it should throw not_found.
+  await assert.rejects(
+    () => cache.resolveRef(originalRef),
+    (err) => err.code === "not_found",
+    "stale ref where line is occupied by a different task should throw not_found",
+  );
+});
+
+test("resolveRef — stale path:Lnn where original task moved and different task occupies old line", async () => {
+  // When a task moves to a different line AND a different task takes its
+  // old position, resolveRef must detect the identity mismatch and recover
+  // the original task by hash.
+  const app = makeApp([
+    {
+      path: "Tasks/t2.md",
+      hasTask: true,
+      metaIndexed: false,
+      content: "- [ ] Task A\n- [ ] Task B\n",
+    },
+  ]);
+  const cache = new TaskCache(app);
+  cache.bind();
+  await cache.ensureAll();
+
+  const tasks = cache.flatten();
+  assert.equal(tasks.length, 2);
+  const refA = tasks[0].id; // "Tasks/t2.md:L1"
+  const hashA = tasks[0].hash;
+
+  // Edit: add a new task above, pushing Task A to line 2 and Task B to line 3.
+  // The new task at line 1 has a different title than Task A.
+  app._setContent("Tasks/t2.md", "- [ ] New task C\n- [ ] Task A\n- [ ] Task B\n");
+  app._fireMetaChanged("Tasks/t2.md");
+  await cache.forFlush();
+
+  // resolveRef for the original Task A ref (Tasks/t2.md:L1) should detect
+  // that the line-1 occupant (New task C) has a different hash, then recover
+  // Task A at its new position.
+  const recovered = await cache.resolveRef(refA);
+  assert.ok(recovered, "should recover original task via hash when line is occupied by different task");
+  assert.equal(recovered.hash, hashA);
+  assert.equal(recovered.title, "Task A");
+  assert.equal(recovered.line, 1, "Task A should be at line 2 (0-indexed 1)");
+  assert.equal(recovered.id, "Tasks/t2.md:L2");
+});
+
 test("resolveRef — live path:Lnn ref still resolves directly (no regression)", async () => {
   const app = makeApp([
     { path: "Tasks/t1.md", hasTask: true, content: "- [ ] Live task\n" },

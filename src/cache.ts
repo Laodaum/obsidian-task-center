@@ -355,7 +355,18 @@ export class TaskCache {
         );
       }
       const t = entry.tasks.find((task) => task.line === parsed.line);
-      if (t) return t;
+      if (t) {
+        // US-208 / VAL-CLI-004: identity check — if the line is now
+        // occupied by a different task (staleHashByRef has a different
+        // hash for this position), fall through to hash-based recovery
+        // instead of silently returning the wrong task.
+        const staleRef = `${parsed.path}:L${(parsed.line ?? 0) + 1}`;
+        const originalHash = this.staleHashByRef.get(staleRef);
+        if (!originalHash || originalHash === t.hash) {
+          return t;
+        }
+        // Line is occupied by a different task — fall through.
+      }
 
       // US-208 / VAL-CLI-004: stale path:Lnn ref — try hash-based recovery.
       // The staleHashByRef map persists old path:line → hash mappings from
