@@ -1121,6 +1121,193 @@ test("setEstimate — clear (minutes=null) via vault.process", async () => {
   assert.ok(!r.after.includes("estimate::"));
 });
 
+// ---------- VAL-CORE-011: nest clears moved root's scheduled token ----------
+
+test("planSameFileNest — clears moved root's ⏳, preserves descendant ⏳ and other metadata", () => {
+  const lines = [
+    "- [ ] Parent task",
+    "- [ ] Child task ⏳ 2026-04-25 #tag [estimate:: 30m]",
+    "    - [ ] Grandchild ⏳ 2026-04-26 📅 2026-05-01",
+    "        - [ ] Great-grandchild",
+  ];
+  const plan = planSameFileNest(lines, /*childLine*/ 1, /*childIndentLen*/ 0, /*parent*/ { line: 0, indentLen: 0 });
+
+  // The moved root (Child task) should appear WITHOUT its own ⏳
+  const childLine = plan.newLines.find(l => /Child task/.test(l) && !/Grandchild/.test(l));
+  assert.ok(childLine, "Child task line not found in result");
+  assert.ok(!childLine.includes("⏳"), `Child task should NOT have ⏳ but got: ${childLine}`);
+  // But it should still have its tag and estimate
+  assert.ok(childLine.includes("#tag"), `Child task should preserve #tag: ${childLine}`);
+  assert.ok(childLine.includes("[estimate:: 30m]"), `Child task should preserve estimate: ${childLine}`);
+
+  // Grandchild should still have its own ⏳ and 📅
+  const grandchildLine = plan.newLines.find(l => /Grandchild/.test(l));
+  assert.ok(grandchildLine, "Grandchild line not found in result");
+  assert.ok(grandchildLine.includes("⏳ 2026-04-26"), `Grandchild should keep ⏳: ${grandchildLine}`);
+  assert.ok(grandchildLine.includes("📅 2026-05-01"), `Grandchild should keep 📅: ${grandchildLine}`);
+
+  // Undo should restore original state (with ⏳ on root)
+  const files = { "f.md": plan.newLines };
+  const restored = applyUndoOps(files, plan.undoOps.map((o) => ({ ...o, path: "f.md" })));
+  assert.deepEqual(restored["f.md"], lines, "Undo should restore original ⏳ on root");
+});
+
+test("planSameFileNest — no-op on root without ⏳ (no false clearing)", () => {
+  const lines = [
+    "- [ ] Parent",
+    "- [ ] Child #tag",
+    "    - [ ] Grandchild ⏳ 2026-04-26",
+  ];
+  const plan = planSameFileNest(lines, 1, 0, { line: 0, indentLen: 0 });
+
+  // Child should be preserved as-is (no ⏳ to clear)
+  const childLine = plan.newLines.find(l => /Child/.test(l) && !/Grandchild/.test(l));
+  assert.ok(childLine.includes("#tag"), `Child should keep #tag: ${childLine}`);
+  assert.ok(!childLine.includes("⏳"), `Child should not gain ⏳: ${childLine}`);
+
+  // Grandchild should keep its ⏳
+  const grandchildLine = plan.newLines.find(l => /Grandchild/.test(l));
+  assert.ok(grandchildLine.includes("⏳ 2026-04-26"), `Grandchild should keep ⏳: ${grandchildLine}`);
+});
+
+test("planCrossFileNest — clears moved root's ⏳, preserves descendant ⏳ and other metadata", () => {
+  const childLines = [
+    "- [ ] Child ⏳ 2026-04-25 #urgent [actual:: 1h]",
+    "    - [ ] Sub ⏳ 2026-04-26 🔺",
+    "        - [ ] SubSub 📅 2026-05-01",
+  ];
+  const parentLines = [
+    "- [ ] Parent",
+    "    - [ ] Existing child",
+  ];
+  const plan = planCrossFileNest(
+    childLines, /*childLine*/ 0, /*childIndentLen*/ 0,
+    parentLines, /*parent*/ { line: 0, indentLen: 0 },
+  );
+
+  // Parent file should have the moved "Child" WITHOUT ⏳
+  const movedChildLine = plan.newParentLines.find(l => /Child/.test(l) && !/Existing/.test(l) && !/Sub/.test(l));
+  assert.ok(movedChildLine, "Moved child line not found in parent result");
+  assert.ok(!movedChildLine.includes("⏳"), `Moved child should NOT have ⏳: ${movedChildLine}`);
+  assert.ok(movedChildLine.includes("#urgent"), `Moved child should keep #urgent: ${movedChildLine}`);
+  assert.ok(movedChildLine.includes("[actual:: 1h]"), `Moved child should keep actual: ${movedChildLine}`);
+
+  // "Sub" (descendant) should keep its ⏳ and 🔺
+  const subLine = plan.newParentLines.find(l => /Sub\b/.test(l) && !/SubSub/.test(l));
+  assert.ok(subLine, "Sub line not found in parent result");
+  assert.ok(subLine.includes("⏳ 2026-04-26"), `Sub should keep ⏳: ${subLine}`);
+  assert.ok(subLine.includes("🔺"), `Sub should keep 🔺: ${subLine}`);
+
+  // "SubSub" should keep its 📅
+  const subSubLine = plan.newParentLines.find(l => /SubSub/.test(l));
+  assert.ok(subSubLine, "SubSub line not found");
+  assert.ok(subSubLine.includes("📅 2026-05-01"), `SubSub should keep 📅: ${subSubLine}`);
+
+  // Child file should lose the moved task
+  assert.deepEqual(plan.newChildLines, []);
+
+  // Undo should restore original state on both files
+  const files = { "child.md": plan.newChildLines, "parent.md": plan.newParentLines };
+  const withPaths = plan.undoOps.map((o) => ({
+    ...o,
+    path: o.which === "child" ? "child.md" : "parent.md",
+  }));
+  const restored = applyUndoOps(files, withPaths);
+  assert.deepEqual(restored["child.md"], childLines, "Undo should restore child file with ⏳");
+});
+
+test("nestUnder — cross-file runtime clears moved root's ⏳, preserves descendant ⏳", async () => {
+  // Parent file with TAB-indented children
+  const parentInitial =
+    "- [ ] A_parent ⏳ 2026-04-26\n" +
+    "\t- [ ] A_child_1\n";
+
+  // Child file: root has ⏳, sub has its own ⏳ and tag
+  const childInitial =
+    "- [ ] C_top ⏳ 2026-04-25 #move-me [estimate:: 15m]\n" +
+    "    - [ ] C_sub ⏳ 2026-04-27 #keep-me\n";
+
+  const fileObjs = new Map();
+  const fileData = new Map();
+  for (const [path, data] of [
+    ["parent.md", parentInitial],
+    ["child.md", childInitial],
+  ]) {
+    const f = new TFile();
+    f.path = path;
+    f.extension = "md";
+    f.stat = { mtime: 1000 };
+    fileObjs.set(path, f);
+    fileData.set(path, data);
+  }
+
+  const app = {
+    vault: {
+      getAbstractFileByPath: (p) => fileObjs.get(p) ?? null,
+      cachedRead: async (file) => fileData.get(file.path),
+      process: async (file, fn) => {
+        const data = fileData.get(file.path);
+        const next = fn(data);
+        fileData.set(file.path, next);
+      },
+    },
+  };
+
+  const child = {
+    id: "child.md:L0",
+    path: "child.md",
+    line: 0,
+    indent: "",
+    rawLine: "- [ ] C_top ⏳ 2026-04-25 #move-me [estimate:: 15m]",
+    parentLine: null,
+  };
+  const parent = {
+    id: "parent.md:L0",
+    path: "parent.md",
+    line: 0,
+    indent: "",
+    rawLine: "- [ ] A_parent ⏳ 2026-04-26",
+    parentLine: null,
+  };
+
+  const result = await nestUnder(app, child, parent);
+
+  const parentAfter = fileData.get("parent.md");
+
+  // C_top should be present in parent file WITHOUT its ⏳
+  const cTopLine = parentAfter.split("\n").find(l => /C_top/.test(l));
+  assert.ok(cTopLine, `C_top not found in parent.\nGot:\n${parentAfter}`);
+  assert.ok(!cTopLine.includes("⏳"), `C_top should NOT have ⏳, got: ${cTopLine}`);
+  assert.ok(cTopLine.includes("#move-me"), `C_top should keep #move-me: ${cTopLine}`);
+  assert.ok(cTopLine.includes("[estimate:: 15m]"), `C_top should keep estimate: ${cTopLine}`);
+
+  // C_sub should keep its ⏳ and tag
+  const cSubLine = parentAfter.split("\n").find(l => /C_sub/.test(l));
+  assert.ok(cSubLine, `C_sub not found in parent.\nGot:\n${parentAfter}`);
+  assert.ok(cSubLine.includes("⏳ 2026-04-27"), `C_sub should keep ⏳: ${cSubLine}`);
+  assert.ok(cSubLine.includes("#keep-me"), `C_sub should keep #keep-me: ${cSubLine}`);
+
+  // Child file should not have C_top anymore
+  const childAfter = fileData.get("child.md");
+  assert.ok(!childAfter.includes("C_top"), `child file still has C_top:\n${childAfter}`);
+
+  // before/after metadata
+  assert.ok(result.before.includes("⏳ 2026-04-25"), "result.before should show original with ⏳");
+  assert.ok(!result.after.includes("⏳ 2026-04-25"), "result.after should show cleared version");
+
+  // Undo should restore original state
+  const undoFiles = { "child.md": childAfter.split("\n"), "parent.md": parentAfter.split("\n") };
+  const restored = applyUndoOps(undoFiles, result.undoOps);
+  assert.ok(
+    restored["child.md"].join("\n").includes("C_top ⏳ 2026-04-25"),
+    `Undo should restore ⏳ on C_top in child file.\nGot:\n${restored["child.md"].join("\n")}`,
+  );
+  assert.ok(
+    !restored["parent.md"].join("\n").includes("C_top"),
+    `Undo should remove C_top from parent file.\nGot:\n${restored["parent.md"].join("\n")}`,
+  );
+});
+
 // ---------- VAL-CORE-011: invalid nest rejection ----------
 
 test("nestUnder — self-nest throws invalid_nest", async () => {

@@ -664,7 +664,10 @@ export function planSameFileNest(
   if (parent.line >= childLine && parent.line < childLine + block.length) {
     throw new TaskWriterError("invalid_nest", "cannot nest a task under its own descendant");
   }
-  const reindented = reindentBlock(block, childIndentLen, newIndent);
+  // VAL-CORE-011: clear ⏳ from the moved root task only; descendants keep theirs.
+  // Uses a copy so the undo ops' `before` still carries the original ⏳ for restore.
+  const clearedBlock = [setEmojiDate(block[0], "⏳", null), ...block.slice(1)];
+  const reindented = reindentBlock(clearedBlock, childIndentLen, newIndent);
   const without = lines.slice(0, childLine).concat(lines.slice(childLine + block.length));
   const adjustedParentLine =
     childLine < parent.line ? parent.line - block.length : parent.line;
@@ -702,7 +705,10 @@ export function planCrossFileNest(
   // in planSameFileNest above.
   const newIndent = pickChildIndent(parentLines, parent.line, parentIndent, parent.indentLen);
   const block = extractTaskBlock(childLines, childLine, childIndentLen);
-  const reindented = reindentBlock(block, childIndentLen, newIndent);
+  // VAL-CORE-011: clear ⏳ from the moved root task only; descendants keep theirs.
+  // Uses a copy so the undo ops' `before` still carries the original ⏳ for restore.
+  const clearedBlock = [setEmojiDate(block[0], "⏳", null), ...block.slice(1)];
+  const reindented = reindentBlock(clearedBlock, childIndentLen, newIndent);
   const insertIndex = findChildrenEnd(parentLines, parent.line, parent.indentLen);
   const newParentLines = parentLines
     .slice(0, insertIndex)
@@ -838,6 +844,9 @@ export async function nestUnder(
     );
   }
   const block = extractTaskBlock(childLinesSnapshot, child.line, childIndentLen);
+  // VAL-CORE-011: clear ⏳ from the moved root task only; descendants keep theirs.
+  // Uses a copy so the child-file delete step still matches the original block.
+  const clearedBlock = [setEmojiDate(block[0], "⏳", null), ...block.slice(1)];
 
   // Step 1: append to parent file (verifies parent line still matches).
   // task #57: defer the new-child indent decision until we have the
@@ -862,7 +871,7 @@ export async function nestUnder(
       parent.indent,
       parent.indent.length,
     );
-    reindented = reindentBlock(block, childIndentLen, newIndent);
+    reindented = reindentBlock(clearedBlock, childIndentLen, newIndent);
     const insertIndex = findChildrenEnd(lines, parent.line, parent.indent.length);
     parentInsertIndex = insertIndex;
     return lines
