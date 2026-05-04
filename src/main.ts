@@ -978,6 +978,12 @@ export default class TaskCenterPlugin extends Plugin {
 
   private async cliQueryDelete(args: CliArgs): Promise<string> {
     const view = this.requireQueryPreset(requireArg(args.id, "id"));
+    // VAL-CLI-006: builtins cannot be permanently deleted via CLI.
+    // GUI already hides the Delete action for builtin tabs; CLI mirrors
+    // that guard.
+    if (view.builtin) {
+      throw new TaskWriterError("invalid_query", `无法删除内置 Query Tab：${view.id}`);
+    }
     this.settings.queryPresets = deleteQueryPresetById(this.settings.queryPresets, view.id);
     if (this.settings.defaultSavedViewId === view.id) this.settings.defaultSavedViewId = null;
     if (this.settings.lastSavedViewId === view.id) this.settings.lastSavedViewId = null;

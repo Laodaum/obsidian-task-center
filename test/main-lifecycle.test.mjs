@@ -931,6 +931,68 @@ test("query-update: non-existent preset id throws query_not_found, leaves settin
 
 // ── End CLI query-save / query-update negative tests ──
 
+// VAL-CLI-006: builtins cannot be permanently deleted via CLI
+test("query-delete rejects builtin query preset with invalid_query", async () => {
+  const { plugin, calls } = await createPluginForQueryCli({
+    queryPresets: [
+      {
+        id: "preset-today",
+        name: "今日",
+        builtin: true,
+        hidden: false,
+        filters: { status: ["todo"], time: { scheduled: "today" } },
+        view: { type: "list", preset: "today" },
+        summary: [],
+      },
+      {
+        id: "sv-custom",
+        name: "Custom",
+        builtin: false,
+        hidden: false,
+        filters: { search: "docs", status: ["todo"] },
+        view: { type: "list" },
+        summary: [],
+      },
+    ],
+  });
+
+  await assert.rejects(
+    () => plugin.cliQueryDelete({ id: "preset-today" }),
+    (err) => err.code === "invalid_query" && /无法删除内置/.test(err.message),
+  );
+
+  // Builtin preset still present, no save/refresh side effects
+  assert.equal(plugin.settings.queryPresets.length, 2);
+  assert.equal(plugin.settings.queryPresets.find((v) => v.id === "preset-today")?.id, "preset-today");
+  assert.equal(calls.save, 0);
+  assert.equal(calls.refresh, 0);
+});
+
+test("query-delete 允许删除非内置的自定义 preset", async () => {
+  const { plugin, calls } = await createPluginForQueryCli({
+    queryPresets: [
+      {
+        id: "sv-custom",
+        name: "Custom",
+        builtin: false,
+        hidden: false,
+        filters: { search: "docs", status: ["todo"] },
+        view: { type: "list" },
+        summary: [],
+      },
+    ],
+  });
+
+  const result = await plugin.cliQueryDelete({ id: "sv-custom" });
+  assert.match(result, /^ok  sv-custom  Custom/);
+  assert.match(result, /deleted query preset/);
+  assert.equal(plugin.settings.queryPresets.length, 0);
+  assert.equal(calls.save, 1);
+  assert.equal(calls.refresh, 1);
+});
+
+// ── End CLI query-delete builtin protection tests ──
+
 test("openManageTabs 会激活 Task Center 并打开主界面的 Tabs 管理器", async () => {
   await compile();
   const { default: TaskCenterPlugin } = await import(`../${compiledPath}?t=${Date.now()}-${Math.random()}`);
