@@ -1624,3 +1624,126 @@ export function applySummaryMetricAdd(
 ): QueryPresetSummaryMetric[] {
   return [...summary, metric];
 }
+
+// ── Query Editor Summary production-path helpers ──
+// These functions encapsulate the handler pattern used by TaskCenterView's
+// Query Editor summary visual controls.  They make the production handlers
+// testable without requiring a full Obsidian DOM environment.
+
+/**
+ * Parameters shared by all Query Editor summary draft handlers.
+ * Mirrors the closure environment of the rendering code in view.ts.
+ */
+export interface QueryEditorSummaryDraftParams {
+  /** The tabDrafts Map — shared mutable draft store. */
+  tabDrafts: Map<string, QueryPreset>;
+  /** The active QueryPreset id (what tab is currently selected). */
+  activePresetId: string;
+  /** The saved (non-draft) preset for the active tab. */
+  savedPreset: QueryPreset | null;
+  /** Returns a snapshot merging saved preset identity with draft content + view state. */
+  getSnapshot: (existing: QueryPreset | null) => QueryPreset;
+}
+
+/**
+ * Production-path handler for editing a summary metric in a draft.
+ * This is the testable counterpart of the `updateMetricInDraft` closure
+ * inside TaskCenterView's Query Editor rendering code.
+ *
+ * Reads the draft from tabDrafts (via getSnapshot), applies the edit,
+ * writes back into tabDrafts, and returns the updated draft.
+ */
+export function handleQueryEditorSummaryEdit(
+  params: QueryEditorSummaryDraftParams,
+  metricIndex: number,
+  patch: Partial<QueryPresetSummaryMetric>,
+): QueryPreset {
+  const { tabDrafts, activePresetId, getSnapshot, savedPreset } = params;
+  const draft = getSnapshot(savedPreset);
+  draft.summary = applySummaryMetricEdit(draft.summary ?? [], metricIndex, patch);
+  tabDrafts.set(activePresetId, draft);
+  return draft;
+}
+
+/**
+ * Production-path handler for adding a new summary metric to a draft.
+ * This is the testable counterpart of the "add" button click handler
+ * inside TaskCenterView's Query Editor rendering code.
+ */
+export function handleQueryEditorSummaryAdd(
+  params: QueryEditorSummaryDraftParams,
+  newMetric: QueryPresetSummaryMetric,
+): QueryPreset {
+  const { tabDrafts, activePresetId, getSnapshot, savedPreset } = params;
+  const draft = getSnapshot(savedPreset);
+  draft.summary = applySummaryMetricAdd(draft.summary ?? [], newMetric);
+  tabDrafts.set(activePresetId, draft);
+  return draft;
+}
+
+/**
+ * Production-path handler for removing a summary metric from a draft.
+ * This is the testable counterpart of the "remove" button click handler
+ * inside TaskCenterView's Query Editor rendering code.
+ */
+export function handleQueryEditorSummaryRemove(
+  params: QueryEditorSummaryDraftParams,
+  metricIndex: number,
+): QueryPreset {
+  const { tabDrafts, activePresetId, getSnapshot, savedPreset } = params;
+  const draft = getSnapshot(savedPreset);
+  draft.summary = applySummaryMetricRemove(draft.summary ?? [], metricIndex);
+  tabDrafts.set(activePresetId, draft);
+  return draft;
+}
+
+/**
+ * Production-path helper: computes a save-as result from a snapshot +
+ * draft state.  This is the testable counterpart of TaskCenterView's
+ * `saveCurrentView` method.
+ *
+ * Returns the snapshot (what currentQuerySnapshot produced) and the
+ * normalized preset that would be saved via upsertQueryPreset.
+ */
+export function computeSaveAsFromSnapshot(params: {
+  getSnapshot: (existing: QueryPreset | null) => QueryPreset;
+  savedPreset: QueryPreset | null;
+  newId: string;
+  name: string;
+}): { snapshot: QueryPreset; saved: QueryPreset } {
+  const { getSnapshot, savedPreset, newId, name } = params;
+  const snapshot = getSnapshot(savedPreset);
+  const saved = normalizeQueryPreset({
+    ...snapshot,
+    id: newId,
+    name,
+    builtin: false,
+    hidden: false,
+  });
+  return { snapshot, saved };
+}
+
+/**
+ * Production-path helper: computes an update result from a snapshot +
+ * draft state.  This is the testable counterpart of TaskCenterView's
+ * `updateCurrentSavedView` method.
+ *
+ * Reads view/summary from the draft (via currentQueryPresetViewConfig /
+ * currentSavedViewSummary equivalents) and returns the normalized preset
+ * that would be saved via updateQueryPresetById.
+ */
+export function computeUpdateFromDraftComponents(params: {
+  /** The saved preset being updated in-place. */
+  existing: QueryPreset;
+  /** Draft view config (from currentQueryPresetViewConfig). */
+  draftView: QueryPresetViewConfig;
+  /** Draft summary (from currentSavedViewSummary). */
+  draftSummary: QueryPresetSummaryMetric[];
+}): QueryPreset {
+  const { existing, draftView, draftSummary } = params;
+  return normalizeQueryPreset({
+    ...existing,
+    view: draftView,
+    summary: draftSummary,
+  });
+}

@@ -66,9 +66,13 @@ import {
   updateQueryPresetById,
   visibleQueryPresets,
   queryPresetTagString,
+  handleQueryEditorSummaryEdit,
+  handleQueryEditorSummaryAdd,
+  handleQueryEditorSummaryRemove,
 } from "./saved-views";
 import type {
   QueryPresetDeleteFlowCallbacks,
+  QueryEditorSummaryDraftParams,
 } from "./saved-views";
 import type {
   QueryPreset,
@@ -2061,16 +2065,22 @@ export class TaskCenterView extends ItemView {
 
     const summaryList = summarySection.createDiv({ cls: "bt-query-editor-summary-list" });
 
-    // Helper: update a metric at index i within the draft and re-render.
-    const updateMetricInDraft = (i: number, patch: Partial<QueryPresetSummaryMetric>) => {
+    // Build the shared handler params once (they are stable per render).
+    const buildSummaryDraftParams = (): QueryEditorSummaryDraftParams => {
       const active = this.activeSavedView();
-      const draft = this.currentQuerySnapshot(active);
-      const metrics = [...(draft.summary ?? [])];
-      if (i >= 0 && i < metrics.length) {
-        metrics[i] = { ...metrics[i], ...patch };
-      }
-      draft.summary = metrics;
-      this.tabDrafts.set(active.id, draft);
+      return {
+        tabDrafts: this.tabDrafts,
+        activePresetId: active.id,
+        savedPreset: this.selectedSavedView(),
+        getSnapshot: (existing) => this.currentQuerySnapshot(existing),
+      };
+    };
+
+    // Helper: update a metric at index i within the draft and re-render.
+    // Delegates to the testable production-path helper.
+    const updateMetricInDraft = (i: number, patch: Partial<QueryPresetSummaryMetric>) => {
+      const params = buildSummaryDraftParams();
+      const draft = handleQueryEditorSummaryEdit(params, i, patch);
       this.applySavedView(draft);
       renderSummaryMetrics();
     };
@@ -2174,10 +2184,8 @@ export class TaskCenterView extends ItemView {
           cls: "bt-query-editor-summary-remove",
         });
         removeBtn.addEventListener("click", () => {
-          const active = this.activeSavedView();
-          const draft = this.currentQuerySnapshot(active);
-          draft.summary = draft.summary.filter((_, idx) => idx !== i);
-          this.tabDrafts.set(active.id, draft);
+          const params = buildSummaryDraftParams();
+          const draft = handleQueryEditorSummaryRemove(params, i);
           this.applySavedView(draft);
           renderSummaryMetrics();
         });
@@ -2263,10 +2271,8 @@ export class TaskCenterView extends ItemView {
         if (byEl?.value.trim()) newMetric.by = byEl.value.trim();
       }
 
-      const active = this.activeSavedView();
-      const draft = this.currentQuerySnapshot(active);
-      draft.summary = [...(draft.summary ?? []), newMetric];
-      this.tabDrafts.set(active.id, draft);
+      const params = buildSummaryDraftParams();
+      const draft = handleQueryEditorSummaryAdd(params, newMetric);
       this.applySavedView(draft);
       renderSummaryMetrics();
       // Clear inputs

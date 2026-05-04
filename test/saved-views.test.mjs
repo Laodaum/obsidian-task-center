@@ -62,6 +62,11 @@ const {
   updateQueryPresetById,
   computeDeleteQueryPresetState,
   computeUndoQueryPresetState,
+  handleQueryEditorSummaryEdit,
+  handleQueryEditorSummaryAdd,
+  handleQueryEditorSummaryRemove,
+  computeSaveAsFromSnapshot,
+  computeUpdateFromDraftComponents,
 } = await import("../test/.compiled/saved-views.js");
 
 test("US-109c: createSavedView persists the current filter conditions, not a task snapshot", () => {
@@ -3403,4 +3408,671 @@ test("production: computeQueryPresetSnapshot with name override for save-as flow
   assert.equal(asNew.name, "Save As Copy");
   assert.deepEqual(asNew.view, snapshot.view);
   assert.deepEqual(asNew.summary, snapshot.summary);
+});
+
+// ── fix-m3-query-editor-real-controls-path ──
+// Real TaskCenterView production-path tests that exercise the actual
+// handler functions (handleQueryEditorSummaryEdit/Add/Remove) extracted
+// from TaskCenterView's Query Editor rendering code.  These tests stub
+// the view's state and tabDrafts, then drive the handler functions to
+// verify the full production flow: draft → edit → snapshot → save/update.
+
+/**
+ * Builds a stub view state that mirrors TaskCenterView's relevant fields.
+ * Uses real tabDrafts Map and QueryPreset[] — the same data structures
+ * the production code manipulates.
+ */
+function buildStubViewState(overrides = {}) {
+  const savedPresets = overrides.queryPresets ?? [];
+  const activeId = savedPresets.length > 0 ? savedPresets[0].id : null;
+
+  return {
+    tabDrafts: new Map(),
+    settings: {
+      queryPresets: [...savedPresets],
+      defaultSavedViewId: overrides.defaultId ?? null,
+    },
+    state: {
+      savedViewId: activeId,
+      filter: "",
+      savedViewTag: "",
+      savedViewTime: {},
+      savedViewStatus: "all",
+    },
+  };
+}
+
+/**
+ * Creates a getSnapshot function matching the production signature.
+ * Uses computeQueryPresetSnapshot with the stub's state.
+ */
+function makeGetSnapshot(stub) {
+  return (existing) =>
+    computeQueryPresetSnapshot({
+      existing,
+      tabDrafts: stub.tabDrafts,
+      filterSearch: stub.state.filter,
+      filterTags: stub.state.savedViewTag,
+      filterTime: stub.state.savedViewTime,
+      filterStatus: stub.state.savedViewStatus,
+      fallbackView: () => ({ type: "list" }),
+      fallbackSummary: () => [],
+    });
+}
+
+/**
+ * Builds QueryEditorSummaryDraftParams from the stub view state.
+ */
+function makeSummaryDraftParams(stub) {
+  const saved = stub.state.savedViewId
+    ? stub.settings.queryPresets.find((p) => p.id === stub.state.savedViewId) ?? null
+    : null;
+  return {
+    tabDrafts: stub.tabDrafts,
+    activePresetId: stub.state.savedViewId,
+    savedPreset: saved,
+    getSnapshot: makeGetSnapshot(stub),
+  };
+}
+
+// ── Handler tests: handleQueryEditorSummaryEdit/Add/Remove ──
+
+test("real-path: handleQueryEditorSummaryEdit updates a metric in tabDrafts and returns the draft", () => {
+  const savedPreset = normalizeQueryPreset({
+    id: "sv-real-1",
+    name: "Real Edit Test",
+    builtin: false,
+    hidden: false,
+    filters: { status: "all" },
+    view: { type: "list" },
+    summary: [{ type: "count" }, { type: "sum", field: "planned" }],
+  });
+
+  const stub = buildStubViewState({
+    queryPresets: [savedPreset],
+  });
+  stub.state.savedViewId = "sv-real-1";
+  const params = makeSummaryDraftParams(stub);
+
+  // Edit index 1: change field from "planned" to "actual"
+  const draft = handleQueryEditorSummaryEdit(params, 1, { field: "actual" });
+
+  // Verify the returned draft
+  assert.equal(draft.summary.length, 2);
+  assert.equal(draft.summary[0].type, "count");
+  assert.equal(draft.summary[1].type, "sum");
+  assert.equal(draft.summary[1].field, "actual", "edited field must be reflected");
+
+  // Verify tabDrafts was updated
+  const stored = stub.tabDrafts.get("sv-real-1");
+  assert.ok(stored, "draft must be stored in tabDrafts");
+  assert.equal(stored.summary[1].field, "actual");
+
+  // Verify immutability: saved preset unchanged
+  assert.equal(savedPreset.summary[1].field, "planned", "saved preset must be unchanged");
+
+  // Verify currentQuerySnapshot picks up the draft
+  const snapshot = makeGetSnapshot(stub)(savedPreset);
+  assert.equal(snapshot.summary[1].field, "actual",
+    "currentQuerySnapshot must reflect the draft edit");
+});
+
+test("real-path: handleQueryEditorSummaryEdit preserves top_n by parameter", () => {
+  const savedPreset = normalizeQueryPreset({
+    id: "sv-real-topn",
+    name: "Top N Edit",
+    builtin: false,
+    hidden: false,
+    filters: { status: "all" },
+    view: { type: "list" },
+    summary: [{ type: "count" }, { type: "top_n", by: "tags", limit: 5 }],
+  });
+
+  const stub = buildStubViewState({
+    queryPresets: [savedPreset],
+  });
+  stub.state.savedViewId = "sv-real-topn";
+  const params = makeSummaryDraftParams(stub);
+
+  // Edit top_n: change by from "tags" to "status", limit to 10
+  const draft = handleQueryEditorSummaryEdit(params, 1, { by: "status", limit: 10 });
+
+  assert.equal(draft.summary[1].type, "top_n");
+  assert.equal(draft.summary[1].by, "status", "top_n by must be preserved through edit");
+  assert.equal(draft.summary[1].limit, 10);
+  assert.equal(draft.summary[1].field, undefined, "top_n must NOT have field set");
+
+  // Verify tabDrafts
+  const stored = stub.tabDrafts.get("sv-real-topn");
+  assert.ok(stored);
+  assert.equal(stored.summary[1].by, "status");
+  assert.equal(stored.summary[1].field, undefined);
+});
+
+test("real-path: handleQueryEditorSummaryEdit out-of-range index is no-op", () => {
+  const savedPreset = normalizeQueryPreset({
+    id: "sv-real-oob",
+    name: "OOB",
+    builtin: false,
+    hidden: false,
+    filters: { status: "all" },
+    view: { type: "list" },
+    summary: [{ type: "count" }],
+  });
+
+  const stub = buildStubViewState({
+    queryPresets: [savedPreset],
+  });
+  stub.state.savedViewId = "sv-real-oob";
+  const params = makeSummaryDraftParams(stub);
+
+  const draft = handleQueryEditorSummaryEdit(params, 99, { field: "nope" });
+
+  assert.equal(draft.summary.length, 1);
+  assert.equal(draft.summary[0].type, "count");
+  // tabDrafts should still be set (draft was stored)
+  const stored = stub.tabDrafts.get("sv-real-oob");
+  assert.ok(stored);
+  assert.equal(stored.summary.length, 1);
+  assert.equal(stored.summary[0].type, "count");
+});
+
+test("real-path: handleQueryEditorSummaryAdd appends a metric and stores draft", () => {
+  const savedPreset = normalizeQueryPreset({
+    id: "sv-real-add",
+    name: "Add Test",
+    builtin: false,
+    hidden: false,
+    filters: { status: "all" },
+    view: { type: "list" },
+    summary: [{ type: "count" }],
+  });
+
+  const stub = buildStubViewState({
+    queryPresets: [savedPreset],
+  });
+  stub.state.savedViewId = "sv-real-add";
+  const params = makeSummaryDraftParams(stub);
+
+  // Add a sum metric
+  const draft = handleQueryEditorSummaryAdd(params, { type: "sum", field: "planned" });
+
+  assert.equal(draft.summary.length, 2);
+  assert.equal(draft.summary[0].type, "count");
+  assert.equal(draft.summary[1].type, "sum");
+  assert.equal(draft.summary[1].field, "planned");
+
+  // Verify tabDrafts
+  const stored = stub.tabDrafts.get("sv-real-add");
+  assert.ok(stored);
+  assert.equal(stored.summary.length, 2);
+
+  // Verify immutability: saved preset unchanged
+  assert.equal(savedPreset.summary.length, 1);
+});
+
+test("real-path: handleQueryEditorSummaryAdd with top_n uses by not field", () => {
+  const savedPreset = normalizeQueryPreset({
+    id: "sv-real-add-topn",
+    name: "Add TopN",
+    builtin: false,
+    hidden: false,
+    filters: { status: "all" },
+    view: { type: "list" },
+    summary: [],
+  });
+
+  const stub = buildStubViewState({
+    queryPresets: [savedPreset],
+  });
+  stub.state.savedViewId = "sv-real-add-topn";
+  const params = makeSummaryDraftParams(stub);
+
+  const draft = handleQueryEditorSummaryAdd(params, { type: "top_n", by: "tags", limit: 5 });
+
+  assert.equal(draft.summary.length, 1);
+  assert.equal(draft.summary[0].type, "top_n");
+  assert.equal(draft.summary[0].by, "tags", "top_n must use by");
+  assert.equal(draft.summary[0].limit, 5);
+  assert.equal(draft.summary[0].field, undefined, "top_n must NOT have field");
+});
+
+test("real-path: handleQueryEditorSummaryRemove deletes metric and stores draft", () => {
+  const savedPreset = normalizeQueryPreset({
+    id: "sv-real-remove",
+    name: "Remove Test",
+    builtin: false,
+    hidden: false,
+    filters: { status: "all" },
+    view: { type: "list" },
+    summary: [{ type: "count" }, { type: "sum", field: "planned" }, { type: "top_n", by: "tags", limit: 3 }],
+  });
+
+  const stub = buildStubViewState({
+    queryPresets: [savedPreset],
+  });
+  stub.state.savedViewId = "sv-real-remove";
+  const params = makeSummaryDraftParams(stub);
+
+  // Remove the middle metric (index 1)
+  const draft = handleQueryEditorSummaryRemove(params, 1);
+
+  assert.equal(draft.summary.length, 2);
+  assert.equal(draft.summary[0].type, "count");
+  assert.equal(draft.summary[1].type, "top_n");
+
+  // Verify tabDrafts
+  const stored = stub.tabDrafts.get("sv-real-remove");
+  assert.ok(stored);
+  assert.equal(stored.summary.length, 2);
+
+  // Verify immutability
+  assert.equal(savedPreset.summary.length, 3);
+});
+
+test("real-path: handleQueryEditorSummaryRemove clears all metrics → summary:[]", () => {
+  const savedPreset = normalizeQueryPreset({
+    id: "sv-real-clear",
+    name: "Clear All",
+    builtin: false,
+    hidden: false,
+    filters: { status: "all" },
+    view: { type: "list" },
+    summary: [{ type: "count" }, { type: "sum", field: "planned" }],
+  });
+
+  const stub = buildStubViewState({
+    queryPresets: [savedPreset],
+  });
+  stub.state.savedViewId = "sv-real-clear";
+  const params = makeSummaryDraftParams(stub);
+
+  // Remove all metrics one by one
+  let draft = handleQueryEditorSummaryRemove(params, 1);
+  assert.equal(draft.summary.length, 1);
+  draft = handleQueryEditorSummaryRemove(params, 0);
+  assert.equal(draft.summary.length, 0);
+
+  // Verify tabDrafts has empty summary
+  const stored = stub.tabDrafts.get("sv-real-clear");
+  assert.ok(stored);
+  assert.deepEqual(stored.summary, [], "empty summary must be stored in tabDrafts");
+
+  // Verify currentQuerySnapshot picks up empty summary (draft wins over saved)
+  const snapshot = makeGetSnapshot(stub)(savedPreset);
+  assert.deepEqual(snapshot.summary, [],
+    "currentQuerySnapshot must use draft's empty summary, not saved fallback");
+});
+
+// ── Full production flow: edit → snapshot → save/update ──
+
+test("real-path: full flow — add metrics through handlers → snapshot → save-as preserves summary", () => {
+  const savedPreset = normalizeQueryPreset({
+    id: "sv-real-flow-save",
+    name: "Flow Save",
+    builtin: false,
+    hidden: false,
+    filters: { status: "todo" },
+    view: { type: "list" },
+    summary: [],
+  });
+
+  const stub = buildStubViewState({
+    queryPresets: [savedPreset],
+  });
+  stub.state.savedViewId = "sv-real-flow-save";
+  const params = makeSummaryDraftParams(stub);
+
+  // Step 1: Add count metric through production handler
+  let draft = handleQueryEditorSummaryAdd(params, { type: "count" });
+  assert.equal(draft.summary.length, 1);
+
+  // Step 2: Add sum metric through production handler
+  draft = handleQueryEditorSummaryAdd(params, { type: "sum", field: "planned" });
+  assert.equal(draft.summary.length, 2);
+
+  // Step 3: Add top_n with by (NOT field)
+  draft = handleQueryEditorSummaryAdd(params, { type: "top_n", by: "tags", limit: 5 });
+  assert.equal(draft.summary.length, 3);
+  assert.equal(draft.summary[2].type, "top_n");
+  assert.equal(draft.summary[2].by, "tags");
+
+  // Step 4: Edit sum metric's field
+  draft = handleQueryEditorSummaryEdit(params, 1, { field: "actual" });
+  assert.equal(draft.summary[1].field, "actual");
+
+  // Step 5: currentQuerySnapshot picks up all edits
+  const snapshot = makeGetSnapshot(stub)(savedPreset);
+  assert.equal(snapshot.summary.length, 3);
+  assert.equal(snapshot.summary[0].type, "count");
+  assert.equal(snapshot.summary[1].type, "sum");
+  assert.equal(snapshot.summary[1].field, "actual");
+  assert.equal(snapshot.summary[2].type, "top_n");
+  assert.equal(snapshot.summary[2].by, "tags");
+  assert.equal(snapshot.summary[2].limit, 5);
+
+  // Step 6: Simulate save-as via computeSaveAsFromSnapshot
+  const { saved } = computeSaveAsFromSnapshot({
+    getSnapshot: makeGetSnapshot(stub),
+    savedPreset,
+    newId: "sv-real-flow-new",
+    name: "Flow Save As",
+  });
+
+  // Step 7: Persist via upsertQueryPreset
+  const presets = upsertQueryPreset([], saved);
+  assert.equal(presets.length, 1);
+  assert.equal(presets[0].id, "sv-real-flow-new");
+  assert.equal(presets[0].summary.length, 3);
+  assert.equal(presets[0].summary[0].type, "count");
+  assert.equal(presets[0].summary[1].type, "sum");
+  assert.equal(presets[0].summary[1].field, "actual");
+  assert.equal(presets[0].summary[2].type, "top_n");
+  assert.equal(presets[0].summary[2].by, "tags", "top_n by must persist through save");
+  assert.equal(presets[0].summary[2].field, undefined, "top_n must not have field");
+
+  // Verify serialization roundtrip preserves everything
+  const dsl = stringifyQueryPreset(presets[0]);
+  const reparsed = parseQueryDsl(dsl, { name: "Flow Save As" });
+  assert.ok(sameQueryPresetContent(presets[0], reparsed));
+  assert.equal(reparsed.summary[2].by, "tags");
+});
+
+test("real-path: full flow — edit then remove then add → snapshot → update preserves final state", () => {
+  const savedPreset = normalizeQueryPreset({
+    id: "sv-real-update",
+    name: "Original",
+    builtin: false,
+    hidden: false,
+    filters: { status: "all" },
+    view: { type: "list" },
+    summary: [{ type: "count" }, { type: "sum", field: "planned" }],
+  });
+
+  const stub = buildStubViewState({
+    queryPresets: [savedPreset],
+  });
+  stub.state.savedViewId = "sv-real-update";
+  const params = makeSummaryDraftParams(stub);
+
+  // Step 1: Edit sum field
+  handleQueryEditorSummaryEdit(params, 1, { field: "actual" });
+
+  // Step 2: Remove count
+  handleQueryEditorSummaryRemove(params, 0);
+
+  // Step 3: Add top_n
+  handleQueryEditorSummaryAdd(params, { type: "top_n", by: "status", limit: 10 });
+
+  // Step 4: Snapshot reflects all changes
+  const snapshot = makeGetSnapshot(stub)(savedPreset);
+  assert.equal(snapshot.summary.length, 2);
+  assert.equal(snapshot.summary[0].type, "sum");
+  assert.equal(snapshot.summary[0].field, "actual");
+  assert.equal(snapshot.summary[1].type, "top_n");
+  assert.equal(snapshot.summary[1].by, "status");
+  assert.equal(snapshot.summary[1].limit, 10);
+
+  // Step 5: Simulate update via computeUpdateFromDraftComponents
+  const updated = computeUpdateFromDraftComponents({
+    existing: savedPreset,
+    draftView: snapshot.view ?? { type: "list" },
+    draftSummary: snapshot.summary,
+  });
+
+  assert.equal(updated.summary.length, 2);
+  assert.equal(updated.summary[0].type, "sum");
+  assert.equal(updated.summary[0].field, "actual");
+  assert.equal(updated.summary[1].type, "top_n");
+  assert.equal(updated.summary[1].by, "status");
+
+  // Step 6: Persist via updateQueryPresetById
+  const presets = updateQueryPresetById([savedPreset], updated);
+  assert.equal(presets.length, 1);
+  assert.equal(presets[0].summary.length, 2);
+  assert.equal(presets[0].summary[1].by, "status", "top_n by must persist through update");
+
+  // Verify serialization roundtrip
+  const dsl = stringifyQueryPreset(presets[0]);
+  const reparsed = parseQueryDsl(dsl, { name: "Original" });
+  assert.equal(reparsed.summary[1].by, "status");
+});
+
+test("real-path: summary:[] persists through full delete-all → snapshot → save-as flow", () => {
+  const savedPreset = normalizeQueryPreset({
+    id: "sv-real-empty-save",
+    name: "To Be Emptied",
+    builtin: false,
+    hidden: false,
+    filters: { status: "all" },
+    view: { type: "list" },
+    summary: [{ type: "count" }, { type: "sum", field: "planned" }],
+  });
+
+  const stub = buildStubViewState({
+    queryPresets: [savedPreset],
+  });
+  stub.state.savedViewId = "sv-real-empty-save";
+  const params = makeSummaryDraftParams(stub);
+
+  // Clear all metrics through production handlers
+  handleQueryEditorSummaryRemove(params, 1);
+  handleQueryEditorSummaryRemove(params, 0);
+
+  // Verify tabDrafts has empty summary
+  const draft = stub.tabDrafts.get("sv-real-empty-save");
+  assert.ok(draft);
+  assert.deepEqual(draft.summary, [], "tabDrafts must have explicit empty summary");
+
+  // currentQuerySnapshot must use draft's empty summary (not fall back to saved)
+  const snapshot = makeGetSnapshot(stub)(savedPreset);
+  assert.deepEqual(snapshot.summary, [],
+    "currentQuerySnapshot must use draft empty summary over saved summary");
+
+  // Save-as
+  const { saved } = computeSaveAsFromSnapshot({
+    getSnapshot: makeGetSnapshot(stub),
+    savedPreset,
+    newId: "sv-real-empty-new",
+    name: "Empty Summary Tab",
+  });
+
+  assert.deepEqual(saved.summary, [], "save-as must preserve explicit empty summary");
+
+  const presets = upsertQueryPreset([], saved);
+  assert.deepEqual(presets[0].summary, [],
+    "persisted preset must have explicit empty summary");
+
+  // Serialization roundtrip preserves empty summary
+  const dsl = stringifyQueryPreset(presets[0]);
+  const reparsed = parseQueryDsl(dsl, { name: "Empty Summary Tab" });
+  assert.deepEqual(reparsed.summary, [],
+    "serialize/parse must preserve empty summary");
+});
+
+test("real-path: summary:[] persists through clear-all → snapshot → update flow", () => {
+  const savedPreset = normalizeQueryPreset({
+    id: "sv-real-empty-update",
+    name: "Update Empty",
+    builtin: false,
+    hidden: false,
+    filters: { status: "all" },
+    view: { type: "month" },
+    summary: [{ type: "count" }, { type: "top_n", by: "tags", limit: 5 }],
+  });
+
+  const stub = buildStubViewState({
+    queryPresets: [savedPreset],
+  });
+  stub.state.savedViewId = "sv-real-empty-update";
+  const params = makeSummaryDraftParams(stub);
+
+  // Clear all metrics
+  handleQueryEditorSummaryRemove(params, 1);
+  handleQueryEditorSummaryRemove(params, 0);
+
+  // Snapshot reflects empty summary
+  const snapshot = makeGetSnapshot(stub)(savedPreset);
+  assert.deepEqual(snapshot.summary, [],
+    "snapshot must pick up draft's explicit empty summary");
+
+  // Update
+  const updated = computeUpdateFromDraftComponents({
+    existing: savedPreset,
+    draftView: snapshot.view ?? { type: "month" },
+    draftSummary: snapshot.summary,
+  });
+
+  assert.deepEqual(updated.summary, [],
+    "update must preserve explicit empty summary");
+
+  const presets = updateQueryPresetById([savedPreset], updated);
+  assert.deepEqual(presets[0].summary, [],
+    "persisted updated preset must have explicit empty summary");
+
+  // Serialization roundtrip
+  const dsl = stringifyQueryPreset(presets[0]);
+  const reparsed = parseQueryDsl(dsl, { name: "Update Empty" });
+  assert.deepEqual(reparsed.summary, [],
+    "serialize/parse must preserve empty summary after update");
+});
+
+test("real-path: top_n by parameter flows through handler → snapshot → save → runtime summary compatibility", () => {
+  // Verify that the canonical `by` parameter written by the GUI visual
+  // control is correctly consumed by the runtime summary (computeTopN reads `by`).
+  // This test mimics the exact production path:
+  //   GUI add → tabDrafts → currentQuerySnapshot → save-as → DSL
+
+  const savedPreset = normalizeQueryPreset({
+    id: "sv-real-topn-flow",
+    name: "Top N Flow",
+    builtin: false,
+    hidden: false,
+    filters: { status: "todo" },
+    view: { type: "list" },
+    summary: [{ type: "count" }],
+  });
+
+  const stub = buildStubViewState({
+    queryPresets: [savedPreset],
+  });
+  stub.state.savedViewId = "sv-real-topn-flow";
+  const params = makeSummaryDraftParams(stub);
+
+  // GUI visual control writes top_n with `by` (the canonical grouping parameter)
+  handleQueryEditorSummaryAdd(params, { type: "top_n", by: "tags", limit: 5 });
+
+  // Verify tabDrafts
+  const draft = stub.tabDrafts.get("sv-real-topn-flow");
+  assert.equal(draft.summary[1].type, "top_n");
+  assert.equal(draft.summary[1].by, "tags", "GUI writes by, not field");
+  assert.equal(draft.summary[1].limit, 5);
+  assert.equal(draft.summary[1].field, undefined, "field must not be set");
+
+  // currentQuerySnapshot picks up the draft
+  const snapshot = makeGetSnapshot(stub)(savedPreset);
+  const topnMetric = snapshot.summary[1];
+  assert.equal(topnMetric.type, "top_n");
+  assert.equal(topnMetric.by, "tags", "snapshot must preserve by");
+  assert.equal(topnMetric.field, undefined);
+
+  // Save-as
+  const { saved } = computeSaveAsFromSnapshot({
+    getSnapshot: makeGetSnapshot(stub),
+    savedPreset,
+    newId: "sv-real-topn-saved",
+    name: "Top N Saved",
+  });
+
+  const presets = upsertQueryPreset([], saved);
+  const savedTopN = presets[0].summary[1];
+  assert.equal(savedTopN.by, "tags", "saved preset must preserve by");
+  assert.equal(savedTopN.limit, 5);
+  assert.equal(savedTopN.field, undefined);
+
+  // Verify the saved DSL is compatible with runtime summary (computeTopN reads `by`)
+  const dsl = stringifyQueryPreset(presets[0]);
+  const reparsed = parseQueryDsl(dsl, { name: "Top N Saved" });
+  const reparsedTopN = reparsed.summary[1];
+  assert.equal(reparsedTopN.by, "tags",
+    "runtime summary must read by from DSL");
+  assert.equal(reparsedTopN.limit, 5);
+  assert.equal(reparsedTopN.field, undefined,
+    "runtime summary ignores field — canonical parameter is by");
+});
+
+test("real-path: draft view and summary both flow through currentQuerySnapshot", () => {
+  // Verify that when both view and summary are edited via the Query Editor,
+  // currentQuerySnapshot merges both into the snapshot correctly.
+
+  const savedPreset = normalizeQueryPreset({
+    id: "sv-real-both",
+    name: "Both Draft",
+    builtin: false,
+    hidden: false,
+    filters: { status: "todo" },
+    view: { type: "list", preset: "today" },
+    summary: [{ type: "count" }],
+  });
+
+  const stub = buildStubViewState({
+    queryPresets: [savedPreset],
+  });
+  stub.state.savedViewId = "sv-real-both";
+
+  // Simulate view edit: change type to "week"
+  // (In production, the view button click handler writes draft.view)
+  const viewDraft = normalizeQueryPreset({
+    ...savedPreset,
+    view: { type: "week" },
+  });
+  stub.tabDrafts.set("sv-real-both", viewDraft);
+
+  // Simulate summary edit: add a sum metric
+  const params = makeSummaryDraftParams(stub);
+  handleQueryEditorSummaryAdd(params, { type: "sum", field: "planned" });
+
+  // currentQuerySnapshot merges both
+  const snapshot = makeGetSnapshot(stub)(savedPreset);
+
+  // Identity from saved
+  assert.equal(snapshot.id, "sv-real-both");
+  assert.equal(snapshot.name, "Both Draft");
+
+  // Draft view wins
+  assert.equal(snapshot.view.type, "week", "draft view must win");
+
+  // Draft summary wins (count from viewDraft + sum from summaryAdd)
+  assert.equal(snapshot.summary.length, 2);
+  assert.equal(snapshot.summary[0].type, "count");
+  assert.equal(snapshot.summary[1].type, "sum");
+  assert.equal(snapshot.summary[1].field, "planned");
+
+  // Filters from state (not draft)
+  assert.deepEqual(snapshot.filters.status, "all");
+});
+
+test("real-path: snapshot falls back to saved when no draft exists in tabDrafts", () => {
+  const savedPreset = normalizeQueryPreset({
+    id: "sv-real-no-draft",
+    name: "No Draft",
+    builtin: false,
+    hidden: false,
+    filters: { status: "done" },
+    view: { type: "month" },
+    summary: [{ type: "count" }, { type: "ratio", numerator: "actual", denominator: "estimate" }],
+  });
+
+  const stub = buildStubViewState({
+    queryPresets: [savedPreset],
+  });
+  stub.state.savedViewId = "sv-real-no-draft";
+  // tabDrafts is empty — no draft
+
+  const snapshot = makeGetSnapshot(stub)(savedPreset);
+
+  assert.equal(snapshot.view.type, "month", "saved view wins when no draft");
+  assert.equal(snapshot.summary.length, 2, "saved summary wins when no draft");
+  assert.equal(snapshot.summary[0].type, "count");
+  assert.equal(snapshot.summary[1].type, "ratio");
 });
