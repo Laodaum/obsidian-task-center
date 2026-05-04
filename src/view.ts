@@ -38,7 +38,8 @@ import type { FilterPopoverKey, TabKey, ViewState } from "./view/state";
 import { taskDisplayTags } from "./tags";
 import { formatDateFilterLabel } from "./date-filter";
 import { taskMatchesTimeToken, timeTokenAppliesToField } from "./time-filter";
-import { deriveEffectiveTasks } from "./task-tree";
+import { deriveEffectiveTasks, countTopLevel } from "./task-tree";
+import type { EffectiveTask } from "./task-tree";
 import { applyQueryFilters } from "./query/filter";
 import { applyViewProjection } from "./query/projection";
 import {
@@ -161,6 +162,8 @@ export class TaskCenterView extends ItemView {
   plugin: TaskCenterPlugin;
   api: TaskCenterApi;
   tasks: ParsedTask[] = [];
+  /** Cached effective tasks derived from `this.tasks` via `deriveEffectiveTasks`. */
+  private _effectiveTasks: EffectiveTask[] = [];
   state: ViewState;
   private refreshTimer: number | null = null;
   private cacheVersion = 0;
@@ -440,6 +443,20 @@ export class TaskCenterView extends ItemView {
     // valid markdown (`- [ ] ⏳ 2026-04-25`) but produce no useful card.
     // Filtering here also removes them from tab counts and tree traversals.
     this.tasks = all.filter((t) => t.title.trim() !== "");
+    this._effectiveTasks = [];
+  }
+
+  /**
+   * Returns the EffectiveTask[] derived from `this.tasks` via
+   * `deriveEffectiveTasks`.  The result is cached until the next
+   * `reloadTasks` clears it, so multiple render calls within a
+   * single paint never recompute the tree.
+   */
+  private getEffectiveTasks(): EffectiveTask[] {
+    if (this._effectiveTasks.length === 0 && this.tasks.length > 0) {
+      this._effectiveTasks = deriveEffectiveTasks(this.tasks);
+    }
+    return this._effectiveTasks;
   }
 
   /**
@@ -1163,42 +1180,43 @@ export class TaskCenterView extends ItemView {
     const normalized = normalizeQueryPreset(view);
     const tab = this.tabForSavedView(normalized, "list");
     const filter = this.getSavedViewFilter(normalized);
+    const effectiveTasks = this.getEffectiveTasks();
     const today = todayISO();
     if (tab === "today") {
-      const activeTodos = this.tasks.filter(filter).filter((task) => task.status === "todo" && !task.inheritsTerminal);
-      const overdueCount = activeTodos.filter((task) => task.deadline && task.deadline < today).length;
-      const todayScheduled = activeTodos.filter((task) => task.scheduled === today).length;
+      const activeTodos = effectiveTasks.filter(filter).filter((task) => task.effectiveStatus === "todo");
+      const overdueCount = activeTodos.filter((task) => task.effectiveDeadline && task.effectiveDeadline < today).length;
+      const todayScheduled = activeTodos.filter((task) => task.effectiveScheduled === today).length;
       return overdueCount + todayScheduled;
     }
     if (tab === "week") {
       const weekStart = startOfWeek(today, this.plugin.settings.weekStartsOn);
       const weekEnd = addDays(weekStart, 6);
-      return this.hideChildrenOfVisibleParents(
-        this.tasks.filter(filter).filter((task) => {
-          const date = taskDateColumn(task);
-          return !!date && date >= weekStart && date <= weekEnd;
-        }),
-      ).length;
+      const weekTasks = effectiveTasks.filter(filter).filter((task) => {
+        const date = task.effectiveScheduled;
+        return !!date && date >= weekStart && date <= weekEnd;
+      });
+      return countTopLevel(weekTasks);
     }
     if (tab === "month") {
       const monthStart = startOfMonth(today);
       const monthEnd = endOfMonth(today);
-      return this.hideChildrenOfVisibleParents(
-        this.tasks.filter(filter).filter((task) => {
-          const date = taskDateColumn(task);
-          return !!date && date >= monthStart && date <= monthEnd;
-        }),
-      ).length;
+      const monthTasks = effectiveTasks.filter(filter).filter((task) => {
+        const date = task.effectiveScheduled;
+        return !!date && date >= monthStart && date <= monthEnd;
+      });
+      return countTopLevel(monthTasks);
     }
     if (tab === "completed") {
-      return this.hideChildrenOfVisibleParents(this.tasks.filter(filter).filter((task) => task.status === "done")).length;
+      const completedTasks = effectiveTasks.filter(filter).filter((task) => task.effectiveStatus === "done");
+      return countTopLevel(completedTasks);
     }
     if (tab === "unscheduled") {
-      return this.hideChildrenOfVisibleParents(
-        this.tasks.filter(filter).filter((task) => task.status === "todo" && !task.inheritsTerminal && !task.scheduled),
-      ).length;
+      const unscheduledTasks = effectiveTasks.filter(filter).filter(
+        (task) => task.effectiveStatus === "todo" && !task.effectiveScheduled,
+      );
+      return countTopLevel(unscheduledTasks);
     }
-    return this.hideChildrenOfVisibleParents(this.tasks.filter(filter)).length;
+    return countTopLevel(effectiveTasks.filter(filter));
   }
 
   private openSavedViewMenu(event: MouseEvent, view: QueryPreset): void {
@@ -2360,17 +2378,19 @@ export class TaskCenterView extends ItemView {
     for (let i = 0; i < 7; i++) days.push(addDays(weekStart, i));
 
     const filter = this.getTextFilter();
+    const effectiveTasks = this.getEffectiveTasks();
+
     if (this.hasActiveFilters()) {
       const unfilteredCount = days.reduce(
-        (sum, day) => sum + this.hideChildrenOfVisibleParents(
-          this.tasks.filter((t) => taskDateColumn(t) === day),
+        (sum, day) => sum + effectiveTasks.filter(
+          (t) => t.effectiveScheduled === day && t.isTopLevelInQuery,
         ).length,
         0,
       );
       const filteredCount = days.reduce(
-        (sum, day) => sum + this.hideChildrenOfVisibleParents(
-          this.tasks.filter((t) => taskDateColumn(t) === day).filter(filter),
-        ).length,
+        (sum, day) => sum + effectiveTasks.filter(
+          (t) => t.effectiveScheduled === day && t.isTopLevelInQuery,
+        ).filter(filter).length,
         0,
       );
       if (unfilteredCount > 0 && filteredCount === 0) this.renderFilterEmptyState(parent);
@@ -2411,16 +2431,16 @@ export class TaskCenterView extends ItemView {
       });
       head.createSpan({ text: `${pad(d.getMonth() + 1)}-${pad(d.getDate())}`, cls: "bt-week-date" });
 
-      const dayTasks = this.tasks
-        .filter((t) => taskDateColumn(t) === day)
+      const dayTasks = effectiveTasks
+        .filter((t) => t.effectiveScheduled === day)
         .filter(filter);
       dayTasks.sort((a, b) => {
-        if (a.deadline && b.deadline) return a.deadline.localeCompare(b.deadline);
-        if (a.deadline) return -1;
-        if (b.deadline) return 1;
+        if (a.effectiveDeadline && b.effectiveDeadline) return a.effectiveDeadline.localeCompare(b.effectiveDeadline);
+        if (a.effectiveDeadline) return -1;
+        if (b.effectiveDeadline) return 1;
         return 0;
       });
-      const topLevel = this.hideChildrenOfVisibleParents(dayTasks);
+      const topLevel = dayTasks.filter((t) => t.isTopLevelInQuery);
       const stats = col.createSpan({
         text: this.columnStats(dayTasks),
         cls: "bt-week-stats",
@@ -2537,18 +2557,19 @@ export class TaskCenterView extends ItemView {
       header.createDiv({ text: weekdayLabel(d.getDay()), cls: "bt-month-dow" });
     }
 
+    const effectiveTasks = this.getEffectiveTasks();
     const filter = this.getTextFilter();
     if (this.hasActiveFilters()) {
       const unfilteredCount = gridDays.reduce(
-        (sum, day) => sum + this.hideChildrenOfVisibleParents(
-          this.tasks.filter((t) => taskDateColumn(t) === day),
+        (sum, day) => sum + effectiveTasks.filter(
+          (t) => t.effectiveScheduled === day && t.isTopLevelInQuery,
         ).length,
         0,
       );
       const filteredCount = gridDays.reduce(
-        (sum, day) => sum + this.hideChildrenOfVisibleParents(
-          this.tasks.filter((t) => taskDateColumn(t) === day).filter(filter),
-        ).length,
+        (sum, day) => sum + effectiveTasks.filter(
+          (t) => t.effectiveScheduled === day && t.isTopLevelInQuery,
+        ).filter(filter).length,
         0,
       );
       if (unfilteredCount > 0 && filteredCount === 0) this.renderFilterEmptyState(wrapper);
@@ -2566,10 +2587,10 @@ export class TaskCenterView extends ItemView {
       });
       // e2e drop-target selector — same contract as the week view.
       cell.dataset.date = day;
-      const dayTasksAll = this.tasks
-        .filter((t) => taskDateColumn(t) === day)
+      const dayTasksAll = effectiveTasks
+        .filter((t) => t.effectiveScheduled === day)
         .filter(filter);
-      const dayTasks = this.hideChildrenOfVisibleParents(dayTasksAll);
+      const dayTasks = dayTasksAll.filter((t) => t.isTopLevelInQuery);
       const head = cell.createDiv({ cls: "bt-month-cell-head" });
       head.createSpan({ text: `${dObj.getDate()}`, cls: "bt-month-cell-date" });
       if (dayTasks.length > 0) {
@@ -2582,8 +2603,8 @@ export class TaskCenterView extends ItemView {
         chip.dataset.taskId = t.id;
         if (this.contentEl.dataset.mobileLayout !== "true") chip.draggable = true;
         chip.setText(t.title);
-        if (t.deadline) {
-          const deadlineDays = daysBetween(today, t.deadline);
+        if (t.effectiveDeadline) {
+          const deadlineDays = daysBetween(today, t.effectiveDeadline);
           if (deadlineDays < 0) chip.addClass("overdue");
           else if (deadlineDays <= 3) chip.addClass("near-deadline");
         }
@@ -2714,7 +2735,8 @@ export class TaskCenterView extends ItemView {
 
   private renderCompleted(parent: HTMLElement) {
     const filter = this.getTextFilter();
-    const completedAll = this.tasks.filter((t) => t.status === "done" && t.completed);
+    const effectiveTasks = this.getEffectiveTasks();
+    const completedAll = effectiveTasks.filter((t) => t.effectiveStatus === "done" && t.completed);
     const completed = completedAll
       .filter(filter)
       .sort((a, b) => (b.completed! < a.completed! ? -1 : 1));
@@ -2851,21 +2873,24 @@ export class TaskCenterView extends ItemView {
   // see USER_STORIES.md
   private renderUnscheduledPool(parent: HTMLElement) {
     const filter = this.getTextFilter();
-    const unscheduledBase = this.tasks.filter((t) => !t.scheduled && t.status === "todo" && !t.inheritsTerminal);
+    const effectiveTasks = this.getEffectiveTasks();
+    const unscheduledBase = effectiveTasks.filter(
+      (t) => !t.effectiveScheduled && t.effectiveStatus === "todo",
+    );
     const unscheduledAll = unscheduledBase.filter(filter);
     // Sort for triage: deadline ascending first (nearest deadline is urgent),
     // tasks without deadline fall to the end; tie-break by created date desc
     // (newer tasks first). Children-of-visible-parents dedup happens after.
     unscheduledAll.sort((a, b) => {
-      if (a.deadline && b.deadline) return a.deadline.localeCompare(b.deadline);
-      if (a.deadline) return -1;
-      if (b.deadline) return 1;
-      if (a.created && b.created) return b.created.localeCompare(a.created);
-      if (a.created) return -1;
-      if (b.created) return 1;
+      if (a.effectiveDeadline && b.effectiveDeadline) return a.effectiveDeadline.localeCompare(b.effectiveDeadline);
+      if (a.effectiveDeadline) return -1;
+      if (b.effectiveDeadline) return 1;
+      if (a.effectiveCreated && b.effectiveCreated) return b.effectiveCreated.localeCompare(a.effectiveCreated);
+      if (a.effectiveCreated) return -1;
+      if (b.effectiveCreated) return 1;
       return 0;
     });
-    const unscheduled = this.hideChildrenOfVisibleParents(unscheduledAll);
+    const unscheduled = unscheduledAll.filter((t) => t.isTopLevelInQuery);
     if (unscheduled.length === 0 && !this.state.showUnscheduledPool) return;
 
     const wrap = parent.createDiv({ cls: "bt-pool-wrap" });
@@ -2972,29 +2997,27 @@ export class TaskCenterView extends ItemView {
 
     const today = todayISO();
     const tomorrow = addDays(today, 1);
-    const activeTodos = this.tasks.filter(
-      (t) => t.status === "todo" && !t.inheritsTerminal && t.title.trim() !== "",
+    const effectiveTasks = this.getEffectiveTasks();
+    const activeTodos = effectiveTasks.filter(
+      (t) => t.effectiveStatus === "todo" && t.title.trim() !== "",
     );
 
-    // Overdue: anything with a deadline in the past, regardless of schedule.
-    // Sort earliest-deadline first so the most-overdue rises to the top.
+    // Overdue: anything with an effective deadline in the past,
+    // regardless of schedule. Sort earliest-deadline first.
     const overdue = activeTodos
-      .filter((t) => t.deadline && t.deadline < today)
-      .sort((a, b) => (a.deadline ?? "").localeCompare(b.deadline ?? ""));
+      .filter((t) => t.effectiveDeadline && t.effectiveDeadline < today)
+      .sort((a, b) => (a.effectiveDeadline ?? "").localeCompare(b.effectiveDeadline ?? ""));
 
-    // Today: scheduled to land on today. Cards already in the overdue group
-    // are skipped to avoid double-listing.
+    // Today: effectiveScheduled lands on today. Skip cards already in overdue.
     const overdueIds = new Set(overdue.map((t) => t.id));
     const todayList = activeTodos
-      .filter((t) => t.scheduled === today && !overdueIds.has(t.id));
+      .filter((t) => t.effectiveScheduled === today && !overdueIds.has(t.id));
 
-    // Unscheduled recommendation: just the one freshest unscheduled todo.
-    // The full backlog lives on the Unscheduled tab — this slot is a single
-    // nudge so the user doesn't sit on an empty Today screen when they have
-    // inbox items waiting.
+    // Unscheduled recommendation: one freshest todo with no effective
+    // scheduled or deadline.
     const unscheduledRec = activeTodos
-      .filter((t) => !t.scheduled && !t.deadline)
-      .sort((a, b) => (b.created ?? "").localeCompare(a.created ?? ""))
+      .filter((t) => !t.effectiveScheduled && !t.effectiveDeadline)
+      .sort((a, b) => (b.effectiveCreated ?? "").localeCompare(a.effectiveCreated ?? ""))
       .slice(0, 1);
 
     const PER_GROUP_CAP = 3;
@@ -3198,7 +3221,8 @@ export class TaskCenterView extends ItemView {
   private renderList(parent: HTMLElement): void {
     const active = this.activeSavedView();
     const filter = this.getTextFilter();
-    const list = this.hideChildrenOfVisibleParents(this.tasks.filter(filter));
+    const effectiveTasks = this.getEffectiveTasks();
+    const list = effectiveTasks.filter(filter).filter((t) => t.isTopLevelInQuery);
     this.sortListTasks(list, active.view?.orderBy);
     if (list.length === 0) {
       if (this.tasks.length > 0) this.renderFilterEmptyState(parent);
@@ -3210,7 +3234,7 @@ export class TaskCenterView extends ItemView {
     for (const task of list) this.renderCard(wrap, task);
   }
 
-  private sortListTasks(tasks: ParsedTask[], orderBy: string[] | undefined): void {
+  private sortListTasks(tasks: EffectiveTask[], orderBy: string[] | undefined): void {
     const order = orderBy ?? [];
     tasks.sort((left, right) => {
       for (const rule of order) {
@@ -3225,18 +3249,18 @@ export class TaskCenterView extends ItemView {
           continue;
         }
         if (rule === "deadline_risk") {
-          const leftDeadline = left.deadline ?? "9999-99-99";
-          const rightDeadline = right.deadline ?? "9999-99-99";
+          const leftDeadline = left.effectiveDeadline ?? "9999-99-99";
+          const rightDeadline = right.effectiveDeadline ?? "9999-99-99";
           const cmp = leftDeadline.localeCompare(rightDeadline);
           if (cmp !== 0) return cmp;
           continue;
         }
       }
-      const scheduledCmp = (left.scheduled ?? "9999-99-99").localeCompare(right.scheduled ?? "9999-99-99");
+      const scheduledCmp = (left.effectiveScheduled ?? "9999-99-99").localeCompare(right.effectiveScheduled ?? "9999-99-99");
       if (scheduledCmp !== 0) return scheduledCmp;
-      const deadlineCmp = (left.deadline ?? "9999-99-99").localeCompare(right.deadline ?? "9999-99-99");
+      const deadlineCmp = (left.effectiveDeadline ?? "9999-99-99").localeCompare(right.effectiveDeadline ?? "9999-99-99");
       if (deadlineCmp !== 0) return deadlineCmp;
-      const createdCmp = (right.created ?? "").localeCompare(left.created ?? "");
+      const createdCmp = (right.effectiveCreated ?? "").localeCompare(left.effectiveCreated ?? "");
       if (createdCmp !== 0) return createdCmp;
       return left.title.localeCompare(right.title);
     });
@@ -3250,18 +3274,21 @@ export class TaskCenterView extends ItemView {
 
   private renderUnscheduledBig(parent: HTMLElement) {
     const filter = this.getTextFilter();
-    const unscheduledBase = this.tasks.filter((t) => !t.scheduled && t.status === "todo" && !t.inheritsTerminal);
+    const effectiveTasks = this.getEffectiveTasks();
+    const unscheduledBase = effectiveTasks.filter(
+      (t) => !t.effectiveScheduled && t.effectiveStatus === "todo",
+    );
     const unscheduledAll = unscheduledBase.filter(filter);
     unscheduledAll.sort((a, b) => {
-      if (a.deadline && b.deadline) return a.deadline.localeCompare(b.deadline);
-      if (a.deadline) return -1;
-      if (b.deadline) return 1;
-      if (a.created && b.created) return b.created.localeCompare(a.created);
-      if (a.created) return -1;
-      if (b.created) return 1;
+      if (a.effectiveDeadline && b.effectiveDeadline) return a.effectiveDeadline.localeCompare(b.effectiveDeadline);
+      if (a.effectiveDeadline) return -1;
+      if (b.effectiveDeadline) return 1;
+      if (a.effectiveCreated && b.effectiveCreated) return b.effectiveCreated.localeCompare(a.effectiveCreated);
+      if (a.effectiveCreated) return -1;
+      if (b.effectiveCreated) return 1;
       return 0;
     });
-    const unscheduled = this.hideChildrenOfVisibleParents(unscheduledAll);
+    const unscheduled = unscheduledAll.filter((t) => t.isTopLevelInQuery);
 
     const wrap = parent.createDiv({ cls: "bt-unscheduled-big" });
     wrap.dataset.view = "list";
@@ -3299,7 +3326,7 @@ export class TaskCenterView extends ItemView {
    */
   private renderCard(
     parent: HTMLElement,
-    t: ParsedTask,
+    t: EffectiveTask,
     contextDate: string | null = null,
   ) {
     const card = parent.createDiv({ cls: "bt-card" });
@@ -3316,9 +3343,9 @@ export class TaskCenterView extends ItemView {
     // Only annotate active (todo) tasks. A done / dropped task that happens
     // to have a past deadline shouldn't render with the urgency styling — its
     // outcome is already settled.
-    if (t.deadline && t.status === "todo") {
+    if (t.effectiveDeadline && t.effectiveStatus === "todo") {
       const today = todayISO();
-      const dd = daysBetween(today, t.deadline);
+      const dd = daysBetween(today, t.effectiveDeadline);
       if (dd < 0) {
         card.addClass("bt-overdue");
         card.dataset.overdue = "true";
@@ -3331,13 +3358,13 @@ export class TaskCenterView extends ItemView {
     // Title row
     const titleRow = card.createDiv({ cls: "bt-card-title-row" });
     const check = titleRow.createDiv({ cls: "bt-check" });
-    check.setText(statusIcon(t.status));
+    check.setText(statusIcon(t.effectiveStatus));
     check.title = "Toggle done (space)";
     check.addEventListener("click", (e) => {
       void (async () => {
         e.stopPropagation();
         await this.runWithRemoveAnim(t.id, async () => {
-          if (t.status === "done") await this.api.undone(t.id);
+          if (t.effectiveStatus === "done") await this.api.undone(t.id);
           else await this.api.done(t.id);
         });
       })();
@@ -3345,7 +3372,7 @@ export class TaskCenterView extends ItemView {
 
     const title = titleRow.createDiv({ cls: "bt-card-title", text: t.title });
     title.title = t.title; // tooltip for long titles
-    if (t.status === "done") card.addClass("done");
+    if (t.effectiveStatus === "done") card.addClass("done");
 
     this.renderTaskTags(card, t.tags, "bt-card-tags");
 
@@ -3354,61 +3381,25 @@ export class TaskCenterView extends ItemView {
     // task #43: route est/act labels through tr() so a CN session reads
     // "预估 30m / 实际 25m" instead of the raw English literals.
     if (t.estimate) meta.createSpan({ text: tr("meta.est", { dur: formatMinutes(t.estimate) }), cls: "bt-meta-est" });
-    if (t.deadline) meta.createSpan({ text: `📅${t.deadline}`, cls: "bt-meta-deadline" });
+    if (t.effectiveDeadline) meta.createSpan({ text: `📅${t.effectiveDeadline}`, cls: "bt-meta-deadline" });
     if (t.actual) meta.createSpan({ text: tr("meta.act", { dur: formatMinutes(t.actual) }), cls: "bt-meta-actual" });
     // US-150: hide the `⏳ {date}` badge when the card is rendered in a
     // column whose day already implies it. Otherwise (unscheduled pool /
     // completed view / etc.) the badge stays — date isn't implied by
     // position there, and the user needs to see when it was scheduled.
-    if (t.scheduled && t.scheduled !== contextDate) {
-      meta.createSpan({ text: `⏳${t.scheduled}`, cls: "bt-meta-sched" });
+    if (t.effectiveScheduled && t.effectiveScheduled !== contextDate) {
+      meta.createSpan({ text: `⏳${t.effectiveScheduled}`, cls: "bt-meta-sched" });
     }
     const path = meta.createSpan({ text: compactPath(t.path), cls: "bt-meta-path" });
     path.title = t.path;
 
-    // Children expansion (recursive — renders grandchildren and deeper).
-    //
-    // US-148: a child with its own `⏳` ≠ the parent's belongs in *that* day's
-    // column as a standalone card, NOT nested here. `hideChildrenOfVisibleParents`
-    // surfaces it there; we just need to skip it on the parent side so it
-    // doesn't double-render. Children without an independent schedule (or
-    // matching the parent's) still render inline — they ride with the parent.
-    const childLines = t.childrenLines;
-    if (childLines.length > 0) {
+    // Children expansion — uses the EffectiveTask tree's renderParentId
+    // to determine which children render inline under this card.
+    const effectiveTasksForChildren = this.getEffectiveTasks();
+    const children = effectiveTasksForChildren.filter((e) => e.renderParentId === t.id);
+    if (children.length > 0) {
       const expander = card.createDiv({ cls: "bt-card-children" });
-      const resolved = childLines
-        .map((l) => this.tasks.find((x) => x.path === t.path && x.line === l))
-        .filter((x): x is ParsedTask => !!x);
-      const children = resolved
-        .filter((c) => !this.hasIndependentDateFromParent(c, t));
-      // US-125 task #33 observability — the "subtask missing from parent
-      // card" repro is hard to capture in synthetic e2e (Engineer scanned 6
-      // axes, none reproduced). When a user trips the bug, ask them to
-      // run `localStorage.setItem("task-center-debug","1")` then reload;
-      // the next render dumps which children were resolved vs filtered
-      // and why. Strip this once the bug is closed.
-      if (childLines.length !== children.length && this.isDebugLogging()) {
-        const dropped = childLines
-          .map((l) => {
-            const r = resolved.find((x) => x.line === l);
-            if (!r) return { line: l, reason: "not_found_in_tasks" };
-            if (r.scheduled && r.scheduled !== t.scheduled) {
-              return {
-                line: l,
-                title: r.title,
-                scheduled: r.scheduled,
-                reason: "cross_day_filter",
-              };
-            }
-            return null;
-          })
-          .filter((x) => x !== null);
-        console.debug(
-          "[task-center US-125] renderCard children diff",
-          { parent: t.id, childLines, resolvedCount: resolved.length, kept: children.length, dropped },
-        );
-      }
-      for (const c of children) this.renderSubcard(expander, c, t.scheduled ?? null);
+      for (const c of children) this.renderSubcard(expander, c, t.effectiveScheduled);
     }
 
     this.wireCardEvents(card, t);
@@ -3499,7 +3490,7 @@ export class TaskCenterView extends ItemView {
   // see USER_STORIES.md
   private renderSubcard(
     container: HTMLElement,
-    c: ParsedTask,
+    c: EffectiveTask,
     effectiveScheduled: string | null,
   ) {
     const subCard = container.createDiv({ cls: "bt-subcard" });
@@ -3507,16 +3498,16 @@ export class TaskCenterView extends ItemView {
     if (this.contentEl.dataset.mobileLayout !== "true") subCard.draggable = true;
     if (this.state.selectedTaskId === c.id) subCard.addClass("selected");
 
-    const check = subCard.createEl("button", { cls: "bt-sub-check", text: statusIcon(c.status) });
+    const check = subCard.createEl("button", { cls: "bt-sub-check", text: statusIcon(c.effectiveStatus) });
     check.type = "button";
     check.dataset.cardAction = "done";
-    check.title = c.status === "done" ? tr("ctx.markTodo") : tr("ctx.markDone");
+    check.title = c.effectiveStatus === "done" ? tr("ctx.markTodo") : tr("ctx.markDone");
     check.setAttr("aria-label", check.title);
     check.addEventListener("click", (e) => {
       void (async () => {
         e.stopPropagation();
         await this.runWithRemoveAnim(c.id, async () => {
-          if (c.status === "done") await this.api.undone(c.id);
+          if (c.effectiveStatus === "done") await this.api.undone(c.id);
           else await this.api.done(c.id);
         });
       })();
@@ -3532,7 +3523,7 @@ export class TaskCenterView extends ItemView {
     //  reaching this branch always share their parent's `⏳` or have
     //  none of their own; no badge needed in either case.)
     if (c.estimate) subCard.createDiv({ cls: "bt-sub-est", text: formatMinutes(c.estimate) });
-    if (c.status === "done") subCard.addClass("done");
+    if (c.effectiveStatus === "done") subCard.addClass("done");
     // task #37: subcards are drag SOURCES but not nest drop targets. The
     // browser's hit-test lands on the deepest DOM node under the cursor, so
     // a drop visually aimed at the parent card's body would otherwise nest
@@ -3543,13 +3534,13 @@ export class TaskCenterView extends ItemView {
     // when it has its own ⏳.
     this.wireCardEvents(subCard, c, { acceptNestDrop: false });
 
-    const grandLines = c.childrenLines;
-    if (grandLines.length > 0) {
+    // Grandchildren — use the EffectiveTask tree's renderParentId to
+    // determine which grandchildren render inline.
+    const effectiveTasksForGrand = this.getEffectiveTasks();
+    const grand = effectiveTasksForGrand.filter((e) => e.renderParentId === c.id);
+    if (grand.length > 0) {
       if (Platform.isMobile) {
-        // US-505: mobile collapses to 1 level. Each subcard with deeper
-        // children gets a `+N` chip; tapping it opens a bottom-sheet
-        // preview of the full subtree (recursive semantic preserved per
-        // US-142 — just visually deferred).
+        // US-505: mobile collapses to 1 level.
         const total = this.countDescendants(c);
         const more = subCard.createDiv({ cls: "bt-subcard-more" });
         more.setText(`+${total}`);
@@ -3558,19 +3549,8 @@ export class TaskCenterView extends ItemView {
           this.openSubtreeSheet(c);
         });
       } else {
-        // US-148 (recursive): a grandchild with its own ⏳ different from the
-        // **effective inherited** day should render independently in its
-        // own day, not nested here. Same rule as the top-level card /
-        // first-level subtask filter — but we compare against the
-        // inherited chain (top card → … → c), not just c's raw
-        // `scheduled`, so a grandchild matching top survives even when
-        // middle subcards have no `⏳` of their own (task #36).
-        const inheritedDown = c.scheduled ?? effectiveScheduled;
+        const inheritedDown = c.effectiveScheduled ?? effectiveScheduled;
         const sub = container.createDiv({ cls: "bt-card-children" });
-        const grand = grandLines
-          .map((l) => this.tasks.find((x) => x.path === c.path && x.line === l))
-          .filter((x): x is ParsedTask => !!x)
-          .filter((g) => !(g.scheduled && g.scheduled !== inheritedDown));
         for (const g of grand) this.renderSubcard(sub, g, inheritedDown);
       }
     }
