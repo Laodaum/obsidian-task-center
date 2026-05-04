@@ -646,6 +646,49 @@ test("resolveRef — stale path:Lnn where original task moved and different task
   assert.equal(recovered.id, "Tasks/t2.md:L2");
 });
 
+test("resolveRef — same-hash old-line occupant collision returns ambiguous_slug", async () => {
+  // Two tasks with identical title → identical hash.
+  // When the file content is rearranged so that a DIFFERENT same-hash task
+  // occupies the original line, resolveRef must NOT return the line occupant
+  // but instead return ambiguous_slug listing all candidates.
+  const app = makeApp([
+    {
+      path: "Tasks/t3.md",
+      hasTask: true,
+      metaIndexed: false,
+      content: "- [ ] Dupe\n- [ ] Dupe\n- [ ] Marker\n",
+    },
+  ]);
+  const cache = new TaskCache(app);
+  cache.bind();
+  await cache.ensureAll();
+
+  const tasks = cache.flatten();
+  assert.equal(tasks.length, 3);
+  // First two tasks have the same hash (same path + title)
+  assert.equal(tasks[0].hash, tasks[1].hash, "identical title+path must produce identical hash");
+
+  const refA = tasks[0].id; // "Tasks/t3.md:L1" — Task A (first Dupe)
+
+  // Rearrange: swap the first Dupe with Marker so a different same-hash
+  // Dupe occupies the original L1 position.
+  // Original: L0=Dupe(A), L1=Dupe(B), L2=Marker
+  // New:      L0=Dupe(B), L1=Marker,  L2=Dupe(A)
+  app._setContent("Tasks/t3.md", "- [ ] Dupe\n- [ ] Marker\n- [ ] Dupe\n");
+  app._fireMetaChanged("Tasks/t3.md");
+  await cache.forFlush();
+
+  // The stale ref (Tasks/t3.md:L1) now finds a Dupe at L0 that has the
+  // SAME hash as the stored original hash. But there are TWO Dupe tasks
+  // in the cache with that hash — we can't tell which one was the original
+  // Task A. Must return ambiguous_slug, not silently return the wrong one.
+  await assert.rejects(
+    () => cache.resolveRef(refA),
+    (err) => err.code === "ambiguous_slug",
+    "stale ref where old line is occupied by same-hash different task should throw ambiguous_slug",
+  );
+});
+
 test("resolveRef — live path:Lnn ref still resolves directly (no regression)", async () => {
   const app = makeApp([
     { path: "Tasks/t1.md", hasTask: true, content: "- [ ] Live task\n" },

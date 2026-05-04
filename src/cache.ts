@@ -362,7 +362,22 @@ export class TaskCache {
         // instead of silently returning the wrong task.
         const staleRef = `${parsed.path}:L${(parsed.line ?? 0) + 1}`;
         const originalHash = this.staleHashByRef.get(staleRef);
-        if (!originalHash || originalHash === t.hash) {
+        if (!originalHash) {
+          return t;
+        }
+        if (originalHash === t.hash) {
+          // Same-hash identity guard: when the stored hash matches the
+          // current line occupant but multiple tasks share that hash,
+          // we can't tell whether the occupant is the original task or
+          // a different same-hash task that moved into this position.
+          // Return ambiguous_slug rather than silently guessing.
+          const candidates = this.byHash.get(originalHash);
+          if (candidates && candidates.length > 1) {
+            throw new TaskWriterError(
+              "ambiguous_slug",
+              `hash ${originalHash} matches ${candidates.length} tasks: ${candidates.map((m) => m.id).join(", ")}`,
+            );
+          }
           return t;
         }
         // Line is occupied by a different task — fall through.
