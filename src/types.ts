@@ -168,10 +168,35 @@ export interface QueryPresetMatrixConfig {
   showEmptyBuckets: boolean;
 }
 
+// ARCHITECTURE.md §1.3: QuerySection — a named filter group for list views.
+// Each section applies its own `when` filter to the effective task set and
+// may override sorting and limit independently.
+export interface QuerySection {
+  id: string;
+  title: string;
+  when: QueryPresetFilters;
+  orderBy?: string[];
+  limit?: number;
+  emptyText?: string;
+}
+
+// ARCHITECTURE.md §1.3: QueryTray — a separate query area for week/month
+// views (e.g. unscheduled tray). The tray's data source is an independent
+// filter applied to the effective task set; it does not alter the main
+// date area collection.
+export interface QueryTray {
+  enabled: boolean;
+  title: string;
+  filters: QueryPresetFilters;
+  orderBy?: string[];
+}
+
 export interface QueryPresetViewConfig {
   type: QueryViewType;
   preset?: string;
   orderBy?: string[];
+  sections?: QuerySection[];
+  tray?: QueryTray;
   matrix?: QueryPresetMatrixConfig;
 }
 

@@ -2,7 +2,11 @@
 // for list, week, month, and matrix views.  Does NOT own business collections;
 // Today/TODO/Unscheduled/Completed/Dropped are QueryPresets, not view types.
 //
-// ARCHITECTURE.md §4.3 defines the projection semantics.
+// ARCHITECTURE.md §4.3 defines the projection semantics:
+//   - List: sections from view.sections; one default section if unconfigured.
+//   - Week/Month: date columns/cells from effectiveScheduled; tray from explicit
+//     view.tray filters (independent query, does not alter main date area).
+//   - Matrix: 2D cells (X buckets × Y buckets) with unmatched handling.
 // Pure functions, no DOM, no Obsidian dependency.
 
 import type { EffectiveTask } from "../task-tree";
@@ -29,9 +33,14 @@ export interface MonthCellModel {
   tasks: EffectiveTask[];
 }
 
-export interface MatrixBucketModel {
-  id: string;
-  title: string;
+/**
+ * A single cell in a 2D matrix: the intersection of one X bucket and one Y bucket.
+ */
+export interface MatrixCellModel {
+  rowId: string;
+  colId: string;
+  rowTitle: string;
+  colTitle: string;
   tasks: EffectiveTask[];
 }
 
@@ -54,7 +63,11 @@ export interface MonthViewModel {
 
 export interface MatrixViewModel {
   type: "matrix";
-  buckets: MatrixBucketModel[];
+  /** 2D cells: row (y-axis bucket) × col (x-axis bucket). */
+  cells: MatrixCellModel[];
+  /** Axis metadata for rendering headers. */
+  xAxis: { id: string; title: string; buckets: { id: string; title: string }[] };
+  yAxis: { id: string; title: string; buckets: { id: string; title: string }[] };
   unmatched: EffectiveTask[];
 }
 
@@ -147,15 +160,67 @@ function priorityRank(p: string | null): number {
 
 // ── Projections ──
 
+/**
+ * List projection: uses configured sections when available, otherwise
+ * falls back to a single default section with all tasks.
+ */
 function projectList(
   tasks: EffectiveTask[],
   view: QueryPresetViewConfig,
 ): ListViewModel {
+  // Use configured sections when available
+  if (view.sections && view.sections.length > 0) {
+    const sections: ListSectionModel[] = [];
+    for (const section of view.sections) {
+      // Filter tasks by section.when conditions
+      const sectionTasks = Object.keys(section.when).length > 0
+        ? applyQueryFilters(tasks, section.when, 0)
+        : [...tasks];
+      const sorted = sortTasks(sectionTasks, section.orderBy ?? view.orderBy);
+      const limited = section.limit !== undefined && section.limit > 0
+        ? sorted.slice(0, section.limit)
+        : sorted;
+      sections.push({
+        title: section.title,
+        tasks: limited,
+      });
+    }
+    return { type: "list", sections };
+  }
+
+  // Fallback: single default section
   const sorted = sortTasks(tasks, view.orderBy);
   return {
     type: "list",
     sections: [{ title: "Tasks", tasks: sorted }],
   };
+}
+
+/**
+ * Compute the tray for week/month views using explicit tray filters.
+ * The tray is an independent query: it filters the full task set with
+ * view.tray.filters and excludes tasks already placed in the main date area.
+ */
+function computeTray(
+  tasks: EffectiveTask[],
+  view: QueryPresetViewConfig,
+  weekStartsOn: 0 | 1,
+  mainAreaTaskIds: Set<string>,
+): ListSectionModel | undefined {
+  const trayCfg = view.tray;
+  if (!trayCfg || !trayCfg.enabled) return undefined;
+
+  // Apply tray-specific filters to the input task set
+  const trayTasks = Object.keys(trayCfg.filters).length > 0
+    ? applyQueryFilters(tasks, trayCfg.filters, weekStartsOn)
+    : [...tasks];
+
+  // Exclude tasks already in the main date area (avoid double-display)
+  const deduped = trayTasks.filter((t) => !mainAreaTaskIds.has(t.id));
+  if (deduped.length === 0) return undefined;
+
+  const sorted = sortTasks(deduped, trayCfg.orderBy ?? view.orderBy);
+  return { title: trayCfg.title, tasks: sorted };
 }
 
 function projectWeek(
@@ -171,7 +236,7 @@ function projectWeek(
     days.push({ date, tasks: [] });
   }
 
-  const unscheduled: EffectiveTask[] = [];
+  const mainAreaIds = new Set<string>();
 
   const sorted = sortTasks(tasks, view.orderBy);
   for (const task of sorted) {
@@ -179,16 +244,23 @@ function projectWeek(
       const dayCol = days.find((d) => d.date === task.effectiveScheduled);
       if (dayCol) {
         dayCol.tasks.push(task);
+        mainAreaIds.add(task.id);
         continue;
       }
     }
-    unscheduled.push(task);
+    // Tasks without effectiveScheduled or with a date outside the week:
+    // when no explicit tray is configured, they go into the implicit tray.
+    // When an explicit tray is configured, the tray is computed separately
+    // and these leftovers are not included in the tray (unless they also
+    // match the tray filter).
   }
+
+  const tray = computeTray(tasks, view, weekStartsOn, mainAreaIds);
 
   return {
     type: "week",
     days,
-    ...(unscheduled.length > 0 ? { tray: { title: "Unscheduled", tasks: unscheduled } } : {}),
+    ...(tray ? { tray } : {}),
   };
 }
 
@@ -207,7 +279,7 @@ function projectMonth(
     cells.push({ date: addDays(monthStart, i), tasks: [] });
   }
 
-  const unscheduled: EffectiveTask[] = [];
+  const mainAreaIds = new Set<string>();
 
   const sorted = sortTasks(tasks, view.orderBy);
   for (const task of sorted) {
@@ -215,19 +287,30 @@ function projectMonth(
       const cell = cells.find((c) => c.date === task.effectiveScheduled);
       if (cell) {
         cell.tasks.push(task);
+        mainAreaIds.add(task.id);
         continue;
       }
     }
-    unscheduled.push(task);
   }
+
+  const tray = computeTray(tasks, view, 0, mainAreaIds);
 
   return {
     type: "month",
     cells,
-    ...(unscheduled.length > 0 ? { tray: { title: "Unscheduled", tasks: unscheduled } } : {}),
+    ...(tray ? { tray } : {}),
   };
 }
 
+/**
+ * Matrix projection: builds a true 2D matrix where each cell is the
+ * intersection of one X-axis bucket and one Y-axis bucket.
+ *
+ * - A task must match BOTH the X bucket AND Y bucket conditions to be in a cell.
+ * - With multiMatch="first", a task appears in the first matching cell.
+ * - With multiMatch="duplicate", a task appears in every matching cell.
+ * - Unmatched tasks go into the unmatched section (unless unmatched="hide").
+ */
 function projectMatrix(
   tasks: EffectiveTask[],
   view: QueryPresetViewConfig,
@@ -235,69 +318,72 @@ function projectMatrix(
 ): MatrixViewModel {
   const mx = view.matrix;
   if (!mx) {
-    return { type: "matrix", buckets: [], unmatched: tasks };
+    return {
+      type: "matrix",
+      cells: [],
+      xAxis: { id: "", title: "", buckets: [] },
+      yAxis: { id: "", title: "", buckets: [] },
+      unmatched: tasks,
+    };
   }
 
-  const buckets: MatrixBucketModel[] = [];
-  const matchedIds = new Set<string>();
+  const xBuckets = mx.x?.buckets ?? [];
+  const yBuckets = mx.y?.buckets ?? [];
 
-  // Flatten all axis buckets.
-  const allBuckets: { axis: "x" | "y"; bucket: NonNullable<typeof mx>["x"]["buckets"][number] }[] = [];
-  if (mx.x?.buckets) {
-    for (const b of mx.x.buckets) {
-      allBuckets.push({ axis: "x", bucket: b });
+  // Build the 2D cell grid: rows (y) × cols (x)
+  const cells: MatrixCellModel[] = [];
+
+  for (const yBucket of yBuckets) {
+    for (const xBucket of xBuckets) {
+      // A task must match BOTH the X bucket AND Y bucket conditions.
+      const cellTasks = tasks.filter((task) => {
+        const xMatch = xBucket.when && Object.keys(xBucket.when).length > 0
+          ? applyQueryFilters([task], xBucket.when, weekStartsOn).length > 0
+          : true;
+        const yMatch = yBucket.when && Object.keys(yBucket.when).length > 0
+          ? applyQueryFilters([task], yBucket.when, weekStartsOn).length > 0
+          : true;
+        return xMatch && yMatch;
+      });
+
+      cells.push({
+        rowId: yBucket.id,
+        colId: xBucket.id,
+        rowTitle: yBucket.title,
+        colTitle: xBucket.title,
+        tasks: cellTasks,
+      });
     }
   }
-  if (mx.y?.buckets) {
-    for (const b of mx.y.buckets) {
-      allBuckets.push({ axis: "y", bucket: b });
-    }
-  }
 
-  for (const { bucket } of allBuckets) {
-    // Use applyQueryFilters to check if a task matches the bucket's conditions.
-    const bucketTasks = tasks.filter((task) => {
-      const results = applyQueryFilters([task], bucket.when ?? {}, weekStartsOn);
-      return results.length > 0;
-    });
-
-    for (const t of bucketTasks) {
-      if (mx.multiMatch !== "duplicate" && matchedIds.has(t.id)) continue;
-      matchedIds.add(t.id);
-    }
-
-    buckets.push({
-      id: bucket.id,
-      title: bucket.title,
-      tasks: bucketTasks.filter((t) => mx.multiMatch === "duplicate" || !matchedIds.has(t.id) || bucketTasks.includes(t)),
-    });
-  }
-
-  // Fix: for multiMatch=first, deduplicate after collecting
+  // Handle multiMatch: deduplicate across cells when multiMatch="first"
   if (mx.multiMatch !== "duplicate") {
-    const seen = new Set<string>();
-    for (const b of buckets) {
-      b.tasks = b.tasks.filter((t) => {
-        if (seen.has(t.id)) return false;
-        seen.add(t.id);
+    const firstSeen = new Set<string>();
+    for (const cell of cells) {
+      cell.tasks = cell.tasks.filter((t) => {
+        if (firstSeen.has(t.id)) return false;
+        firstSeen.add(t.id);
         return true;
       });
     }
   }
 
-  // Unmatched tasks: those not in any bucket
-  const allBucketTaskIds = new Set<string>();
-  for (const b of buckets) {
-    for (const t of b.tasks) allBucketTaskIds.add(t.id);
+  // Collect all task IDs that appear in any cell
+  const allCellTaskIds = new Set<string>();
+  for (const cell of cells) {
+    for (const t of cell.tasks) allCellTaskIds.add(t.id);
   }
 
+  // Unmatched: tasks not in any cell
   const unmatched = mx.unmatched === "hide"
     ? []
-    : tasks.filter((t) => !allBucketTaskIds.has(t.id));
+    : tasks.filter((t) => !allCellTaskIds.has(t.id));
 
   return {
     type: "matrix",
-    buckets,
+    cells,
+    xAxis: { id: mx.x.id, title: mx.x.title, buckets: xBuckets.map((b) => ({ id: b.id, title: b.title })) },
+    yAxis: { id: mx.y.id, title: mx.y.title, buckets: yBuckets.map((b) => ({ id: b.id, title: b.title })) },
     unmatched: sortTasks(unmatched, view.orderBy),
   };
 }

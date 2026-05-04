@@ -8,6 +8,8 @@ import type {
   QueryPresetValidationError,
   QueryPresetValidationResult,
   QueryPresetViewConfig,
+  QuerySection,
+  QueryTray,
   QueryViewType,
   SavedTaskView,
   SavedViewConfig,
@@ -632,10 +634,48 @@ function normalizeQueryPresetView(raw: unknown): QueryPresetViewConfig {
     ? cfg.orderBy.map((v) => (typeof v === "string" ? v.trim() : "")).filter(Boolean)
     : undefined;
   const matrix = isRecord(cfg.matrix) ? normalizeMatrixConfig(cfg.matrix) : undefined;
+  const sections = Array.isArray(cfg.sections)
+    ? cfg.sections.map(normalizeQuerySection).filter((s): s is QuerySection => s !== null)
+    : undefined;
+  const tray = isRecord(cfg.tray) ? normalizeQueryTray(cfg.tray) : undefined;
   const out: QueryPresetViewConfig = { type };
   if (preset) out.preset = preset;
   if (orderBy && orderBy.length > 0) out.orderBy = orderBy;
+  if (sections && sections.length > 0) out.sections = sections;
+  if (tray) out.tray = tray;
   if (matrix) out.matrix = matrix;
+  return out;
+}
+
+function normalizeQuerySection(raw: unknown): QuerySection | null {
+  const cfg = isRecord(raw) ? raw : {};
+  const id = typeof cfg.id === "string" ? cfg.id.trim() : "";
+  if (!id) return null;
+  const title = typeof cfg.title === "string" ? cfg.title.trim() : id;
+  const when: QueryPresetFilters = isRecord(cfg.when) ? normalizeQueryPresetFilters(cfg.when) : {};
+  const orderBy: string[] | undefined = Array.isArray(cfg.orderBy)
+    ? cfg.orderBy.map((v) => (typeof v === "string" ? v.trim() : "")).filter(Boolean)
+    : undefined;
+  const limit = typeof cfg.limit === "number" && cfg.limit > 0 ? cfg.limit : undefined;
+  const emptyText = typeof cfg.emptyText === "string" ? cfg.emptyText.trim() : undefined;
+  const out: QuerySection = { id, title, when };
+  if (orderBy && orderBy.length > 0) out.orderBy = orderBy;
+  if (limit !== undefined) out.limit = limit;
+  if (emptyText) out.emptyText = emptyText;
+  return out;
+}
+
+function normalizeQueryTray(raw: unknown): QueryTray | undefined {
+  const cfg = isRecord(raw) ? raw : {};
+  const enabled = typeof cfg.enabled === "boolean" ? cfg.enabled : false;
+  if (!enabled) return undefined;
+  const title = typeof cfg.title === "string" ? cfg.title.trim() : "Tray";
+  const filters: QueryPresetFilters = isRecord(cfg.filters) ? normalizeQueryPresetFilters(cfg.filters) : {};
+  const orderBy: string[] | undefined = Array.isArray(cfg.orderBy)
+    ? cfg.orderBy.map((v) => (typeof v === "string" ? v.trim() : "")).filter(Boolean)
+    : undefined;
+  const out: QueryTray = { enabled, title, filters };
+  if (orderBy && orderBy.length > 0) out.orderBy = orderBy;
   return out;
 }
 
