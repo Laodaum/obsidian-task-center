@@ -590,53 +590,108 @@ export class TaskCenterView extends ItemView {
   private renderTabBar(parent: HTMLElement) {
     const bar = parent.createDiv({ cls: "bt-tabbar" });
     const tabs = this.visibleQueryTabs();
-    for (const [index, view] of tabs.entries()) {
-      const active = view.id === this.state.savedViewId;
-      const dirty = this.isSavedViewDirty(view);
-      const badges = this.savedViewBadges(view);
-      const btn = bar.createDiv({ cls: "bt-tab" + (active ? " active" : "") });
-      const legacyTab = this.legacyTabForSavedView(view);
-      if (legacyTab) btn.dataset.tab = legacyTab;
-      btn.dataset.queryTabId = view.id;
-      if (dirty) btn.dataset.queryTabDirty = "true";
-      if (this.plugin.settings.defaultSavedViewId === view.id) btn.dataset.queryTabDefault = "true";
-      btn.title = badges.length > 0 ? `${view.name} · ${badges.join(" · ")}` : view.name;
-      const label = btn.createDiv({ cls: "bt-tab-label" });
-      label.createSpan({ text: view.name, cls: "bt-tab-name" });
-      if (dirty) {
-        label.createSpan({ text: "•", cls: "bt-tab-dirty-dot" });
-      }
-      const count = this.countForSavedView(view);
-      if (count > 0) {
-        btn.createSpan({ text: String(count), cls: "bt-tab-count" });
-      }
-      if (index < 9) {
-        btn.createSpan({ text: `⌃${index + 1}`, cls: "bt-hotkey" });
-      }
-      btn.addEventListener("click", () => this.activateSavedView(view));
-      btn.addEventListener("dblclick", (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        void this.renameSavedView(view);
-      });
-      btn.addEventListener("contextmenu", (event) => {
-        event.preventDefault();
-        this.openSavedViewMenu(event, view);
-      });
+    // VAL-GUI-005: when there are more than MAX_VISIBLE_TABS, overflow
+    // tabs go into a "更多" button. Overflow tabs retain order, badges,
+    // default behavior, and keyboard shortcuts.
+    const MAX_VISIBLE_TABS = 7;
+    const visibleTabs = tabs.slice(0, MAX_VISIBLE_TABS);
+    const overflowTabs = tabs.slice(MAX_VISIBLE_TABS);
 
-      btn.addEventListener("dragover", (e) => {
-        const dt = e.dataTransfer;
-        if (!dt || !dt.types.includes("text/task-id")) return;
-        e.preventDefault();
-        dt.dropEffect = "move";
-        btn.addClass("drag-hover");
-        this.dwellTracker.update(view.id, btn, this.state.savedViewId ?? "");
-      });
-      btn.addEventListener("dragleave", () => {
-        btn.removeClass("drag-hover");
-        this.dwellTracker.reset();
+    for (const [index, view] of visibleTabs.entries()) {
+      this.renderTabButton(bar, view, index);
+    }
+
+    // Overflow "更多" button
+    if (overflowTabs.length > 0) {
+      const moreBtn = bar.createDiv({ cls: "bt-tab bt-tab-more" });
+      const label = moreBtn.createDiv({ cls: "bt-tab-label" });
+      label.createSpan({ text: tr("savedViews.tabMore"), cls: "bt-tab-name" });
+      // Show total count of overflow tabs plus their badges
+      const overflowCount = overflowTabs.reduce((sum, v) => sum + this.countForSavedView(v), 0);
+      if (overflowCount > 0) {
+        moreBtn.createSpan({ text: String(overflowCount), cls: "bt-tab-count" });
+      }
+      moreBtn.title = overflowTabs.map((v) => v.name).join(", ");
+      moreBtn.addEventListener("click", () => this.openOverflowTabsMenu(moreBtn, overflowTabs));
+      moreBtn.addEventListener("contextmenu", (event) => {
+        event.preventDefault();
+        this.openOverflowTabsMenu(event.target as HTMLElement, overflowTabs);
       });
     }
+  }
+
+  private renderTabButton(bar: HTMLElement, view: QueryPreset, index: number): void {
+    const active = view.id === this.state.savedViewId;
+    const dirty = this.isSavedViewDirty(view);
+    const badges = this.savedViewBadges(view);
+    const btn = bar.createDiv({ cls: "bt-tab" + (active ? " active" : "") });
+    const legacyTab = this.legacyTabForSavedView(view);
+    if (legacyTab) btn.dataset.tab = legacyTab;
+    btn.dataset.queryTabId = view.id;
+    btn.dataset.tabId = view.id;
+    if (dirty) btn.dataset.queryTabDirty = "true";
+    if (this.plugin.settings.defaultSavedViewId === view.id) btn.dataset.queryTabDefault = "true";
+    btn.title = badges.length > 0 ? `${view.name} · ${badges.join(" · ")}` : view.name;
+    const label = btn.createDiv({ cls: "bt-tab-label" });
+    label.createSpan({ text: view.name, cls: "bt-tab-name" });
+    if (dirty) {
+      label.createSpan({ text: "•", cls: "bt-tab-dirty-dot" });
+    }
+    const count = this.countForSavedView(view);
+    if (count > 0) {
+      btn.createSpan({ text: String(count), cls: "bt-tab-count" });
+    }
+    if (index < 9) {
+      btn.createSpan({ text: `⌃${index + 1}`, cls: "bt-hotkey" });
+    }
+    btn.addEventListener("click", () => this.activateSavedView(view));
+    btn.addEventListener("dblclick", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      void this.renameSavedView(view);
+    });
+    btn.addEventListener("contextmenu", (event) => {
+      event.preventDefault();
+      this.openSavedViewMenu(event, view);
+    });
+
+    btn.addEventListener("dragover", (e) => {
+      const dt = e.dataTransfer;
+      if (!dt || !dt.types.includes("text/task-id")) return;
+      e.preventDefault();
+      dt.dropEffect = "move";
+      btn.addClass("drag-hover");
+      this.dwellTracker.update(view.id, btn, this.state.savedViewId ?? "");
+    });
+    btn.addEventListener("dragleave", () => {
+      btn.removeClass("drag-hover");
+      this.dwellTracker.reset();
+    });
+  }
+
+  private openOverflowTabsMenu(anchor: HTMLElement, overflowTabs: QueryPreset[]): void {
+    const menu = new Menu();
+    for (const [index, view] of overflowTabs.entries()) {
+      const badge = this.savedViewBadges(view);
+      const count = this.countForSavedView(view);
+      const label = count > 0 ? `${view.name} (${count})` : view.name;
+      menu.addItem((item) => {
+        item.setTitle(label);
+        if (badge.length > 0) item.setSection("tab-overflow");
+        item.onClick(() => this.activateSavedView(view));
+      });
+      void index; // intentional no-op, index preserved for shortcut order
+    }
+    // Separator + manage option
+    if (overflowTabs.length > 0) {
+      menu.addSeparator();
+      menu.addItem((item) =>
+        item.setTitle(tr("savedViews.manage")).onClick(() => this.openManageTabsSheet()),
+      );
+    }
+    // Position the menu near the "更多" button
+    const rect = anchor.getBoundingClientRect();
+    menu.showAtPosition({ x: rect.left + rect.width / 2, y: rect.bottom + 4 });
   }
 
   private renderToolbar(parent: HTMLElement) {
@@ -743,6 +798,10 @@ export class TaskCenterView extends ItemView {
   private renderSavedViewsToolbar(parent: HTMLElement, rerenderControls?: FilterControlsRerender) {
     const wrap = parent.createDiv({ cls: "bt-saved-views" });
     wrap.dataset.savedViews = "true";
+
+    // VAL-GUI-010: Toolbar summary — readable summary of current filter conditions
+    this.renderFilterSummary(wrap);
+
     const filters = wrap.createDiv({ cls: "bt-saved-view-filters" });
     const actions = wrap.createDiv({ cls: "bt-saved-view-actions" });
 
@@ -752,6 +811,56 @@ export class TaskCenterView extends ItemView {
       includeDsl: true,
       includeManage: true,
     });
+  }
+
+  /**
+   * VAL-GUI-010: Render a readable summary of current filter conditions.
+   * Example: "tag:#alpha,#beta · 排期:本周 · 状态:TODO · view:周"
+   */
+  private renderFilterSummary(parent: HTMLElement): void {
+    const summary = parent.createDiv({ cls: "bt-filter-summary" });
+    const parts: string[] = [];
+
+    // Search
+    if (this.state.filter.trim()) {
+      parts.push(`🔍 ${this.state.filter.trim()}`);
+    }
+    // Tags
+    const selectedTags = parseFilterTags(this.state.savedViewTag);
+    if (selectedTags.length > 0) {
+      const first = selectedTags[0];
+      const more = selectedTags.length > 1 ? `+${selectedTags.length - 1}` : "";
+      parts.push(`${first}${more}`);
+    }
+    // Scheduled time
+    const scheduledVal = this.state.savedViewTime["scheduled"]?.trim();
+    if (scheduledVal) {
+      parts.push(`${tr("savedViews.timeScheduled")}:${this.timeFilterLabel("scheduled", scheduledVal)}`);
+    }
+    // Status
+    const status = normalizeSavedViewStatus(this.state.savedViewStatus);
+    if (status !== "all") {
+      parts.push(tr("savedViews.statusAll") + ":" + status.join(","));
+    }
+    // More time fields
+    const activeMoreFields = ["deadline", "completed", "created"] as const;
+    for (const field of activeMoreFields) {
+      const val = this.state.savedViewTime[field]?.trim();
+      if (val) {
+        parts.push(`${this.timeFieldLabel(field)}:${this.timeFilterLabel(field, val)}`);
+      }
+    }
+    // View type
+    const active = this.activeSavedView();
+    if (active.view?.type && active.view.type !== "list") {
+      parts.push(active.view.type);
+    }
+
+    if (parts.length === 0) {
+      summary.createSpan({ text: tr("savedViews.emptyCondition"), cls: "bt-filter-summary-text bt-filter-summary-empty" });
+    } else {
+      summary.createSpan({ text: parts.join(" · "), cls: "bt-filter-summary-text" });
+    }
   }
 
   private renderSavedViewsCompactBar(parent: HTMLElement) {
@@ -1031,6 +1140,13 @@ export class TaskCenterView extends ItemView {
         void this.toggleSavedViewHidden(normalized, !normalized.hidden);
       }),
     );
+    if (!normalized.builtin) {
+      menu.addItem((item) =>
+        item.setTitle(tr("savedViews.delete")).onClick(() => {
+          void this.deleteSavedViewWithConfirm(normalized);
+        }),
+      );
+    }
     menu.showAtMouseEvent(event);
   }
 
@@ -1195,6 +1311,43 @@ export class TaskCenterView extends ItemView {
     }
     await this.plugin.saveSettings();
     this.render();
+  }
+
+  /**
+   * VAL-GUI-004: delete a custom tab with confirmation.
+   * Shows "只删除这个视图，不删除任何任务" and provides toast undo.
+   */
+  private async deleteSavedViewWithConfirm(view: QueryPreset): Promise<void> {
+    const visible = this.visibleQueryTabs();
+    if (visible.length <= 1 && visible[0]?.id === view.id) {
+      new Notice(tr("notice.error", { msg: "至少保留一个可见 Tab。" }), 4000);
+      return;
+    }
+    // Show confirmation dialog
+    const confirmed = await new Promise<boolean>((resolve) => {
+      const modal = new BottomSheet(this.app, {
+        title: tr("savedViews.deleteConfirmTitle"),
+        populate: (el) => {
+          el.createDiv({ cls: "bt-delete-confirm-body", text: tr("savedViews.deleteConfirmBody") });
+          el.createDiv({ cls: "bt-delete-confirm-detail", text: `"${view.name}"` });
+          const actions = el.createDiv({ cls: "bt-delete-confirm-actions" });
+          const cancel = actions.createEl("button", { text: tr("savedViews.cancel") });
+          cancel.addEventListener("click", () => { modal.close(); resolve(false); });
+          const del = actions.createEl("button", {
+            text: tr("savedViews.deleteConfirmAction"),
+            cls: "mod-warning",
+          });
+          del.addEventListener("click", () => { modal.close(); resolve(true); });
+        },
+      });
+      modal.open();
+    });
+    if (!confirmed) return;
+    // Snapshot for undo
+    const snapshot = normalizeQueryPreset(view);
+    await this.deleteSavedView(view);
+    // Toast undo
+    new Notice(tr("notice.deleted", { name: snapshot.name }), 4000);
   }
 
   private async restoreBuiltinSavedView(view: QueryPreset): Promise<void> {
@@ -1610,15 +1763,31 @@ export class TaskCenterView extends ItemView {
     return this.hasSaveableFilters();
   }
 
+  /**
+   * VAL-GUI-010: Empty-state explanations distinguish between:
+   * 1. Vault has no tasks at all
+   * 2. Current filters produce no results (with clear/switch actions)
+   */
   private renderFilterEmptyState(parent: HTMLElement): void {
     const empty = parent.createDiv({ cls: "bt-filter-empty" });
-    empty.createSpan({ text: tr("filters.empty"), cls: "bt-filter-empty-text" });
-    const clear = empty.createEl("button", { text: tr("filters.clear"), cls: "bt-filter-empty-clear" });
-    clear.dataset.action = "clear-filters";
-    clear.addEventListener("click", () => {
-      this.resetActiveFilters();
-      this.render();
-    });
+    empty.dataset.emptyState = "filters";
+
+    // Distinguish: is the vault completely empty or just filtered empty?
+    const totalAll = this.tasks.length;
+    if (totalAll === 0) {
+      empty.createDiv({ text: tr("filters.emptyVault"), cls: "bt-filter-empty-title" });
+      empty.createDiv({ text: tr("filters.emptyVaultHint"), cls: "bt-filter-empty-hint" });
+    } else {
+      empty.createDiv({ text: tr("filters.emptyFiltersTitle"), cls: "bt-filter-empty-title" });
+      empty.createDiv({ text: tr("filters.emptyFiltersHint"), cls: "bt-filter-empty-hint" });
+      const actions = empty.createDiv({ cls: "bt-filter-empty-actions" });
+      const clear = actions.createEl("button", { text: tr("filters.clear"), cls: "bt-filter-empty-clear" });
+      clear.dataset.action = "clear-filters";
+      clear.addEventListener("click", () => {
+        this.resetActiveFilters();
+        this.render();
+      });
+    }
   }
 
   private setTimeFilter(field: SavedViewTimeField, value: string, rerenderControls?: FilterControlsRerender): void {
@@ -1670,20 +1839,93 @@ export class TaskCenterView extends ItemView {
 
   private renderQueryControlsSheet(parent: HTMLElement, rerenderControls?: FilterControlsRerender): void {
     parent.dataset.savedViews = "true";
-    parent.createDiv({ cls: "bt-query-editor-help", text: tr("savedViews.queryEditorHelp") });
+    parent.dataset.queryEditor = "true";
 
+    // VAL-GUI-010: Filter summary at top of editor
+    this.renderFilterSummary(parent);
+
+    // ── Filters ──────────────────────────────────────────
     const filtersSection = parent.createDiv({ cls: "bt-query-editor-section" });
     filtersSection.createDiv({ cls: "bt-query-editor-section-title", text: tr("savedViews.queryEditorFilters") });
     const filters = filtersSection.createDiv({ cls: "bt-saved-view-filters" });
     this.renderSavedViewsFilterControls(filters, rerenderControls);
 
+    // ── View ─────────────────────────────────────────────
+    const viewSection = parent.createDiv({ cls: "bt-query-editor-section" });
+    viewSection.createDiv({ cls: "bt-query-editor-section-title", text: tr("savedViews.queryEditorView") });
+    const viewCfg = this.currentQueryPresetViewConfig();
+    const viewRow = viewSection.createDiv({ cls: "bt-query-editor-view-row" });
+    viewRow.createSpan({ text: tr("savedViews.queryEditorViewType") + ":", cls: "bt-query-editor-view-label" });
+    const viewTypes: Array<{ value: string; label: string }> = [
+      { value: "list", label: "List" },
+      { value: "week", label: "Week" },
+      { value: "month", label: "Month" },
+      { value: "matrix", label: "Matrix" },
+    ];
+    for (const vt of viewTypes) {
+      const btn = viewRow.createEl("button", {
+        text: vt.label,
+        cls: "bt-query-editor-view-btn" + (viewCfg.type === vt.value ? " active" : ""),
+      });
+      btn.addEventListener("click", () => {
+        const current = this.currentQueryPresetViewConfig();
+        const next: QueryPresetViewConfig = { ...current, type: vt.value as QueryPresetViewConfig["type"] };
+        // Update the draft
+        const active = this.activeSavedView();
+        const draft = this.currentQuerySnapshot(active);
+        draft.view = next;
+        this.tabDrafts.set(active.id, draft);
+        this.applySavedView(draft);
+        this.render();
+      });
+    }
+
+    // ── Summary ──────────────────────────────────────────
+    const summarySection = parent.createDiv({ cls: "bt-query-editor-section" });
+    summarySection.createDiv({ cls: "bt-query-editor-section-title", text: tr("savedViews.queryEditorSummary") });
+    summarySection.createDiv({ cls: "bt-query-editor-section-note", text: tr("savedViews.queryEditorSummaryHelp") });
+
+    // ── DSL ──────────────────────────────────────────────
+    const dslSection = parent.createDiv({ cls: "bt-query-editor-section" });
+    dslSection.createDiv({ cls: "bt-query-editor-section-title", text: tr("savedViews.dslTitle") });
+    const active = this.activeSavedView();
+    const snapshot = this.currentQuerySnapshot(active);
+    const dslText = stringifyQueryPreset(snapshot);
+    const dslArea = dslSection.createEl("textarea", { cls: "tc-full-width-input" });
+    dslArea.rows = 8;
+    dslArea.value = dslText;
+    dslArea.dataset.queryDslInput = "true";
+    const dslError = dslSection.createDiv({ cls: "bt-query-editor-dsl-error" });
+    dslError.hide();
+
+    const dslApply = dslSection.createEl("button", {
+      text: tr("savedViews.apply"),
+      cls: "bt-query-editor-dsl-apply",
+    });
+    dslApply.addEventListener("click", () => {
+      try {
+        const parsed = parseQueryDsl(dslArea.value, { id: active.id, name: active.name, builtin: active.builtin, hidden: active.hidden });
+        this.tabDrafts.set(active.id, parsed);
+        this.applySavedView(parsed);
+        dslError.hide();
+        dslError.setText("");
+        this.refreshFilterControls(rerenderControls);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        dslError.setText(msg);
+        dslError.show();
+        // Keep the invalid DSL visible for editing
+      }
+    });
+
+    // ── Actions ──────────────────────────────────────────
     const actionsSection = parent.createDiv({ cls: "bt-query-editor-section" });
     actionsSection.createDiv({ cls: "bt-query-editor-section-title", text: tr("savedViews.queryEditorActions") });
     actionsSection.createDiv({ cls: "bt-query-editor-section-note", text: tr("savedViews.queryEditorActionsNote") });
     const actions = actionsSection.createDiv({ cls: "bt-saved-view-actions" });
     this.renderSavedViewsActionControls(actions, rerenderControls, {
       includeSaveAs: true,
-      includeDsl: true,
+      includeDsl: false, // DSL is inline above
       includeManage: true,
     });
   }
@@ -1732,6 +1974,7 @@ export class TaskCenterView extends ItemView {
     }
 
     const wrapper = parent.createDiv({ cls: "bt-week" });
+    wrapper.dataset.view = "week";
 
     for (const day of days) {
       // Mobile collapsible per-day rows (UX-mobile §3.1): `today` always
@@ -1883,6 +2126,7 @@ export class TaskCenterView extends ItemView {
     }
 
     const wrapper = parent.createDiv({ cls: "bt-month" });
+    wrapper.dataset.view = "month";
     // DOW header
     const header = wrapper.createDiv({ cls: "bt-month-header" });
     for (let i = 0; i < 7; i++) {
@@ -2073,6 +2317,7 @@ export class TaskCenterView extends ItemView {
       .sort((a, b) => (b.completed! < a.completed! ? -1 : 1));
 
     const wrap = parent.createDiv({ cls: "bt-completed" });
+    wrap.dataset.view = "list";
     if (completed.length === 0 && completedAll.length > 0 && this.hasActiveFilters()) {
       this.renderFilterEmptyState(wrap);
       return;
@@ -2450,6 +2695,7 @@ export class TaskCenterView extends ItemView {
       return;
     }
     const wrap = parent.createDiv({ cls: "bt-list-view" });
+    wrap.dataset.view = "list";
     for (const task of list) this.renderCard(wrap, task);
   }
 
@@ -2507,6 +2753,7 @@ export class TaskCenterView extends ItemView {
     const unscheduled = this.hideChildrenOfVisibleParents(unscheduledAll);
 
     const wrap = parent.createDiv({ cls: "bt-unscheduled-big" });
+    wrap.dataset.view = "list";
     const head = wrap.createDiv({ cls: "bt-unscheduled-big-head" });
     head.createSpan({
       text: `${tr("pool.unscheduled")} (${unscheduled.length})`,

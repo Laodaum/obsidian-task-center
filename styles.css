@@ -116,6 +116,110 @@
   border-radius: 3px;
 }
 
+/* Overflow "More" tab button (VAL-GUI-005) */
+.task-center-view .bt-tab-more {
+  font-style: italic;
+  opacity: 0.8;
+}
+.task-center-view .bt-tab-more:hover {
+  opacity: 1;
+  font-style: normal;
+}
+
+/* Filter summary line (VAL-GUI-010) */
+.task-center-view .bt-filter-summary {
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 4px 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.task-center-view .bt-filter-summary-text {
+  line-height: 1.4;
+}
+.task-center-view .bt-filter-summary-empty {
+  font-style: italic;
+  color: var(--text-faint);
+}
+
+/* Delete confirmation dialog (VAL-GUI-004) */
+.bt-delete-confirm-body {
+  color: var(--text-normal);
+  font-size: 14px;
+  margin-bottom: 6px;
+}
+.bt-delete-confirm-detail {
+  color: var(--text-accent);
+  font-weight: 600;
+  font-size: 15px;
+  margin-bottom: 16px;
+}
+.bt-delete-confirm-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+/* Enhanced query editor: View type selector */
+.bt-query-editor-view-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.bt-query-editor-view-label {
+  font-size: 13px;
+  color: var(--text-muted);
+  min-width: 0;
+}
+.bt-query-editor-view-btn {
+  padding: 4px 10px;
+  font-size: 12px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  background: var(--background-secondary);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.bt-query-editor-view-btn.active {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-color: var(--interactive-accent);
+}
+
+/* Enhanced query editor: DSL section */
+.bt-query-editor-dsl-error {
+  color: var(--text-error);
+  font-size: 12px;
+  margin-top: 4px;
+  padding: 6px 8px;
+  background: var(--background-modifier-error);
+  border-radius: 4px;
+}
+.bt-query-editor-dsl-apply {
+  margin-top: 6px;
+  padding: 4px 12px;
+  font-size: 12px;
+}
+
+/* Enhanced empty states (VAL-GUI-010) */
+.bt-filter-empty-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-normal);
+  margin-bottom: 4px;
+}
+.bt-filter-empty-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+.bt-filter-empty-actions {
+  display: flex;
+  gap: 8px;
+}
+
 .task-center-view .bt-toolbar {
   display: flex;
   flex-direction: column;
@@ -241,6 +345,8 @@
 .task-center-view .bt-saved-view-actions {
   flex: 0 0 auto;
   justify-content: flex-end;
+  position: relative;
+  z-index: 21; /* above filter popovers (z-index: 20) so save/update buttons are clickable */
 }
 .task-center-view .bt-list-view {
   display: flex;
