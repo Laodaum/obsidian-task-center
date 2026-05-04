@@ -116,7 +116,15 @@ async function compile() {
               case "./parser":
                 return stubModule("export function parseDurationToMinutes() { return null; }");
               case "./writer":
-                return stubModule("export class TaskWriterError extends Error {}");
+                return stubModule(`
+                  export class TaskWriterError extends Error {
+                    constructor(code, hint) {
+                      super(code + ": " + hint);
+                      this.code = code;
+                      this.hint = hint;
+                    }
+                  }
+                `);
               case "./platform":
                 return stubModule("export function __setTestForceMobile() {}");
               default:
@@ -535,6 +543,393 @@ test("query-copy / hide / set-default / delete 维护 preset 生命周期与默�
   assert.equal(calls.save, 5);
   assert.equal(calls.refresh, 3);
 });
+
+// ── CLI query-save / query-update negative tests ──
+// VAL-CLI-006: invalid_query surfaced for legacy and invalid DSL;
+// failed save/update leaves existing QueryPreset state unchanged.
+
+test("query-save rejects legacy flat SavedTaskView DSL with invalid_query", async () => {
+  const { plugin, calls } = await createPluginForQueryCli({
+    queryPresets: [
+      {
+        id: "sv-alpha",
+        name: "Alpha",
+        builtin: false,
+        hidden: false,
+        filters: { search: "focus", tags: ["#alpha"], status: ["todo"] },
+        view: { type: "list" },
+        summary: [],
+      },
+    ],
+  });
+
+  const legacyDsl = JSON.stringify({
+    name: "Legacy View",
+    search: "docs",
+    tag: "#work",
+    time: { scheduled: "today" },
+    status: "todo",
+    view: { type: "list" },
+  });
+
+  await assert.rejects(
+    () => plugin.cliQuerySave({ dsl: legacyDsl }),
+    (err) => err.code === "invalid_query" && /旧版 SavedTaskView 扁平格式/.test(err.message),
+  );
+
+  // Presets unchanged — no save/refresh side effects
+  assert.equal(plugin.settings.queryPresets.length, 1);
+  assert.equal(plugin.settings.queryPresets[0].id, "sv-alpha");
+  assert.equal(calls.save, 0);
+  assert.equal(calls.refresh, 0);
+});
+
+test("query-save rejects legacy flat DSL with only search field", async () => {
+  const { plugin, calls } = await createPluginForQueryCli();
+
+  const legacyDsl = JSON.stringify({
+    name: "Search Only",
+    search: "focus",
+    view: { type: "list" },
+  });
+
+  await assert.rejects(
+    () => plugin.cliQuerySave({ dsl: legacyDsl }),
+    (err) => err.code === "invalid_query" && /旧版 SavedTaskView 扁平格式/.test(err.message),
+  );
+
+  assert.equal(plugin.settings.queryPresets.length, 0);
+  assert.equal(calls.save, 0);
+  assert.equal(calls.refresh, 0);
+});
+
+test("query-save rejects legacy flat DSL with only status field", async () => {
+  const { plugin, calls } = await createPluginForQueryCli();
+
+  const legacyDsl = JSON.stringify({
+    name: "Status Only",
+    status: "done",
+    view: { type: "list" },
+  });
+
+  await assert.rejects(
+    () => plugin.cliQuerySave({ dsl: legacyDsl }),
+    (err) => err.code === "invalid_query" && /旧版 SavedTaskView 扁平格式/.test(err.message),
+  );
+
+  assert.equal(plugin.settings.queryPresets.length, 0);
+  assert.equal(calls.save, 0);
+  assert.equal(calls.refresh, 0);
+});
+
+test("query-save rejects invalid QueryPreset DSL (unknown view type) with invalid_query", async () => {
+  const { plugin, calls } = await createPluginForQueryCli({
+    queryPresets: [
+      {
+        id: "sv-alpha",
+        name: "Alpha",
+        builtin: false,
+        hidden: false,
+        filters: { status: ["todo"] },
+        view: { type: "list" },
+        summary: [],
+      },
+    ],
+  });
+
+  const invalidDsl = JSON.stringify({
+    name: "Bad View",
+    filters: {},
+    view: { type: "gantt" },
+    summary: [],
+  });
+
+  await assert.rejects(
+    () => plugin.cliQuerySave({ dsl: invalidDsl }),
+    (err) => err.code === "invalid_query" && /unknown_view_type/.test(err.message),
+  );
+
+  // Presets unchanged
+  assert.equal(plugin.settings.queryPresets.length, 1);
+  assert.equal(plugin.settings.queryPresets[0].id, "sv-alpha");
+  assert.equal(calls.save, 0);
+  assert.equal(calls.refresh, 0);
+});
+
+test("query-save rejects invalid QueryPreset DSL (bad summary) with invalid_query", async () => {
+  const { plugin, calls } = await createPluginForQueryCli();
+
+  const invalidDsl = JSON.stringify({
+    name: "Bad Summary",
+    filters: {},
+    view: { type: "list" },
+    summary: [{ type: "bad_metric" }],
+  });
+
+  await assert.rejects(
+    () => plugin.cliQuerySave({ dsl: invalidDsl }),
+    (err) => err.code === "invalid_query" && /invalid_metric_type/.test(err.message),
+  );
+
+  assert.equal(plugin.settings.queryPresets.length, 0);
+  assert.equal(calls.save, 0);
+  assert.equal(calls.refresh, 0);
+});
+
+test("query-save rejects invalid QueryPreset DSL (non-object root) with invalid_query", async () => {
+  const { plugin, calls } = await createPluginForQueryCli();
+
+  await assert.rejects(
+    () => plugin.cliQuerySave({ dsl: '"not an object"' }),
+    (err) => err.code === "invalid_query",
+  );
+
+  assert.equal(plugin.settings.queryPresets.length, 0);
+  assert.equal(calls.save, 0);
+  assert.equal(calls.refresh, 0);
+});
+
+test("query-save rejects legacy DSL wrapped in query key with invalid_query", async () => {
+  const { plugin, calls } = await createPluginForQueryCli();
+
+  const wrappedLegacy = JSON.stringify({
+    query: {
+      name: "Wrapped Legacy",
+      search: "docs",
+      status: "todo",
+      view: { type: "list" },
+    },
+  });
+
+  await assert.rejects(
+    () => plugin.cliQuerySave({ dsl: wrappedLegacy }),
+    (err) => err.code === "invalid_query" && /旧版 SavedTaskView 扁平格式/.test(err.message),
+  );
+
+  assert.equal(plugin.settings.queryPresets.length, 0);
+  assert.equal(calls.save, 0);
+  assert.equal(calls.refresh, 0);
+});
+
+test("query-update rejects legacy flat SavedTaskView DSL with invalid_query", async () => {
+  const { plugin, calls } = await createPluginForQueryCli({
+    queryPresets: [
+      {
+        id: "sv-alpha",
+        name: "Alpha",
+        builtin: false,
+        hidden: false,
+        filters: { search: "focus", tags: ["#alpha"], status: ["todo"] },
+        view: { type: "list" },
+        summary: [],
+      },
+    ],
+  });
+
+  const legacyDsl = JSON.stringify({
+    name: "Legacy Update",
+    search: "docs",
+    tag: "#work",
+    time: { scheduled: "today" },
+    status: "done",
+    view: { type: "week" },
+  });
+
+  await assert.rejects(
+    () => plugin.cliQueryUpdate({ id: "sv-alpha", dsl: legacyDsl }),
+    (err) => err.code === "invalid_query" && /旧版 SavedTaskView 扁平格式/.test(err.message),
+  );
+
+  // Existing preset unchanged — no save/refresh
+  assert.equal(plugin.settings.queryPresets.length, 1);
+  assert.equal(plugin.settings.queryPresets[0].id, "sv-alpha");
+  assert.equal(plugin.settings.queryPresets[0].name, "Alpha");
+  assert.equal(plugin.settings.queryPresets[0].filters.search, "focus");
+  assert.equal(calls.save, 0);
+  assert.equal(calls.refresh, 0);
+});
+
+test("query-update rejects invalid QueryPreset DSL (unknown view type) with invalid_query", async () => {
+  const { plugin, calls } = await createPluginForQueryCli({
+    queryPresets: [
+      {
+        id: "sv-alpha",
+        name: "Alpha",
+        builtin: false,
+        hidden: false,
+        filters: { search: "focus", tags: ["#alpha"], status: ["todo"] },
+        view: { type: "list" },
+        summary: [],
+      },
+    ],
+  });
+
+  const invalidDsl = JSON.stringify({
+    name: "Bad View",
+    filters: {},
+    view: { type: "gantt" },
+    summary: [],
+  });
+
+  await assert.rejects(
+    () => plugin.cliQueryUpdate({ id: "sv-alpha", dsl: invalidDsl }),
+    (err) => err.code === "invalid_query" && /unknown_view_type/.test(err.message),
+  );
+
+  // Existing preset unchanged
+  assert.equal(plugin.settings.queryPresets.length, 1);
+  assert.equal(plugin.settings.queryPresets[0].id, "sv-alpha");
+  assert.equal(plugin.settings.queryPresets[0].name, "Alpha");
+  assert.equal(plugin.settings.queryPresets[0].filters.search, "focus");
+  assert.equal(calls.save, 0);
+  assert.equal(calls.refresh, 0);
+});
+
+test("query-update rejects invalid QueryPreset DSL (bad summary) with invalid_query", async () => {
+  const { plugin, calls } = await createPluginForQueryCli({
+    queryPresets: [
+      {
+        id: "sv-alpha",
+        name: "Alpha",
+        builtin: false,
+        hidden: false,
+        filters: { search: "focus", tags: ["#alpha"], status: ["todo"] },
+        view: { type: "list" },
+        summary: [],
+      },
+    ],
+  });
+
+  const invalidDsl = JSON.stringify({
+    name: "Bad Summary",
+    filters: {},
+    view: { type: "list" },
+    summary: [{ type: "bad_metric" }],
+  });
+
+  await assert.rejects(
+    () => plugin.cliQueryUpdate({ id: "sv-alpha", dsl: invalidDsl }),
+    (err) => err.code === "invalid_query" && /invalid_metric_type/.test(err.message),
+  );
+
+  // Existing preset unchanged
+  assert.equal(plugin.settings.queryPresets.length, 1);
+  assert.equal(plugin.settings.queryPresets[0].id, "sv-alpha");
+  assert.equal(calls.save, 0);
+  assert.equal(calls.refresh, 0);
+});
+
+test("query-update rejects invalid QueryPreset DSL (missing name) with invalid_query", async () => {
+  const { plugin, calls } = await createPluginForQueryCli({
+    queryPresets: [
+      {
+        id: "sv-alpha",
+        name: "Alpha",
+        builtin: false,
+        hidden: false,
+        filters: { status: ["todo"] },
+        view: { type: "list" },
+        summary: [],
+      },
+    ],
+  });
+
+  const invalidDsl = JSON.stringify({
+    filters: {},
+    view: { type: "list" },
+  });
+
+  await assert.rejects(
+    () => plugin.cliQueryUpdate({ id: "sv-alpha", dsl: invalidDsl }),
+    (err) => err.code === "invalid_query" && /缺少 name/.test(err.message),
+  );
+
+  // Existing preset unchanged
+  assert.equal(plugin.settings.queryPresets.length, 1);
+  assert.equal(plugin.settings.queryPresets[0].id, "sv-alpha");
+  assert.equal(calls.save, 0);
+  assert.equal(calls.refresh, 0);
+});
+
+test("query-update rejects invalid QueryPreset DSL (multi-section errors) with invalid_query", async () => {
+  const { plugin, calls } = await createPluginForQueryCli({
+    queryPresets: [
+      {
+        id: "sv-alpha",
+        name: "Alpha",
+        builtin: false,
+        hidden: false,
+        filters: { status: ["todo"] },
+        view: { type: "list" },
+        summary: [],
+      },
+    ],
+  });
+
+  const invalidDsl = JSON.stringify({
+    name: "Multi Bad",
+    filters: { tags: 42 },
+    view: { type: "gantt" },
+    summary: [{ type: "bad" }],
+  });
+
+  let caught = null;
+  try {
+    await plugin.cliQueryUpdate({ id: "sv-alpha", dsl: invalidDsl });
+  } catch (err) {
+    caught = err;
+  }
+
+  assert.ok(caught, "Should throw");
+  assert.equal(caught.code, "invalid_query");
+  // Error message should surface all three sections
+  assert.match(caught.message, /filters/);
+  assert.match(caught.message, /view/);
+  assert.match(caught.message, /summary/);
+
+  // Existing preset unchanged
+  assert.equal(plugin.settings.queryPresets.length, 1);
+  assert.equal(plugin.settings.queryPresets[0].id, "sv-alpha");
+  assert.equal(plugin.settings.queryPresets[0].name, "Alpha");
+  assert.equal(calls.save, 0);
+  assert.equal(calls.refresh, 0);
+});
+
+test("query-update: non-existent preset id throws query_not_found, leaves settings untouched", async () => {
+  const { plugin, calls } = await createPluginForQueryCli({
+    queryPresets: [
+      {
+        id: "sv-alpha",
+        name: "Alpha",
+        builtin: false,
+        hidden: false,
+        filters: { status: ["todo"] },
+        view: { type: "list" },
+        summary: [],
+      },
+    ],
+  });
+
+  const validDsl = JSON.stringify({
+    name: "Valid Update",
+    filters: { status: ["done"] },
+    view: { type: "list" },
+    summary: [],
+  });
+
+  await assert.rejects(
+    () => plugin.cliQueryUpdate({ id: "sv-nonexistent", dsl: validDsl }),
+    (err) => err.code === "query_not_found",
+  );
+
+  // Existing preset unchanged
+  assert.equal(plugin.settings.queryPresets.length, 1);
+  assert.equal(plugin.settings.queryPresets[0].id, "sv-alpha");
+  assert.equal(calls.save, 0);
+  assert.equal(calls.refresh, 0);
+});
+
+// ── End CLI query-save / query-update negative tests ──
 
 test("openManageTabs 会激活 Task Center 并打开主界面的 Tabs 管理器", async () => {
   await compile();
