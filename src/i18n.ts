@@ -230,6 +230,7 @@ const EN = {
   "sheet.scheduleCustom": "⏳ Pick a date…",
   "sheet.nest": "Set as subtask…",
   "sheet.editTag": "Edit tag",
+  "sheet.editTagHint": "Enter a tag (e.g. #project, #next)",
 
   // task #43: date prompt hint line — bilingual EN baseline (the original
   // hard-coded string already mixed today/tomorrow with 明天/周六; we
@@ -557,6 +558,7 @@ const ZH: Partial<typeof EN> = {
   "sheet.scheduleCustom": "⏳ 改期…",
   "sheet.nest": "设为子任务…",
   "sheet.editTag": "编辑 tag",
+  "sheet.editTagHint": "输入 tag（例如 #项目、#下一步）",
 
   // task #43: 日期弹窗提示
   "prompt.dateHint":

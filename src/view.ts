@@ -3037,12 +3037,25 @@ export class TaskCenterView extends ItemView {
 
           const list = el.createDiv({ cls: "bt-tag-options bt-parent-picker-list" });
 
+          // Collect IDs of t and all its descendants to exclude from candidates.
+          const descendantIds = new Set<string>();
+          const collectDescendants = (line: number) => {
+            for (const c of this.tasks) {
+              if (c.parentLine === line) {
+                descendantIds.add(c.id);
+                collectDescendants(c.line);
+              }
+            }
+          };
+          descendantIds.add(t.id);
+          collectDescendants(t.line);
+
           const filterTasks = () => {
             const q = search.value.toLowerCase();
             list.empty();
             const tasks = this.tasks.filter((c) =>
               c.status !== "dropped" &&
-              c.id !== t.id &&
+              !descendantIds.has(c.id) &&
               (!q || c.title.toLowerCase().includes(q)),
             ).slice(0, 50);
 
@@ -3091,7 +3104,7 @@ export class TaskCenterView extends ItemView {
             cls: "bt-tag-search bt-tag-editor-input",
           });
 
-          el.createDiv({ cls: "bt-menu-empty bt-tag-editor-hint", text: tr("prompt.dateHint") });
+          el.createDiv({ cls: "bt-menu-empty bt-tag-editor-hint", text: tr("sheet.editTagHint") });
 
           input.addEventListener("keydown", (e) => {
             if (e.key === "Enter" && !e.isComposing) {
