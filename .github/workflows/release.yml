@@ -84,7 +84,7 @@ jobs:
           OBSIDIAN_VERSIONS: latest/latest
         run: |
           xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" \
-            pnpm run test:e2e
+            pnpm run test:e2e:ci
 
   release:
     name: Build + GitHub Release (US-601, US-603, US-604, US-605)
