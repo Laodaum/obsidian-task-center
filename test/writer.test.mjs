@@ -1308,6 +1308,56 @@ test("nestUnder — cross-file runtime clears moved root's ⏳, preserves descen
   );
 });
 
+test("nestUnder — already-child runtime clears child's own ⏳ so it inherits parent date", async () => {
+  const file = new TFile();
+  file.path = "tasks.md";
+  file.extension = "md";
+  file.stat = { mtime: 1000 };
+  let data =
+    "- [ ] Parent ⏳ 2026-05-06\n" +
+    "    - [ ] Child already nested ⏳ 2026-04-29 #keep\n";
+
+  const app = {
+    vault: {
+      getAbstractFileByPath: (p) => (p === "tasks.md" ? file : null),
+      process: async (_file, fn) => {
+        data = fn(data);
+      },
+    },
+  };
+  const parent = {
+    id: "tasks.md:L1",
+    path: "tasks.md",
+    line: 0,
+    indent: "",
+    rawLine: "- [ ] Parent ⏳ 2026-05-06",
+    parentLine: null,
+  };
+  const child = {
+    id: "tasks.md:L2",
+    path: "tasks.md",
+    line: 1,
+    indent: "    ",
+    rawLine: "    - [ ] Child already nested ⏳ 2026-04-29 #keep",
+    parentLine: 0,
+    scheduled: "2026-04-29",
+  };
+
+  const result = await nestUnder(app, child, parent);
+
+  assert.equal(result.unchanged, false, "already-child with own ⏳ is not a no-op");
+  assert.ok(data.includes("    - [ ] Child already nested #keep"), data);
+  assert.ok(!data.includes("Child already nested ⏳"), data);
+  assert.deepEqual(result.undoOps, [
+    {
+      path: "tasks.md",
+      line: 1,
+      before: ["    - [ ] Child already nested ⏳ 2026-04-29 #keep"],
+      after: ["    - [ ] Child already nested #keep"],
+    },
+  ]);
+});
+
 // ---------- VAL-CORE-011: invalid nest rejection ----------
 
 test("nestUnder — self-nest throws invalid_nest", async () => {

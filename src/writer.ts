@@ -790,6 +790,22 @@ export async function nestUnder(
     throw new TaskWriterError("invalid_nest", "cannot nest a task under itself");
   }
   if (child.path === parent.path && child.parentLine === parent.line) {
+    // US-125 / US-148: dragging an already-nested independent-date child
+    // back onto its visible parent means "ride with the parent again".
+    // The physical parent is already correct, but the child's own ⏳ still
+    // breaks it out as a standalone card, so clear only that root line.
+    if (child.scheduled !== null) {
+      const r = await setScheduled(app, child, null);
+      return {
+        before: r.before,
+        after: r.after,
+        unchanged: r.unchanged,
+        crossFile: false,
+        undoOps: r.unchanged
+          ? []
+          : [{ path: child.path, line: child.line, before: [r.before], after: [r.after] }],
+      };
+    }
     return {
       before: child.rawLine,
       after: child.rawLine,

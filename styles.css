@@ -1121,11 +1121,20 @@
   cursor: grab;
   touch-action: pan-y;
   will-change: transform;
-  transition: transform 0.08s ease, border-color 0.1s ease, background-color 0.1s ease;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.08);
+  transition:
+    transform 0.12s ease,
+    border-color 0.12s ease,
+    background-color 0.12s ease,
+    box-shadow 0.12s ease;
 }
 .task-center-view .bt-card:hover {
   border-color: var(--interactive-accent-hover, var(--interactive-accent));
-  background: var(--background-primary-alt, var(--background-primary));
+  background: color-mix(in srgb, var(--interactive-accent) 4%, var(--background-primary));
+  box-shadow:
+    0 8px 18px rgba(0, 0, 0, 0.16),
+    0 0 0 1px color-mix(in srgb, var(--interactive-accent) 24%, transparent);
+  transform: translateY(-1px);
 }
 .task-center-view .bt-card:active {
   cursor: grabbing;
@@ -1155,9 +1164,15 @@
 .task-center-view .bt-check {
   flex: 0 0 auto;
   cursor: pointer;
-  width: 16px;
+  width: 18px;
+  height: 18px;
   text-align: center;
   color: var(--text-muted);
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.12s ease;
 }
 .task-center-view .bt-check:hover {
   color: var(--interactive-accent);
@@ -1221,29 +1236,48 @@
   gap: 2px;
 }
 .task-center-view .bt-subcard {
+  position: relative;
   display: flex;
   align-items: flex-start;
   gap: 6px;
-  padding: 3px 6px;
+  padding: 4px 7px 4px 8px;
   font-size: 11px;
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 3px;
+  border-radius: 6px;
   cursor: pointer;
-  transition: background 0.08s ease, border-color 0.08s ease;
+  transition:
+    background-color 0.12s ease,
+    border-color 0.12s ease,
+    box-shadow 0.12s ease,
+    transform 0.12s ease;
+}
+.task-center-view .bt-subcard::before {
+  content: "";
+  position: absolute;
+  inset: 5px auto 5px 0;
+  width: 2px;
+  border-radius: 999px;
+  background: transparent;
+  transition: background-color 0.12s ease, opacity 0.12s ease;
 }
 .task-center-view .bt-subcard:hover {
-  background: var(--background-modifier-hover);
-  border-color: var(--background-modifier-border);
+  background: color-mix(in srgb, var(--interactive-accent) 7%, transparent);
+  border-color: color-mix(in srgb, var(--interactive-accent) 22%, var(--background-modifier-border));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--interactive-accent) 12%, transparent) inset;
+  transform: translateX(1px);
+}
+.task-center-view .bt-subcard:hover::before {
+  background: var(--interactive-accent);
 }
 .task-center-view .bt-subcard.dragging {
   opacity: 0.72;
 }
 .task-center-view .bt-sub-check {
   flex: 0 0 auto;
-  width: 16px;
-  height: 16px;
-  min-width: 16px;
+  width: 18px;
+  height: 18px;
+  min-width: 18px;
   margin: 0;
   padding: 0;
   border: 1px solid transparent;
@@ -1258,12 +1292,14 @@
   font: inherit;
   line-height: 1;
   cursor: pointer;
+  transition: color 0.12s ease;
 }
 .task-center-view .bt-sub-check:hover,
 .task-center-view .bt-sub-check:focus-visible {
   color: var(--interactive-accent);
-  border-color: var(--interactive-accent);
-  background: var(--background-modifier-hover);
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
   outline: none;
 }
 .task-center-view .bt-subcard-title { flex: 1; min-width: 0; }
@@ -1355,9 +1391,19 @@
   grid-column: 1 / 7;
   min-width: 0;
   padding: 10px 12px;
-  border: 1px dashed var(--background-modifier-border);
+  min-height: 116px;
+  border: 2px dashed var(--background-modifier-border);
   border-radius: 8px;
   background: var(--background-secondary);
+  transition: border-color 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
+}
+.task-center-view.dragging-active .bt-unscheduled-pool {
+  border-color: color-mix(in srgb, var(--interactive-accent) 45%, var(--background-modifier-border));
+}
+.task-center-view .bt-unscheduled-pool.drop-hover {
+  border-color: var(--interactive-accent);
+  background: color-mix(in srgb, var(--interactive-accent) 8%, var(--background-secondary));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--interactive-accent) 18%, transparent) inset;
 }
 .task-center-view .bt-unscheduled-head {
   display: flex;
@@ -1378,7 +1424,7 @@
 .task-center-view .bt-unscheduled-list {
   column-width: 220px;
   column-gap: 8px;
-  min-height: 30px;
+  min-height: 64px;
 }
 .task-center-view .bt-unscheduled-list > .bt-card {
   break-inside: avoid;

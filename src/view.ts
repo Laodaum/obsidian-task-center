@@ -3302,6 +3302,8 @@ export class TaskCenterView extends ItemView {
     const wrap = parent.createDiv({ cls: "bt-pool-wrap" });
 
     const section = wrap.createDiv({ cls: "bt-unscheduled-pool" });
+    section.dataset.dropZone = "unscheduled-tray";
+    this.makeDropZone(section, null);
     const head = section.createDiv({ cls: "bt-unscheduled-head" });
     head.createSpan({
       text: `${tr("pool.unscheduled")}  (${unscheduled.length})`,
@@ -3313,7 +3315,6 @@ export class TaskCenterView extends ItemView {
     });
 
     const list = section.createDiv({ cls: "bt-unscheduled-list" });
-    this.makeDropZone(list, null);
     for (const t of unscheduled) {
       this.renderCard(list, t);
     }
@@ -3889,6 +3890,7 @@ export class TaskCenterView extends ItemView {
     // Title row
     const titleRow = card.createDiv({ cls: "bt-card-title-row" });
     const check = titleRow.createDiv({ cls: "bt-check" });
+    check.addClass(`bt-check-${t.effectiveStatus}`);
     check.setText(statusIcon(t.effectiveStatus));
     check.title = "Toggle done (space)";
     check.addEventListener("click", (e) => {
@@ -4039,18 +4041,24 @@ export class TaskCenterView extends ItemView {
 
     const check = subCard.createEl("button", { cls: "bt-sub-check", text: statusIcon(c.effectiveStatus) });
     check.type = "button";
+    check.addClass(`bt-sub-check-${c.effectiveStatus}`);
     check.dataset.cardAction = "done";
     check.title = c.effectiveStatus === "done" ? tr("ctx.markTodo") : tr("ctx.markDone");
     check.setAttr("aria-label", check.title);
-    check.addEventListener("click", (e) => {
+    const toggleInPlace = (e: Event) => {
       void (async () => {
         e.stopPropagation();
-        await this.runWithRemoveAnim(c.id, async () => {
+        try {
           if (c.effectiveStatus === "done") await this.api.undone(c.id);
           else await this.api.done(c.id);
-        });
+          this.scheduleRefresh();
+        } catch (err) {
+          new Notice(tr("notice.error", { msg: (err as Error).message }), 4000);
+          this.scheduleRefresh();
+        }
       })();
-    });
+    };
+    check.addEventListener("click", toggleInPlace);
 
     const title = subCard.createDiv({ cls: "bt-subcard-title", text: c.title });
     title.dataset.cardAction = "open";

@@ -113,6 +113,15 @@ function mkTasks(defs) {
   return tasks;
 }
 
+function cloneTaskForPath(task, path) {
+  return {
+    ...task,
+    id: `${path}:L${task.line + 1}`,
+    path,
+    childrenLines: [...task.childrenLines],
+  };
+}
+
 // ── US-144: Inheritance ──
 
 test("US-144: child inherits parent's ⏳ when own is null", () => {
@@ -322,6 +331,31 @@ test("US-149: multiple children, only the one with different date breaks out", (
   assert.equal(eff[1].isTopLevelInQuery, false, "same-date ChildA stays nested");
   assert.equal(eff[2].isTopLevelInQuery, true, "different-date ChildB breaks out");
   assert.equal(eff[3].isTopLevelInQuery, false, "inheriting ChildC stays nested");
+});
+
+test("US-148 regression: same line numbers in different files do not cross-parent", () => {
+  const fileA = mkTasks([
+    [0, "",   " ", "Learn Math", { scheduled: "2026-05-06" }],
+    [1, "\t", "x", "Learn Lesson 1"],
+    [2, "\t", " ", "Learn Lesson 2", { scheduled: "2026-04-29" }],
+  ]).map((task) => cloneTaskForPath(task, "Daily/2026-04-28.md"));
+  const fileB = mkTasks([
+    [0, "",   " ", "Learn AI Agent", { scheduled: "2026-04-25" }],
+    [1, "\t", " ", "Test [[Multica]]"],
+    [2, "\t", " ", "Test [[Slock.ai]]"],
+  ]).map((task) => cloneTaskForPath(task, "Daily/2026-04-24.md"));
+
+  const eff = deriveEffectiveTasks([...fileA, ...fileB]);
+  const learnMath = eff.find((task) => task.id === "Daily/2026-04-28.md:L1");
+  const lesson1 = eff.find((task) => task.id === "Daily/2026-04-28.md:L2");
+  const lesson2 = eff.find((task) => task.id === "Daily/2026-04-28.md:L3");
+  const multica = eff.find((task) => task.id === "Daily/2026-04-24.md:L2");
+  const slock = eff.find((task) => task.id === "Daily/2026-04-24.md:L3");
+
+  assert.equal(lesson1?.renderParentId, learnMath?.id, "same-file child should stay under Learn Math");
+  assert.equal(lesson2?.renderParentId, null, "different-date child should break out");
+  assert.notEqual(multica?.renderParentId, learnMath?.id, "other file L2 must not render under Learn Math");
+  assert.notEqual(slock?.renderParentId, learnMath?.id, "other file L3 must not render under Learn Math");
 });
 
 // ── Combined scenarios ──

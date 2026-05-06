@@ -54,23 +54,29 @@ interface TaskNode {
   parent: ParsedTask | null;
 }
 
-function buildTree(tasks: ParsedTask[]): Map<number, TaskNode> {
-  const byLine = new Map<number, ParsedTask>();
-  const nodes = new Map<number, TaskNode>();
+function taskLineKey(path: string, line: number): string {
+  return `${path}:L${line + 1}`;
+}
+
+function parentKey(task: ParsedTask): string | null {
+  if (task.parentLine === null || task.parentLine === undefined || task.parentLine < 0) {
+    return null;
+  }
+  return taskLineKey(task.path, task.parentLine);
+}
+
+function buildTree(tasks: ParsedTask[]): Map<string, TaskNode> {
+  const nodes = new Map<string, TaskNode>();
 
   for (const t of tasks) {
-    byLine.set(t.line, t);
-    nodes.set(t.line, { task: t, children: [], parent: null });
+    nodes.set(t.id, { task: t, children: [], parent: null });
   }
 
   for (const [, node] of nodes) {
-    const t = node.task;
-    if (t.parentLine !== null && t.parentLine !== undefined && t.parentLine >= 0) {
-      const parentNode = nodes.get(t.parentLine);
-      if (parentNode) {
-        node.parent = parentNode.task;
-        parentNode.children.push(t);
-      }
+    const parentNode = nodes.get(parentKey(node.task) ?? "");
+    if (parentNode) {
+      node.parent = parentNode.task;
+      parentNode.children.push(node.task);
     }
   }
 
@@ -85,7 +91,7 @@ function buildTree(tasks: ParsedTask[]): Map<number, TaskNode> {
 
 function inheritFromAncestors(
   task: ParsedTask,
-  nodeMap: Map<number, TaskNode>,
+  nodeMap: Map<string, TaskNode>,
 ): {
   effectiveScheduled: string | null;
   effectiveDeadline: string | null;
@@ -95,8 +101,8 @@ function inheritFromAncestors(
   let effectiveDeadline = task.deadline;
   let effectiveCreated = task.created;
 
-  let cursor: number | null | undefined = task.parentLine;
-  while (cursor !== null && cursor !== undefined && cursor >= 0) {
+  let cursor = parentKey(task);
+  while (cursor !== null) {
     const ancestor = nodeMap.get(cursor);
     if (!ancestor) break;
     const a = ancestor.task;
@@ -105,7 +111,7 @@ function inheritFromAncestors(
     if (effectiveCreated === null && a.created !== null) effectiveCreated = a.created;
     // Early exit: all three fields resolved
     if (effectiveScheduled !== null && effectiveDeadline !== null && effectiveCreated !== null) break;
-    cursor = a.parentLine;
+    cursor = parentKey(a);
   }
 
   return { effectiveScheduled, effectiveDeadline, effectiveCreated };
@@ -120,10 +126,10 @@ const TERMINAL_STATUSES: Set<TaskStatus> = new Set(["done", "dropped", "cancelle
 
 function findTerminalAncestor(
   task: ParsedTask,
-  nodeMap: Map<number, TaskNode>,
+  nodeMap: Map<string, TaskNode>,
 ): { terminalId: string | null; terminalStatus: TaskStatus | null } {
-  let cursor: number | null | undefined = task.parentLine;
-  while (cursor !== null && cursor !== undefined && cursor >= 0) {
+  let cursor = parentKey(task);
+  while (cursor !== null) {
     const ancestor = nodeMap.get(cursor);
     if (!ancestor) break;
     const a = ancestor.task;
@@ -144,7 +150,7 @@ function findTerminalAncestor(
         terminalStatus,
       };
     }
-    cursor = a.parentLine;
+    cursor = parentKey(a);
   }
   return { terminalId: null, terminalStatus: null };
 }
@@ -195,7 +201,6 @@ export function deriveEffectiveTasks(tasks: ParsedTask[]): EffectiveTask[] {
   // Phase 1: compute effectiveStatus.
   // Phase 2: determine renderParentId and isTopLevelInQuery.
   const effective: EffectiveTask[] = [];
-  const effectiveByLine = new Map<number, EffectiveTask>();
 
   for (const t of tasks) {
     const inh = inherited.get(t.id)!;
@@ -230,32 +235,28 @@ export function deriveEffectiveTasks(tasks: ParsedTask[]): EffectiveTask[] {
     };
 
     effective.push(eft);
-    effectiveByLine.set(t.line, eft);
   }
 
   // Phase 2: resolve renderParentId and independent-date breakout.
   // We rebuild a node map from EffectiveTasks so we can walk the
   // parent chain.
-  const effNodeMap = new Map<number, {
+  const effNodeMap = new Map<string, {
     task: EffectiveTask;
     parent: EffectiveTask | null;
   }>();
   for (const e of effective) {
-    effNodeMap.set(e.line, { task: e, parent: null });
+    effNodeMap.set(e.id, { task: e, parent: null });
   }
   for (const [, node] of effNodeMap) {
-    const e = node.task;
-    if (e.parentLine !== null && e.parentLine !== undefined && e.parentLine >= 0) {
-      const parentNode = effNodeMap.get(e.parentLine);
-      if (parentNode) node.parent = parentNode.task;
-    }
+    const parentNode = effNodeMap.get(parentKey(node.task) ?? "");
+    if (parentNode) node.parent = parentNode.task;
   }
 
   for (const e of effective) {
     // Find the closest visible ancestor.
     let renderParentId: string | null = null;
-    let cursor: number | null | undefined = e.parentLine;
-    while (cursor !== null && cursor !== undefined && cursor >= 0) {
+    let cursor = parentKey(e);
+    while (cursor !== null) {
       const ancestorNode = effNodeMap.get(cursor);
       if (!ancestorNode) break;
       const ancestor = ancestorNode.task;
@@ -263,7 +264,7 @@ export function deriveEffectiveTasks(tasks: ParsedTask[]): EffectiveTask[] {
         renderParentId = ancestor.id;
         break;
       }
-      cursor = ancestor.parentLine;
+      cursor = parentKey(ancestor);
     }
     e.renderParentId = renderParentId;
 

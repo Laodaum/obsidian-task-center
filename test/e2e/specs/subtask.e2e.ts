@@ -185,6 +185,22 @@ describe("Task Center - subtasks via source edit (US-141/162/168)", function () 
     expect(shape?.checkAction).toBe("done");
     expect(shape?.checkLabel).toBeTruthy();
 
+    await browser.execute(() => {
+      const win = window as unknown as {
+        __tcSubcardAnimateCalls?: number;
+        __tcOriginalAnimate?: typeof HTMLElement.prototype.animate;
+      };
+      win.__tcSubcardAnimateCalls = 0;
+      if (!win.__tcOriginalAnimate) {
+        win.__tcOriginalAnimate = HTMLElement.prototype.animate;
+        HTMLElement.prototype.animate = function (...args) {
+          if (this instanceof HTMLElement && this.closest(".bt-subcard")) {
+            win.__tcSubcardAnimateCalls = (win.__tcSubcardAnimateCalls ?? 0) + 1;
+          }
+          return win.__tcOriginalAnimate!.apply(this, args);
+        };
+      }
+    });
     await $(`${subcardSel} .bt-sub-check`).click();
     await forFlush();
     await expect($("[data-source-edit-shell]")).not.toExist();
@@ -192,6 +208,10 @@ describe("Task Center - subtasks via source edit (US-141/162/168)", function () 
       async () => (await readFile("Tasks/Inbox.md")).includes("    - [x] Child one"),
       { timeout: 3000, timeoutMsg: "subtask status circle did not toggle the child task" },
     );
+    const subcardAnimateCalls = await browser.execute(() => {
+      return (window as unknown as { __tcSubcardAnimateCalls?: number }).__tcSubcardAnimateCalls ?? 0;
+    });
+    expect(subcardAnimateCalls).toBe(0);
   });
 
   it("adds a subtask when parent is in a past week's daily note through source edit", async function () {

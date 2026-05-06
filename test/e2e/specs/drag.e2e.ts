@@ -5,6 +5,7 @@
  * DOM coupling is limited to stable data-attributes agreed with CTO:
  *   [data-task-id="path:LN"]    — task card stable identifier
  *   [data-date="YYYY-MM-DD"]    — day-column drop target
+ *   [data-drop-zone="unscheduled-tray"] — unscheduled tray drop target
  *   [data-drop-zone="abandon"]  — abandon area drop target
  *
  * All final assertions are against markdown file content, not CSS classes.
@@ -154,6 +155,50 @@ describe("Task Center — 拖拽 (US-121/123)", function () {
     const content = await readFile(path);
     await expect(content).toContain(`⏳ ${tomorrow}`);
     await expect(content).not.toContain(`⏳ ${today}`);
+  });
+
+  it("US-122a: dragging a scheduled card anywhere on the unscheduled tray clears its own ⏳", async function () {
+    const today = todayISO();
+    const path = "Tasks/Inbox.md";
+
+    await writeAndWait(path, `- [ ] Drag-clear task ⏳ ${today}\n`);
+    await openBoardWeekView();
+
+    const cardSel = `.task-center-view [data-task-id="${path}:L1"]`;
+    const traySel = `.task-center-view [data-drop-zone="unscheduled-tray"]`;
+
+    await $(cardSel).waitForExist({ timeout: 5000 });
+    await $(traySel).waitForExist({
+      timeout: 5000,
+      timeoutMsg: `unscheduled tray [data-drop-zone="unscheduled-tray"] not found`,
+    });
+
+    const trayShape = await browser.execute((sel: string) => {
+      const tray = document.querySelector<HTMLElement>(sel);
+      if (!tray) return null;
+      const rect = tray.getBoundingClientRect();
+      return {
+        minHeight: getComputedStyle(tray).minHeight,
+        height: Math.round(rect.height),
+        hasHead: !!tray.querySelector(".bt-unscheduled-head"),
+        hasList: !!tray.querySelector(".bt-unscheduled-list"),
+      };
+    }, traySel);
+    expect(trayShape).not.toBeNull();
+    expect(Number.parseInt((trayShape as { minHeight: string }).minHeight, 10)).toBeGreaterThanOrEqual(100);
+    expect((trayShape as { hasHead: boolean; hasList: boolean }).hasHead).toBe(true);
+    expect((trayShape as { hasHead: boolean; hasList: boolean }).hasList).toBe(true);
+
+    await simulateDrag(cardSel, traySel);
+
+    await browser.waitUntil(
+      async () => !(await readFile(path)).includes("⏳"),
+      { timeout: 5000, timeoutMsg: "⏳ date was not cleared after dragging to unscheduled tray" },
+    );
+
+    const content = await readFile(path);
+    await expect(content).toContain("- [ ] Drag-clear task");
+    await expect(content).not.toContain("⏳");
   });
 
   // US-123: drag a card to the abandon zone → markdown becomes [-] ❌
