@@ -22,6 +22,11 @@ function assertLinuxObsidianE2eGate(workflow, filename) {
     /libgtk-3-0t64|libgtk-3-0/,
     `${filename} must provision GTK for the Linux Obsidian runtime`,
   );
+  assert.match(
+    workflow,
+    /kernel\.apparmor_restrict_unprivileged_userns=0/,
+    `${filename} must relax the Ubuntu 24.04 AppArmor userns restriction before Electron e2e`,
+  );
 }
 
 test("ci workflow runs Obsidian e2e under Xvfb on ubuntu", async () => {
