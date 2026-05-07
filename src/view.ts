@@ -3668,7 +3668,7 @@ export class TaskCenterView extends ItemView {
         else rowMap.set(cell.rowId, [cell]);
       }
 
-      for (const [_rowId, rowCells] of rowMap) {
+      for (const rowCells of rowMap.values()) {
         const rowEl = grid.createDiv({ cls: "bt-matrix-row" });
         // Row label (Y-axis bucket title)
         rowEl.createDiv({ cls: "bt-matrix-row-label", text: rowCells[0]?.rowTitle ?? "" });

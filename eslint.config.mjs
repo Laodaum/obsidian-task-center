@@ -28,10 +28,11 @@ export default [
       // behind feature detection — bumping minAppVersion would break
       // compatibility with older Obsidian installs.
       "obsidianmd/no-unsupported-api": "off",
-      // Relax unused-vars for _prefixed args (common in Obsidian callbacks)
+      // Match the Obsidian review bot more closely: unused locals are errors,
+      // even when prefixed with "_"; only callback args may use that convention.
       "@typescript-eslint/no-unused-vars": [
-        "warn",
-        { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
+        "error",
+        { argsIgnorePattern: "^_" },
       ],
       "@typescript-eslint/no-explicit-any": "warn",
       "@typescript-eslint/require-await": "error",
