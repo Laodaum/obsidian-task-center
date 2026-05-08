@@ -13,7 +13,9 @@ It does not create a new database or task format. Your source of truth stays in 
 - [-] Retired idea ❌ 2026-04-28
 ```
 
-https://github.com/user-attachments/assets/30ae1710-402c-4fe8-8df1-333459412ae6
+<video src="screenshots/week-drag.mp4" controls muted></video>
+
+<video src="screenshots/month-drag.mp4" controls muted></video>
 
 ![Month view](screenshots/month.png)
 
