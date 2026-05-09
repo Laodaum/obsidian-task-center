@@ -7,9 +7,9 @@
  * data may not display correctly. US-701d/e adds a status-bar warning.
  *
  * Detection logic (expected from implementation):
- *   - app.plugins.manifests["obsidian-tasks"] absent → "tasks-missing"
- *   - manifests present but app.plugins.plugins["obsidian-tasks"] absent → "tasks-disabled"
- *   - app.plugins.plugins["obsidian-tasks"] present → healthy (no warning)
+ *   - app.plugins.manifests["obsidian-tasks-plugin"] absent → "tasks-missing"
+ *   - manifests present but app.plugins.plugins["obsidian-tasks-plugin"] absent → "tasks-disabled"
+ *   - app.plugins.plugins["obsidian-tasks-plugin"] present → healthy (no warning)
  *
  * Stable DOM attributes:
  *   data-dep-warning="tasks-missing"   — Tasks plugin not installed
@@ -34,8 +34,8 @@ async function forFlush() {
 async function cleanupFakeTasks() {
   await browser.executeObsidian(async ({ app }) => {
     const p = (app as any).plugins;
-    delete p.manifests["obsidian-tasks"];
-    delete p.plugins["obsidian-tasks"];
+    delete p.manifests["obsidian-tasks-plugin"];
+    delete p.plugins["obsidian-tasks-plugin"];
   });
 }
 
@@ -43,13 +43,13 @@ async function cleanupFakeTasks() {
 async function fakeInstallTasksDisabled() {
   await browser.executeObsidian(async ({ app }) => {
     const p = (app as any).plugins;
-    p.manifests["obsidian-tasks"] = {
-      id: "obsidian-tasks",
+    p.manifests["obsidian-tasks-plugin"] = {
+      id: "obsidian-tasks-plugin",
       name: "Tasks",
       version: "999.0.0",
       minAppVersion: "1.0.0",
     };
-    delete p.plugins["obsidian-tasks"];
+    delete p.plugins["obsidian-tasks-plugin"];
   });
 }
 
@@ -57,13 +57,13 @@ async function fakeInstallTasksDisabled() {
 async function fakeEnableTasks() {
   await browser.executeObsidian(async ({ app }) => {
     const p = (app as any).plugins;
-    p.manifests["obsidian-tasks"] = {
-      id: "obsidian-tasks",
+    p.manifests["obsidian-tasks-plugin"] = {
+      id: "obsidian-tasks-plugin",
       name: "Tasks",
       version: "999.0.0",
       minAppVersion: "1.0.0",
     };
-    p.plugins["obsidian-tasks"] = { _enabled: true };
+    p.plugins["obsidian-tasks-plugin"] = { _enabled: true };
   });
 }
 
@@ -79,7 +79,7 @@ describe("US-701d/e/f dependency health check (Tasks plugin)", function () {
   // US-701d: Tasks plugin not installed → status bar must warn.
   //
   // In the test vault the Tasks community plugin is not installed, so
-  // app.plugins.manifests["obsidian-tasks"] is absent by default.
+  // app.plugins.manifests["obsidian-tasks-plugin"] is absent by default.
   // FAIL until: plugin emits data-dep-warning="tasks-missing".
   it("US-701d: shows tasks-missing warning when Tasks plugin is not installed", async function () {
     await cleanupFakeTasks(); // ensure no manifest

@@ -30,6 +30,8 @@ interface InternalPluginShape {
   instance?: { options?: { folder?: string; format?: string } };
 }
 
+const TASKS_PLUGIN_ID = "obsidian-tasks-plugin";
+
 /** Pure check: returns the worst-currently-true Daily Notes warning, or null.
  *
  * A missing or empty folder is treated as "not configured" because task
@@ -48,8 +50,8 @@ export function checkDailyNotes(app: App | null | undefined): DepWarningCode | n
 
 /** Pure check: returns the Tasks community-plugin warning, or null.
  *
- * `app.plugins.manifests["obsidian-tasks"]` ⇒ user has the plugin installed
- * (Obsidian saw the manifest on disk). `app.plugins.plugins["obsidian-tasks"]`
+ * `app.plugins.manifests[TASKS_PLUGIN_ID]` ⇒ user has the plugin installed
+ * (Obsidian saw the manifest on disk). `app.plugins.plugins[TASKS_PLUGIN_ID]`
  * ⇒ the plugin is loaded — i.e. enabled. The "healthy" branch keys on the
  * loaded entry, not the manifest, so `fakeEnableTasks()` test fixtures that
  * inject only the loaded entry still count as healthy.
@@ -58,8 +60,8 @@ export function checkTasksPlugin(app: App | null | undefined): DepWarningCode | 
   const plugins = (app as unknown as {
     plugins?: { manifests?: Record<string, unknown>; plugins?: Record<string, unknown> };
   })?.plugins;
-  if (plugins?.plugins?.["obsidian-tasks"]) return null;
-  if (plugins?.manifests?.["obsidian-tasks"]) return "tasks-disabled";
+  if (plugins?.plugins?.[TASKS_PLUGIN_ID]) return null;
+  if (plugins?.manifests?.[TASKS_PLUGIN_ID]) return "tasks-disabled";
   return "tasks-missing";
 }
 

@@ -57,21 +57,21 @@ async function configureDailyNotesFolder(folder = "Daily"): Promise<void> {
 async function fakeEnableTasks(): Promise<void> {
   await browser.executeObsidian(async ({ app }) => {
     const p = (app as any).plugins;
-    p.manifests["obsidian-tasks"] = {
-      id: "obsidian-tasks",
+    p.manifests["obsidian-tasks-plugin"] = {
+      id: "obsidian-tasks-plugin",
       name: "Tasks",
       version: "999.0.0",
       minAppVersion: "1.0.0",
     };
-    p.plugins["obsidian-tasks"] = { _enabled: true };
+    p.plugins["obsidian-tasks-plugin"] = { _enabled: true };
   });
 }
 
 async function cleanupFakeTasks(): Promise<void> {
   await browser.executeObsidian(async ({ app }) => {
     const p = (app as any).plugins;
-    delete p.manifests["obsidian-tasks"];
-    delete p.plugins["obsidian-tasks"];
+    delete p.manifests["obsidian-tasks-plugin"];
+    delete p.plugins["obsidian-tasks-plugin"];
   });
 }
 
