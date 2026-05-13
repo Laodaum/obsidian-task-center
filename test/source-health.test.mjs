@@ -50,3 +50,29 @@ test("US-602 quality gate rejects duplicate unscheduled CSS selectors", async ()
 
   assert.equal(count, 1, "bt-unscheduled-col-head rules should be merged instead of duplicated");
 });
+
+test("US-102/US-305: month mini cards expose distinct todo/done/dropped states", async () => {
+  const source = await read("src/view.ts");
+  const css = await read("styles.css");
+
+  assert.match(
+    source,
+    /chip\.dataset\.taskStatus\s*=\s*t\.effectiveStatus/,
+    "month mini cards should expose effectiveStatus for stable UI/state assertions",
+  );
+  assert.match(
+    source,
+    /chip\.addClass\(`bt-mini-card-\$\{t\.effectiveStatus\}`\)/,
+    "month mini cards should add a status class derived from effectiveStatus",
+  );
+  assert.match(
+    css,
+    /\.task-center-view\s+\.bt-mini-card\.bt-mini-card-done\s*\{/,
+    "done month mini cards need their own visual treatment",
+  );
+  assert.match(
+    css,
+    /\.task-center-view\s+\.bt-mini-card\.bt-mini-card-dropped\s*\{/,
+    "dropped month mini cards need a visual treatment distinct from done",
+  );
+});

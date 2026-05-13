@@ -993,6 +993,19 @@
   text-overflow: ellipsis;
   cursor: grab;
 }
+.task-center-view .bt-mini-card.bt-mini-card-done {
+  border-left-color: var(--text-muted);
+  color: var(--text-muted);
+  opacity: 0.62;
+  text-decoration: line-through;
+}
+.task-center-view .bt-mini-card.bt-mini-card-dropped {
+  border-left-color: var(--color-red);
+  color: var(--text-muted);
+  opacity: 0.7;
+  text-decoration: line-through;
+  text-decoration-style: dotted;
+}
 .task-center-view .bt-mini-card.bt-overdue {
   border-left-color: var(--color-red);
   color: var(--color-red);

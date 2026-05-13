@@ -2853,9 +2853,11 @@ export class TaskCenterView extends ItemView {
       for (const t of dayTasks.slice(0, 6)) {
         const chip = list.createDiv({ cls: "bt-mini-card" });
         chip.dataset.taskId = t.id;
+        chip.dataset.taskStatus = t.effectiveStatus;
+        chip.addClass(`bt-mini-card-${t.effectiveStatus}`);
         if (this.contentEl.dataset.mobileLayout !== "true") chip.draggable = true;
         chip.setText(t.title);
-        if (t.effectiveDeadline) {
+        if (t.effectiveDeadline && t.effectiveStatus === "todo") {
           const deadlineDays = daysBetween(today, t.effectiveDeadline);
           if (deadlineDays < 0) chip.addClass("overdue");
           else if (deadlineDays <= 3) chip.addClass("near-deadline");
