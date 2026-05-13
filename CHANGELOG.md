@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.8.7 — 2026-05-13
+
 - CLI: add `obsidian task-center` as a root help command covering task verbs, Query Tab verbs, and the companion AI skill install command.
 - Tests: lock the full native Obsidian CLI registration surface so future releases cannot accidentally ship only a partial command set.
 
