@@ -1,6 +1,6 @@
 # Obsidian Task Center
 
-[English](./README.md)
+[简体中文](https://github.com/CorrectRoadH/obsidian-task-center/blob/main/README.zh-CN.md) / [English](https://github.com/CorrectRoadH/obsidian-task-center/blob/main/README.md)
 
 Task Center 是一个 Obsidian 插件：在 Obsidian Tasks markdown 之上，增加今日 / 周 / 月任务看板、父子任务渲染、自然语言 Quick Add、移动端手势，以及方便 AI agent 使用的 CLI。
 

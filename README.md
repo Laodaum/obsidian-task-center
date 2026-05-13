@@ -1,6 +1,6 @@
 # Obsidian Task Center
 
-[简体中文](./README.zh-CN.md)
+[简体中文](https://github.com/CorrectRoadH/obsidian-task-center/blob/main/README.zh-CN.md) / [English](https://github.com/CorrectRoadH/obsidian-task-center/blob/main/README.md)
 
 Task Center is an Obsidian plugin that adds a daily/weekly/monthly task board, parent-child task rendering, natural-language Quick Add, mobile gestures, and an AI-friendly CLI on top of Obsidian Tasks markdown.
 
