@@ -317,6 +317,7 @@ export class TaskCenterView extends ItemView {
     const narrow = window.innerWidth < 600;
     const force = !!this.plugin.settings.mobileForceLayout;
     this.contentEl.dataset.mobileLayout = narrow || force ? "true" : "false";
+    this.contentEl.dataset.obsidianMobile = Platform.isMobile ? "true" : "false";
   }
 
   private updateViewLayoutMetrics(): void {
@@ -2337,7 +2338,8 @@ export class TaskCenterView extends ItemView {
 
   private openQueryControlsSheet(): void {
     let body: HTMLElement;
-    const bodyClass = isMobileMode() ? "bt-mobile-filter-sheet" : "bt-query-controls-sheet";
+    const mobileLayout = this.contentEl.dataset.mobileLayout === "true";
+    const bodyClass = mobileLayout ? "bt-mobile-query-sheet" : "bt-query-controls-sheet";
     const rerenderControls = () => {
       this.render();
       if (!body) return;
@@ -2346,6 +2348,7 @@ export class TaskCenterView extends ItemView {
     };
     const sheet = new BottomSheet(this.app, {
       title: tr("savedViews.queryEditorTitle"),
+      sheetClass: mobileLayout ? "task-center-query-sheet" : undefined,
       populate: (el) => {
         body = el.createDiv({ cls: bodyClass });
         this.renderQueryControlsSheet(body, rerenderControls);
@@ -2358,8 +2361,9 @@ export class TaskCenterView extends ItemView {
     parent.dataset.savedViews = "true";
     parent.dataset.queryEditor = "true";
 
-    // VAL-GUI-010: Filter summary at top of editor
-    this.renderFilterSummary(parent);
+    const intro = parent.createDiv({ cls: "bt-query-editor-intro" });
+    intro.createDiv({ cls: "bt-query-editor-current", text: this.activeSavedView().name });
+    this.renderFilterSummary(intro);
 
     // ── Filters ──────────────────────────────────────────
     const filtersSection = parent.createDiv({ cls: "bt-query-editor-section" });
@@ -2374,10 +2378,10 @@ export class TaskCenterView extends ItemView {
     const viewRow = viewSection.createDiv({ cls: "bt-query-editor-view-row" });
     viewRow.createSpan({ text: tr("savedViews.queryEditorViewType") + ":", cls: "bt-query-editor-view-label" });
     const viewTypes: Array<{ value: string; label: string }> = [
-      { value: "list", label: "List" },
-      { value: "week", label: "Week" },
-      { value: "month", label: "Month" },
-      { value: "matrix", label: "Matrix" },
+      { value: "list", label: tr("savedViews.viewList") },
+      { value: "week", label: tr("savedViews.viewWeek") },
+      { value: "month", label: tr("savedViews.viewMonth") },
+      { value: "matrix", label: tr("savedViews.viewMatrix") },
     ];
     for (const vt of viewTypes) {
       const btn = viewRow.createEl("button", {
@@ -3336,15 +3340,18 @@ export class TaskCenterView extends ItemView {
         return candidate.tags.some((tag) => tag.toLowerCase().includes(needle));
       };
 
-      const taskMeta = (candidate: EffectiveTask) => {
-        const parts: string[] = [`${compactPath(candidate.path)}:L${candidate.line + 1}`];
-        if (candidate.effectiveScheduled) parts.push(`⏳ ${candidate.effectiveScheduled}`);
+      const taskMetaParts = (candidate: EffectiveTask) => {
+        const chips: string[] = [];
+        if (candidate.effectiveScheduled) chips.push(`⏳ ${candidate.effectiveScheduled}`);
         const tags = taskDisplayTags(candidate.tags).slice(0, 2);
-        parts.push(...tags);
+        chips.push(...tags);
         if (candidate.childrenLines.length > 0) {
-          parts.push(tr("sheet.parentPickerChildren", { n: String(candidate.childrenLines.length) }));
+          chips.push(tr("sheet.parentPickerChildren", { n: String(candidate.childrenLines.length) }));
         }
-        return parts.join(" · ");
+        return {
+          source: `${compactPath(candidate.path)}:L${candidate.line + 1}`,
+          chips,
+        };
       };
 
       const renderCandidate = (parent: HTMLElement, candidate: EffectiveTask) => {
@@ -3357,10 +3364,19 @@ export class TaskCenterView extends ItemView {
         row.disabled = invalid;
         row.setAttr("aria-pressed", selectedId === candidate.id ? "true" : "false");
         row.createDiv({ cls: "bt-parent-candidate-title", text: candidate.title });
-        row.createDiv({
-          cls: "bt-parent-candidate-meta",
-          text: invalid ? tr("sheet.parentPickerInvalid") : taskMeta(candidate),
-        });
+        const meta = row.createDiv({ cls: "bt-parent-candidate-meta" });
+        if (invalid) {
+          meta.createSpan({ cls: "bt-parent-candidate-invalid", text: tr("sheet.parentPickerInvalid") });
+        } else {
+          const parts = taskMetaParts(candidate);
+          meta.createSpan({ cls: "bt-parent-candidate-source", text: parts.source });
+          if (parts.chips.length > 0) {
+            const chips = meta.createSpan({ cls: "bt-parent-candidate-chips" });
+            for (const chipText of parts.chips) {
+              chips.createSpan({ cls: "bt-parent-candidate-chip", text: chipText });
+            }
+          }
+        }
         if (!invalid) {
           row.addEventListener("click", () => {
             selectedId = candidate.id;
@@ -3428,6 +3444,7 @@ export class TaskCenterView extends ItemView {
 
       const pickerSheet = new BottomSheet(this.app, {
         title: tr("sheet.parentPickerTitle"),
+        sheetClass: "task-center-parent-picker-sheet",
         onClose: () => finish(null),
         populate: (el) => {
           sheetBody = el.createDiv({ cls: "bt-parent-picker" });

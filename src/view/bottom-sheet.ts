@@ -14,11 +14,13 @@
 //   - Backdrop tap and Escape close the sheet via the inherited Modal
 //     behavior.
 
-import { App, Modal } from "obsidian";
+import { App, Modal, Platform } from "obsidian";
 
 export interface BottomSheetOptions {
   /** Heading rendered at the top of the sheet. */
   title: string;
+  /** Optional semantic class for layout variants. */
+  sheetClass?: string;
   /**
    * Called once on open, after the title is in the DOM. Append your rows
    * to `contentEl`. Anything you wire here is torn down when the user
@@ -37,6 +39,8 @@ export class BottomSheet extends Modal {
   onOpen(): void {
     const { contentEl, modalEl } = this;
     modalEl.addClass("task-center-bottom-sheet");
+    if (this.opts.sheetClass) modalEl.addClass(this.opts.sheetClass);
+    if (Platform.isMobile) modalEl.addClass("task-center-obsidian-mobile-sheet");
     contentEl.empty();
     contentEl.addClass("bt-sheet-content");
 
