@@ -39,6 +39,15 @@ test("release workflow runs Obsidian e2e under Xvfb on ubuntu", async () => {
   assertLinuxObsidianE2eGate(workflow, "release.yml");
 });
 
+test("US-602: CI e2e script runs the full WebDriverIO suite, not only board-basics", async () => {
+  const pkg = JSON.parse(await readFile("package.json", "utf8"));
+  assert.equal(
+    pkg.scripts["test:e2e:ci"],
+    "pnpm run build && wdio run ./wdio.conf.mts",
+    "test:e2e:ci must match the documented full release/PR e2e gate",
+  );
+});
+
 test("release workflow attests Obsidian release assets", async () => {
   const workflow = await readWorkflow("release.yml");
 

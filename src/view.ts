@@ -33,6 +33,7 @@ import { attachCardGestures, attachLongPress } from "./view/touch";
 import { shouldCloseFilterPopoverOnPointerDown, isClickInsideFilterControls } from "./view/filter-popover";
 import { isMobileMode } from "./platform";
 import { openTaskSourceEditShell } from "./view/source-dialog";
+import { markdownSourceOpenState } from "./view/source-open-state";
 import { weekMinHeightFromViewHeightPx } from "./view/layout";
 import { SavedViewNameModal } from "./view/saved-view-name-modal";
 import { QueryDslModal, type QueryDslSubmitMode } from "./view/query-dsl-modal";
@@ -391,10 +392,7 @@ export class TaskCenterView extends ItemView {
     }
     try {
       const leaf = this.app.workspace.getLeaf("tab");
-      await leaf.openFile(file, {
-        active: true,
-        eState: { line: task.line },
-      });
+      await leaf.openFile(file, markdownSourceOpenState(task.line, true));
       if (typeof leaf.loadIfDeferred === "function") await leaf.loadIfDeferred();
       const view = leaf.view;
       if (!(view instanceof MarkdownView) || !view.editor) {

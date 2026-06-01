@@ -1,6 +1,7 @@
 import { App, MarkdownView, Notice, TFile, WorkspaceLeaf, WorkspaceSplit } from "obsidian";
 import type { ParsedTask } from "../types";
 import { t as tr } from "../i18n";
+import { markdownSourceOpenState } from "./source-open-state";
 
 type SourceEditOptions = {
   onSave?: () => void | Promise<void>;
@@ -195,10 +196,7 @@ export async function openTaskSourceEditShell(
     await opts.onSave?.();
 
     const nativeLeaf = app.workspace.getLeaf("tab");
-    await nativeLeaf.openFile(file, {
-      active: true,
-      eState: { line: task.line },
-    });
+    await nativeLeaf.openFile(file, markdownSourceOpenState(task.line, true));
     app.workspace.setActiveLeaf(nativeLeaf, { focus: true });
     await focusTaskLineInMarkdownView(nativeLeaf, task.line);
   };
@@ -234,10 +232,7 @@ export async function openTaskSourceEditShell(
   try {
     restoreHostLeaf(false);
     leaf = app.workspace.createLeafInParent(split, 0);
-    await leaf.openFile(file, {
-      active: false,
-      eState: { line: task.line },
-    });
+    await leaf.openFile(file, markdownSourceOpenState(task.line, false));
     view = await focusTaskLineInMarkdownView(leaf, task.line);
     restoreHostLeaf(false);
     overlay.__sourceEditLeaf = leaf;
