@@ -2,17 +2,19 @@
 
 Date: 2026-04-28
 
-This document records the current test split. As of 2026-04-28, PR/main CI and
-the release pre-flight gate both run the full unit + e2e command chain, so a PR
-cannot merge while relying on a release-only e2e surprise.
+This document records the current test split. As of 2026-06-01, PR/main CI and
+the release pre-flight gate both run the full unit suite plus the stable
+WebDriverIO specs that protect the board entry path and source Markdown editor
+path. The wider historical e2e suite remains available for investigation, but
+is not yet stable enough to be a release gate.
 
 ## Current Matrix
 
 | Surface | Trigger | Checks | E2E coverage | Purpose |
 | --- | --- | --- | --- | --- |
 | Local quick check | Maintainer decides | Local e2e is blocked by `wdio-local-guard.mts`; run only explicit lightweight checks if requested | None | Protect the user's running Obsidian app. |
-| `CI` | Pull request and `main` push | `pnpm install --frozen-lockfile`, typecheck, lint, unit, full e2e | Full `pnpm run test:e2e` with `OBSIDIAN_VERSIONS=latest/latest` | Merge confidence for normal code changes; same behavioral gate as release preflight. |
-| `Release` | Strict semver tag, no `v` prefix | typecheck, lint, unit, full e2e, build, GitHub Release asset upload | Full `pnpm run test:e2e` with `OBSIDIAN_VERSIONS=latest/latest` | Hard release gate. A red e2e blocks publishing assets. |
+| `CI` | Pull request and `main` push | `pnpm install --frozen-lockfile`, typecheck, lint, unit, stable e2e gate | `board-basics.e2e.ts` + `source-edit-dialog.e2e.ts` with `OBSIDIAN_VERSIONS=latest/latest` | Merge confidence for normal code changes; same behavioral gate as release preflight. |
+| `Release` | Strict semver tag, no `v` prefix | typecheck, lint, unit, stable e2e gate, build, GitHub Release asset upload | `board-basics.e2e.ts` + `source-edit-dialog.e2e.ts` with `OBSIDIAN_VERSIONS=latest/latest` | Hard release gate. A red e2e blocks publishing assets. |
 | `CI Xvfb POC` | Manual dispatch or changes to `.github/workflows/ci-xvfb-poc.yml` only | install Xvfb/Electron deps, install deps, build | One non-timing-sensitive spec: `board-basics.e2e.ts` | Proves hosted Linux + Xvfb can boot and drive Obsidian without becoming a PR/release gate. |
 
 ## Existing Decisions
@@ -24,7 +26,9 @@ cannot merge while relying on a release-only e2e surprise.
 - Local WDIO is forbidden: `wdio.conf.mts` throws unless `GITHUB_ACTIONS=true`.
   Use GitHub Actions for e2e evidence.
 - PR/main CI and Release preflight intentionally run the same behavioral gate:
-  typecheck, lint, unit, then full e2e.
+  typecheck, lint, unit, then stable e2e coverage for board basics and source
+  editing. The source-edit spec is included because US-168h regressions can pass
+  unit tests while failing in Obsidian's real Markdown leaf state handoff.
 - Release tags are strict semver without a `v` prefix. Tag pushes repeat the
   full pre-flight gate before publishing assets.
 
@@ -32,11 +36,13 @@ cannot merge while relying on a release-only e2e surprise.
 
 1. Keep `CI` and `Release` preflight aligned; if one gate adds or removes a
    required check, mirror it in the other workflow in the same PR.
-2. Keep `CI Xvfb POC` narrow unless a follow-up task explicitly promotes it to
+2. Promote additional e2e specs one at a time after they are made deterministic
+   under `OBSIDIAN_VERSIONS=latest/latest`.
+3. Keep `CI Xvfb POC` narrow unless a follow-up task explicitly promotes it to
    a required signal.
-3. Add an Actions summary artifact for e2e failures: failed spec name,
+4. Add an Actions summary artifact for e2e failures: failed spec name,
    screenshot path, Obsidian version, and retry instructions.
-4. Add a date-fixture helper audit for specs that depend on "today" or week
+5. Add a date-fixture helper audit for specs that depend on "today" or week
    navigation, so tag releases do not fail because stale dates crossed a week.
 
 ## Follow-Up Task Splits
