@@ -82,7 +82,7 @@ Tab 的运行时状态：
 
 ### 2.3 Tab 管理交互
 
-Tab 菜单至少包含：重命名、复制、编辑 Query、设为默认、左移、右移、隐藏、删除。删除只允许用户自定义 tab；预设 tab 只能隐藏并可在设置页恢复。（US-109n / US-109l）
+Tab 菜单至少包含：重命名、复制、编辑 Query、设为默认、隐藏、删除。删除只允许用户自定义 tab；预设 tab 只能隐藏并可在设置页恢复。Tab 排序通过拖拽完成，不提供左移 / 右移按钮。（US-109n / US-109l）
 
 - 桌面：双击 label 可 inline rename，但菜单“重命名”必须存在；Enter 保存，Esc 取消；IME composition 期间 Enter 不提交。（US-109o / US-413）
 - 移动端：长按或更多菜单打开 bottom sheet 管理。

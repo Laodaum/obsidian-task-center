@@ -3,7 +3,6 @@ import { TaskCenterSettings, DEFAULT_SETTINGS, VIEW_TYPE_TASK_CENTER, QueryPrese
 import { TaskCenterSettingTab } from "./settings";
 import { TaskCenterView } from "./view";
 import {
-  TaskCenterApi,
   formatList,
   formatShow,
   formatStats,
@@ -12,8 +11,8 @@ import {
   formatQueryRun,
   formatOkWrite,
   formatAdd,
-  type QueryRunResult,
 } from "./cli";
+import { TaskCenterApi, type QueryRunResult } from "./api";
 import { TaskCache } from "./cache";
 import { StatusBar } from "./status-bar";
 import { DepHealthBanner } from "./dep-health";

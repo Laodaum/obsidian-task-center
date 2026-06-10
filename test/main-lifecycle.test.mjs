@@ -28,7 +28,7 @@ async function compile() {
             path: "obsidian",
             namespace: "main-lifecycle-stub",
           }));
-          build.onResolve({ filter: /^\.\/(types|settings|view|cli|cache|status-bar|dep-health|quickadd|i18n|dates|parser|writer|platform)$/ }, (args) => ({
+          build.onResolve({ filter: /^\.\/(types|settings|view|cli|api|cache|status-bar|dep-health|quickadd|i18n|dates|parser|writer|platform)$/ }, (args) => ({
             path: args.path,
             namespace: "main-lifecycle-stub",
           }));
@@ -92,7 +92,6 @@ async function compile() {
                 `);
               case "./cli":
                 return stubModule(`
-                  export class TaskCenterApi { constructor(app, cache) { this.app = app; this.cache = cache; } }
                   export function formatList() { return ""; }
                   export function formatShow() { return ""; }
                   export function formatStats() { return ""; }
@@ -101,6 +100,15 @@ async function compile() {
                   export function formatQueryRun(result) { return "Query " + result.preset.id + " · " + result.preset.name + "\\nview " + result.view.type + " · " + result.filteredTasks.length + " tasks · anchor " + result.anchorISO; }
                   export function formatOkWrite() { return ""; }
                   export function formatAdd() { return ""; }
+                `);
+              case "./api":
+                return stubModule(`
+                  export class TaskCenterApi {
+                    constructor(app, cache) {
+                      this.app = app;
+                      this.cache = cache;
+                    }
+                  }
                 `);
               case "./cache":
                 return stubModule("export class TaskCache { constructor(app) { this.app = app; } bind() { return []; } dispose() {} async forFlush() {} }");

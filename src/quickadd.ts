@@ -1,5 +1,5 @@
 import { App, Modal, Platform, TextComponent } from "obsidian";
-import { TaskCenterApi } from "./cli";
+import { TaskCenterApi } from "./api";
 import { t as tr } from "./i18n";
 import { parseDurationToMinutes } from "./parser";
 import { todayISO, addDays, isValidISO, fromISO } from "./dates";

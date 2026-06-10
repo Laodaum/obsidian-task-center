@@ -9,7 +9,7 @@ import {
 } from "obsidian";
 import { ParsedTask, VIEW_TYPE_TASK_CENTER } from "./types";
 import { formatMinutes } from "./parser";
-import { TaskCenterApi, computeStats } from "./cli";
+import { TaskCenterApi, computeStats } from "./api";
 import {
   todayISO,
   fromISO,
