@@ -10,22 +10,22 @@ cache = true
 local = ["rules"]
 
 [packs]
+typescript = "github:CorrectRoadH/harness-lint@main#packs/typescript"
 
 [overrides]
 
 [disabled]
-rules = []
+rules = [
+  # ~50 existing `any` uses, largely at Obsidian API boundaries where upstream
+  # typings are loose. Not adopted as repository policy yet: keep disabled until
+  # the debt is paid down or replaced with narrower local rules, rather than
+  # flooding every lint run. The pack's other rules (no-console-log, no-debugger,
+  # no-var) are clean and stay active.
+  "typescript.no-explicit-any",
+]
 
 [ignore]
 paths = []
 
 [registry]
 url = "https://raw.githubusercontent.com/CorrectRoadH/harness-lint/main/site/catalog.json"
-
-[obsidian]
-markdown_links = false
-orphan_files = false
-note_roots = []
-content_roots = []
-content_extensions = []
-require_capitalized_dirs = false

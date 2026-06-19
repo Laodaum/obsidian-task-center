@@ -1,0 +1,9 @@
+[packs.typescript]
+id = "typescript"
+source = "git"
+spec = "CorrectRoadH/harness-lint#packs/typescript"
+requested_ref = "main"
+version = "a7973d785f9fb3f35dd3525061a4a49ce0fe18f3"
+checksum = "2a5ab70fd6cc9f9e983e83a0624d94332fb2b76d"
+local_path = ".harness/packs/typescript"
+pack_path = "packs/typescript"
