@@ -377,7 +377,10 @@ export async function parseFileTasks(
     };
     for (const [, task] of byLine) {
       let cursor = task.parentIndex;
+      const visited = new Set<number>();
       while (cursor !== null && cursor !== undefined && cursor >= 0) {
+        if (visited.has(cursor)) break;
+        visited.add(cursor);
         const node = allNodes.get(cursor);
         if (!node) break;
         const kind = terminalKind(node);

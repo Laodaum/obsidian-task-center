@@ -496,6 +496,17 @@ test("VAL-CORE-001: duplicate tags are preserved in tags array but deduped in di
   assert.deepEqual(task?.tags, ["#tag1", "#tag2", "#tag1"]);
 });
 
+test("bug#6: line with embedded checkbox - [ ] - [ ] does not hang", async () => {
+  // When a line contains two checkbox patterns, the plugin must return
+  // within bounded time — no infinite loop in ancestor-walking code.
+  const content = "- [ ] - [ ] some task text\n";
+  const app = fakeAppForContent(content);
+  const file = { path: "test.md", stat: { mtime: 1000 } };
+  const tasks = await parseFileTasks(app, file);
+  // One task is parsed (first checkbox matches, rest is the content).
+  assert.ok(tasks.length <= 1, "should not produce more than one task");
+});
+
 test("VAL-CORE-001: inline duration fields are parsed generically", () => {
   const task = parseTaskFromLine(
     "test.md",

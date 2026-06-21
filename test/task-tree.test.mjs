@@ -561,3 +561,35 @@ test("US-144a: terminalInheritedFrom is null when task has no terminal ancestor"
   assert.equal(eff[0].terminalInheritedFrom, null);
   assert.equal(eff[0].effectiveStatus, "todo");
 });
+
+// ── bug#6: cycle guard ──
+
+test("bug#6: self-referencing parentLine does not hang (cycle guard)", () => {
+  // Simulate a ListItemCache producing a task whose parentLine points
+  // to itself — a cycle that would previously loop forever.
+  const tasks = mkTasks([
+    [0, "", " ", "SelfParent", {}],
+  ]);
+  // Manually corrupt the parent pointer so the task is its own parent.
+  tasks[0].parentLine = 0;
+  tasks[0].parentIndex = 0;
+
+  const eff = deriveEffectiveTasks(tasks);
+  assert.equal(eff.length, 1, "task should still be returned");
+  assert.equal(eff[0].effectiveStatus, "todo");
+});
+
+test("bug#6: two-task cycle in parent chain does not hang", () => {
+  // A → parent B, B → parent A: mutual cycle.
+  const tasks = mkTasks([
+    [0, "",   " ", "TaskA", {}],
+    [1, "  ", " ", "TaskB", {}],
+  ]);
+  // Make A point to B as parent, and B already points to A (via mkTasks).
+  // Manually make B also point back to A to create a cycle.
+  tasks[0].parentLine = 1;
+  tasks[0].parentIndex = 1;
+
+  const eff = deriveEffectiveTasks(tasks);
+  assert.equal(eff.length, 2, "both tasks should be returned");
+});

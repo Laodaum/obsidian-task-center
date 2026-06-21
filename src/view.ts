@@ -2215,8 +2215,13 @@ export class TaskCenterView extends ItemView {
     clear.addEventListener("click", () => this.setSelectedTags([], rerenderControls));
 
     const list = popover.createDiv({ cls: "bt-tag-options" });
+    const tagOptions = this.collectTagOptions();
+    if (tagOptions.length === 0) {
+      list.createDiv({ cls: "bt-tag-empty", text: tr("savedViews.tagEmpty") });
+      return;
+    }
     const rows: HTMLElement[] = [];
-    for (const option of this.collectTagOptions()) {
+    for (const option of tagOptions) {
       const row = list.createEl("button", { cls: "bt-tag-option" });
       row.dataset.tagOption = option.tag;
       row.title = option.tag;

@@ -102,7 +102,10 @@ function inheritFromAncestors(
   let effectiveCreated = task.created;
 
   let cursor = parentKey(task);
+  const visited = new Set<string>();
   while (cursor !== null) {
+    if (visited.has(cursor)) break;
+    visited.add(cursor);
     const ancestor = nodeMap.get(cursor);
     if (!ancestor) break;
     const a = ancestor.task;
@@ -129,7 +132,10 @@ function findTerminalAncestor(
   nodeMap: Map<string, TaskNode>,
 ): { terminalId: string | null; terminalStatus: TaskStatus | null } {
   let cursor = parentKey(task);
+  const visited = new Set<string>();
   while (cursor !== null) {
+    if (visited.has(cursor)) break;
+    visited.add(cursor);
     const ancestor = nodeMap.get(cursor);
     if (!ancestor) break;
     const a = ancestor.task;
@@ -256,7 +262,10 @@ export function deriveEffectiveTasks(tasks: ParsedTask[]): EffectiveTask[] {
     // Find the closest visible ancestor.
     let renderParentId: string | null = null;
     let cursor = parentKey(e);
+    const visited = new Set<string>();
     while (cursor !== null) {
+      if (visited.has(cursor)) break;
+      visited.add(cursor);
       const ancestorNode = effNodeMap.get(cursor);
       if (!ancestorNode) break;
       const ancestor = ancestorNode.task;

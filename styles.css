@@ -550,6 +550,12 @@
   max-height: 290px;
   overflow: auto;
 }
+.task-center-view .bt-tag-empty {
+  padding: 8px 12px;
+  color: var(--text-muted);
+  font-size: 0.875em;
+  line-height: 1.4;
+}
 .task-center-view .bt-tag-option {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
