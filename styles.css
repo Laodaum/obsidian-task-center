@@ -330,6 +330,15 @@
 .task-center-view .bt-saved-view-save:hover {
   background: var(--background-modifier-hover);
 }
+.task-center-view .bt-saved-view-save.bt-saved-view-save--primary {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-color: var(--interactive-accent);
+}
+.task-center-view .bt-saved-view-save.bt-saved-view-save--primary:hover {
+  background: var(--interactive-accent-hover, var(--interactive-accent));
+  border-color: var(--interactive-accent-hover, var(--interactive-accent));
+}
 .task-center-view .bt-mobile-filter-btn {
   padding: 4px 10px;
   border-radius: 6px;
@@ -549,6 +558,32 @@
   grid-column: 1 / -1;
   max-height: 290px;
   overflow: auto;
+}
+.bt-confirm-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+.bt-confirm-btn {
+  padding: 6px 14px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  cursor: pointer;
+  font-weight: 600;
+}
+.bt-confirm-btn:hover {
+  background: var(--background-modifier-hover);
+}
+.bt-confirm-btn.bt-confirm-btn--primary {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-color: var(--interactive-accent);
+}
+.bt-confirm-btn.bt-confirm-btn--primary:hover {
+  background: var(--interactive-accent-hover, var(--interactive-accent));
 }
 .task-center-view .bt-tag-empty {
   padding: 8px 12px;

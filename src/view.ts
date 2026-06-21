@@ -1,6 +1,7 @@
 import {
   ItemView,
   MarkdownView,
+  Modal,
   WorkspaceLeaf,
   Menu,
   Notice,
@@ -182,6 +183,37 @@ function taskMatchesTimeFilter(t: EffectiveTask, field: SavedViewTimeField, toke
   if (field === "scheduled" && token === "unscheduled") return t.effectiveScheduled === null;
   if (token === "unscheduled") return effectiveTimeValue(t, field) === null;
   return taskMatchesTimeToken(effectiveTimeValue(t, field), token, weekStartsOn);
+}
+
+class SwitchTabConfirmModal extends Modal {
+  private onSave: () => void;
+  private onSwitch: () => void;
+
+  constructor(app: import("obsidian").App, onSave: () => void, onSwitch: () => void) {
+    super(app);
+    this.onSave = onSave;
+    this.onSwitch = onSwitch;
+  }
+
+  onOpen() {
+    this.contentEl.createEl("h4", { text: tr("savedViews.switchDirtyTitle") });
+    this.contentEl.createEl("p", { text: tr("savedViews.switchDirtyBody") });
+    const row = this.contentEl.createDiv({ cls: "bt-confirm-row" });
+    row.createEl("button", {
+      text: tr("savedViews.switchDirtySave"),
+      cls: "bt-confirm-btn bt-confirm-btn--primary",
+    }).addEventListener("click", () => { this.close(); this.onSave(); });
+    row.createEl("button", {
+      text: tr("savedViews.switchDirtyDiscard"),
+      cls: "bt-confirm-btn",
+    }).addEventListener("click", () => { this.close(); this.onSwitch(); });
+    row.createEl("button", {
+      text: tr("savedViews.switchDirtyCancel"),
+      cls: "bt-confirm-btn",
+    }).addEventListener("click", () => this.close());
+  }
+
+  onClose() { this.contentEl.empty(); }
 }
 
 export class TaskCenterView extends ItemView {
@@ -1253,7 +1285,7 @@ export class TaskCenterView extends ItemView {
     if (dirty) {
       const update = actions.createEl("button", {
         text: tr("savedViews.update"),
-        cls: "bt-saved-view-save",
+        cls: "bt-saved-view-save bt-saved-view-save--primary",
       });
       update.dataset.action = "update-current-view";
       update.addEventListener("click", () => {
@@ -1297,7 +1329,7 @@ export class TaskCenterView extends ItemView {
     if (dirty) {
       const update = parent.createEl("button", {
         text: tr("savedViews.update"),
-        cls: "bt-saved-view-save",
+        cls: "bt-saved-view-save bt-saved-view-save--primary",
       });
       update.dataset.action = "update-current-view";
       update.addEventListener("click", () => {
@@ -1428,6 +1460,26 @@ export class TaskCenterView extends ItemView {
   }
 
   private activateSavedView(view: QueryPreset): void {
+    const current = this.activeSavedView();
+    if (current.id !== view.id && this.isSelectedSavedViewDirty(current)) {
+      new SwitchTabConfirmModal(
+        this.app,
+        () => {
+          void (async () => {
+            await this.updateCurrentSavedView(current);
+            this.persistCurrentDraft();
+            this.applySavedView(view);
+            this.render();
+          })();
+        },
+        () => {
+          this.persistCurrentDraft();
+          this.applySavedView(view);
+          this.render();
+        },
+      ).open();
+      return;
+    }
     this.persistCurrentDraft();
     this.applySavedView(view);
     this.render();
@@ -5221,12 +5273,16 @@ export class TaskCenterView extends ItemView {
   }
 
   private handleFilterOutsidePointerDown(event: PointerEvent): void {
-    const isInside = isClickInsideFilterControls(event);
-    if (!shouldCloseFilterPopoverOnPointerDown({
-      isOpen: this.filterPopoverOpen !== null,
-      isInsideFilterControls: isInside,
-    })) return;
-
+    if (this.filterPopoverOpen === null) return;
+    const target = event.target as HTMLElement | null;
+    if (!target) return;
+    // Close if the click lands outside any filter control or open popover.
+    // Use target.closest() directly — more reliable than composedPath() in
+    // Obsidian's Electron environment where composedPath can miss elements.
+    if (
+      target.closest("[data-saved-views]") ||
+      target.closest(".bt-filter-popover, .bt-tag-popover, .bt-date-popover, .bt-status-popover, .bt-time-more-popover")
+    ) return;
     this.filterPopoverOpen = null;
     this.pendingDateRangeStart = null;
     this.render();
