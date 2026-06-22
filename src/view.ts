@@ -1191,9 +1191,6 @@ export class TaskCenterView extends ItemView {
     const wrap = parent.createDiv({ cls: "bt-saved-views" });
     wrap.dataset.savedViews = "true";
 
-    // VAL-GUI-010: Toolbar summary — readable summary of current filter conditions
-    this.renderFilterSummary(wrap);
-
     const filters = wrap.createDiv({ cls: "bt-saved-view-filters" });
     const actions = wrap.createDiv({ cls: "bt-saved-view-actions" });
 
@@ -2710,7 +2707,8 @@ export class TaskCenterView extends ItemView {
     if (this.state.tab === "week") {
       const start = startOfWeek(this.state.anchorISO, this.plugin.settings.weekStartsOn);
       const end = addDays(start, 6);
-      return `${start} → ${end}`;
+      // Compact MM-DD → MM-DD; the year is already implied by the week button.
+      return `${start.slice(5)} → ${end.slice(5)}`;
     } else if (this.state.tab === "month") {
       const d = fromISO(this.state.anchorISO);
       return `${d.getFullYear()}-${pad(d.getMonth() + 1)}`;

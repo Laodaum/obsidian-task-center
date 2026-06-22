@@ -1096,7 +1096,7 @@
 }
 .task-center-view .bt-month-header {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   text-align: center;
   font-weight: 600;
   font-size: 11px;
@@ -1106,7 +1106,7 @@
 }
 .task-center-view .bt-month-grid {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 2px;
   margin-top: 4px;
 }
@@ -3371,4 +3371,43 @@
 
 .tc-input-invalid {
   border-color: var(--color-red);
+}
+
+/* ── Query DSL modal: header docs link + live validation status ── */
+.task-center-query-dsl-modal .tc-dsl-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.task-center-query-dsl-modal .tc-dsl-head h3 {
+  margin: 0;
+}
+.task-center-query-dsl-modal .tc-dsl-docs {
+  font-size: 12px;
+  color: var(--text-accent);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.task-center-query-dsl-modal .tc-dsl-docs:hover {
+  text-decoration: underline;
+}
+.task-center-query-dsl-modal .tc-dsl-status {
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.4;
+  min-height: 18px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.task-center-query-dsl-modal .tc-dsl-status.is-valid {
+  color: var(--color-green);
+}
+.task-center-query-dsl-modal .tc-dsl-status.is-invalid {
+  color: var(--color-red);
+}
+.task-center-query-dsl-modal button.is-disabled,
+.task-center-query-dsl-modal button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
