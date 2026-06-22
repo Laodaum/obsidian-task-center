@@ -1,0 +1,14 @@
+{
+  "id": "preset-today",
+  "name": "Today",
+  "builtin": true,
+  "hidden": false,
+  "filters": {
+    "status": ["todo"]
+  },
+  "view": {
+    "type": "list",
+    "preset": "today"
+  },
+  "summary": []
+}

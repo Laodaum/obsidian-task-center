@@ -1,0 +1,16 @@
+{
+  "id": "preset-dropped",
+  "name": "Dropped",
+  "builtin": true,
+  "hidden": false,
+  "filters": {
+    "status": ["dropped"]
+  },
+  "view": {
+    "type": "list",
+    "preset": "dropped"
+  },
+  "summary": [
+    { "type": "count" }
+  ]
+}

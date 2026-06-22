@@ -1,0 +1,16 @@
+{
+  "id": "preset-todo",
+  "name": "TODO",
+  "builtin": true,
+  "hidden": false,
+  "filters": {
+    "status": ["todo"]
+  },
+  "view": {
+    "type": "list",
+    "preset": "todo"
+  },
+  "summary": [
+    { "type": "count" }
+  ]
+}

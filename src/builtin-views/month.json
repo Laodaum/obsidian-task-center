@@ -1,0 +1,13 @@
+{
+  "id": "preset-month",
+  "name": "Month",
+  "builtin": true,
+  "hidden": false,
+  "filters": {
+    "status": ["todo"]
+  },
+  "view": {
+    "type": "month"
+  },
+  "summary": []
+}

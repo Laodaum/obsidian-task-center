@@ -1,0 +1,17 @@
+{
+  "id": "preset-unscheduled",
+  "name": "Unscheduled",
+  "builtin": true,
+  "hidden": false,
+  "filters": {
+    "status": ["todo"]
+  },
+  "view": {
+    "type": "list",
+    "preset": "unscheduled",
+    "orderBy": ["deadline_risk", "created_desc"]
+  },
+  "summary": [
+    { "type": "count" }
+  ]
+}

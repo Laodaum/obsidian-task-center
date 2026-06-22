@@ -115,13 +115,7 @@ function defaultSavedViewId(): string {
 
 function seededBuiltinQueryPreset(tab: BuiltinQueryTab, name: string): QueryPreset {
   const data = BUILTIN_VIEW_DATA[tab] ?? BUILTIN_VIEW_DATA.unscheduled;
-  return normalizeQueryPreset({
-    id: BUILTIN_SAVED_VIEW_IDS[tab] ?? BUILTIN_SAVED_VIEW_IDS.unscheduled,
-    name,
-    builtin: true,
-    hidden: false,
-    ...data,
-  });
+  return normalizeQueryPreset({ ...data, name });
 }
 
 function normalizeDslTags(value: unknown): string[] {

@@ -1,0 +1,13 @@
+{
+  "id": "preset-week",
+  "name": "Week",
+  "builtin": true,
+  "hidden": false,
+  "filters": {
+    "status": ["todo"]
+  },
+  "view": {
+    "type": "week"
+  },
+  "summary": []
+}
