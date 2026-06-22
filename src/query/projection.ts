@@ -1,18 +1,25 @@
-// View projection — projects a filtered EffectiveTask[] into layout models
-// for list, week, month, and matrix views.  Does NOT own business collections;
-// Today/TODO/Unscheduled/Completed/Dropped are QueryPresets, not view types.
+// View projection — projects a filtered EffectiveTask[] into per-area render
+// models. Views are SwiftUI-style layout trees (row/col stacks of area leaves);
+// each area projects independently. Today/Completed/Unscheduled are just list
+// areas with different DSL, not view types.
 //
 // ARCHITECTURE.md §4.3 defines the projection semantics:
-//   - List: sections from view.sections; one default section if unconfigured.
-//   - Week/Month: date columns/cells from effectiveScheduled; tray from explicit
-//     view.tray filters (independent query, does not alter main date area).
+//   - List: area `when` narrows preset.filters, then sections group further;
+//     no sections → one default (ungrouped) section.
+//   - Week/Month: date columns/cells from effectiveScheduled. Trays are
+//     separate list areas in the layout, not embedded here.
 //   - Matrix: 2D cells (X buckets × Y buckets) with unmatched handling.
 // Pure functions, no DOM, no Obsidian dependency.
 
 import type { EffectiveTask } from "../task-tree";
 import type {
+  AreaConfig,
+  GridAreaConfig,
+  ListAreaConfig,
+  MatrixAreaConfig,
+  MonthAreaConfig,
   QueryPresetMatrixBucket,
-  QueryPresetViewConfig,
+  WeekAreaConfig,
 } from "../types";
 import { applyQueryFilters, queryFilterHasActiveConditions } from "./filter";
 import { startOfWeek, addDays, startOfMonth, endOfMonth, daysBetween, todayISO } from "../dates";
@@ -20,8 +27,10 @@ import { startOfWeek, addDays, startOfMonth, endOfMonth, daysBetween, todayISO }
 // ── View model types ──
 
 export interface ListSectionModel {
+  id?: string;
   title: string;
   tasks: EffectiveTask[];
+  emptyText?: string;
 }
 
 export interface DayColumnModel {
@@ -47,19 +56,19 @@ export interface MatrixCellModel {
 
 export interface ListViewModel {
   type: "list";
+  // grouped=false → a single implicit section, render flat with no header.
+  grouped: boolean;
   sections: ListSectionModel[];
 }
 
 export interface WeekViewModel {
   type: "week";
   days: DayColumnModel[];
-  tray?: ListSectionModel;
 }
 
 export interface MonthViewModel {
   type: "month";
   cells: MonthCellModel[];
-  tray?: ListSectionModel;
 }
 
 export interface MatrixViewModel {
@@ -72,11 +81,34 @@ export interface MatrixViewModel {
   unmatched: EffectiveTask[];
 }
 
-export type ViewModel =
-  | ListViewModel
-  | WeekViewModel
-  | MonthViewModel
-  | MatrixViewModel;
+export type ViewModel = ListViewModel | WeekViewModel | MonthViewModel | MatrixViewModel;
+
+/**
+ * Project a single area into its ViewModel. Used by the CLI / API query-run,
+ * which represents a preset's result via its primary content area. A `drop`
+ * area has no data, so it projects to an empty ungrouped list.
+ */
+export function projectArea(
+  area: AreaConfig,
+  tasks: EffectiveTask[],
+  weekStartsOn: 0 | 1,
+  anchorISO: string = todayISO(),
+): ViewModel {
+  switch (area.type) {
+    case "week":
+      return projectWeekArea(tasks, area, weekStartsOn, anchorISO);
+    case "month":
+      return projectMonthArea(tasks, area, anchorISO);
+    case "matrix":
+      return projectMatrixArea(tasks, area, weekStartsOn);
+    case "drop":
+      return { type: "list", grouped: false, sections: [{ title: "", tasks: [] }] };
+    case "grid":
+    case "list":
+    default:
+      return projectListArea(tasks, area, weekStartsOn);
+  }
+}
 
 // ── Sorting ──
 
@@ -159,183 +191,103 @@ function priorityRank(p: string | null): number {
   }
 }
 
-// ── Projections ──
+// ── Per-area projections ──
 
 /**
- * List projection: uses configured sections when available, otherwise
- * falls back to a single default section with all tasks.
+ * List area projection: area `when` narrows the (already preset-filtered)
+ * task set, then `sections` group further. No sections → a single ungrouped
+ * section (rendered flat, no header). Today and TODO share this projection.
  */
-function projectList(
+export function projectListArea(
   tasks: EffectiveTask[],
-  view: QueryPresetViewConfig,
+  area: ListAreaConfig | GridAreaConfig,
+  weekStartsOn: 0 | 1,
 ): ListViewModel {
-  // Use configured sections when available
-  if (view.sections && view.sections.length > 0) {
-    const sections: ListSectionModel[] = [];
-    for (const section of view.sections) {
-      // Filter tasks by section.when conditions
-      const sectionTasks = Object.keys(section.when).length > 0
-        ? applyQueryFilters(tasks, section.when, 0)
-        : [...tasks];
-      const sorted = sortTasks(sectionTasks, section.orderBy ?? view.orderBy);
+  const base = area.when && queryFilterHasActiveConditions(area.when)
+    ? applyQueryFilters(tasks, area.when, weekStartsOn)
+    : tasks;
+
+  if (area.sections && area.sections.length > 0) {
+    const sections: ListSectionModel[] = area.sections.map((section) => {
+      const sectionTasks = queryFilterHasActiveConditions(section.when)
+        ? applyQueryFilters(base, section.when, weekStartsOn)
+        : [...base];
+      const sorted = sortTasks(sectionTasks, section.orderBy ?? area.orderBy);
       const limited = section.limit !== undefined && section.limit > 0
         ? sorted.slice(0, section.limit)
         : sorted;
-      sections.push({
-        title: section.title,
-        tasks: limited,
-      });
-    }
-    return { type: "list", sections };
+      return { id: section.id, title: section.title, tasks: limited, emptyText: section.emptyText };
+    });
+    return { type: "list", grouped: true, sections };
   }
 
-  // Fallback: single default section
-  const sorted = sortTasks(tasks, view.orderBy);
+  const sorted = sortTasks(base, area.orderBy);
+  const limited = area.limit !== undefined && area.limit > 0
+    ? sorted.slice(0, area.limit)
+    : sorted;
   return {
     type: "list",
-    sections: [{ title: "Tasks", tasks: sorted }],
+    grouped: false,
+    sections: [{ title: area.title ?? "", tasks: limited, emptyText: area.emptyText }],
   };
 }
 
-/**
- * Compute the tray for week/month views using explicit tray filters.
- * The tray is an independent query: it filters the full task set with
- * view.tray.filters and excludes tasks already placed in the main date area.
- */
-function computeTray(
+export function projectWeekArea(
   tasks: EffectiveTask[],
-  view: QueryPresetViewConfig,
+  _area: WeekAreaConfig,
   weekStartsOn: 0 | 1,
-  mainAreaTaskIds: Set<string>,
-): ListSectionModel | undefined {
-  const trayCfg = view.tray;
-  if (!trayCfg || !trayCfg.enabled) return undefined;
-
-  // Apply tray-specific filters to the input task set
-  const trayTasks = Object.keys(trayCfg.filters).length > 0
-    ? applyQueryFilters(tasks, trayCfg.filters, weekStartsOn)
-    : [...tasks];
-
-  // Exclude tasks already in the main date area (avoid double-display)
-  const deduped = trayTasks.filter((t) => !mainAreaTaskIds.has(t.id));
-  if (deduped.length === 0) return undefined;
-
-  const sorted = sortTasks(deduped, trayCfg.orderBy ?? view.orderBy);
-  return { title: trayCfg.title, tasks: sorted };
-}
-
-function projectWeek(
-  tasks: EffectiveTask[],
-  traySourceTasks: EffectiveTask[],
-  view: QueryPresetViewConfig,
-  weekStartsOn: 0 | 1,
-  anchorISO: string,
+  anchorISO: string = todayISO(),
 ): WeekViewModel {
   const weekStart = startOfWeek(anchorISO, weekStartsOn);
   const days: DayColumnModel[] = [];
   for (let i = 0; i < 7; i++) {
-    const date = addDays(weekStart, i);
-    days.push({ date, tasks: [] });
+    days.push({ date: addDays(weekStart, i), tasks: [] });
   }
-
-  const mainAreaIds = new Set<string>();
   const daysByDate = new Map(days.map((day) => [day.date, day]));
-
-  const sorted = sortTasks(tasks, view.orderBy);
-  for (const task of sorted) {
+  for (const task of tasks) {
     if (task.effectiveScheduled) {
       const dayCol = daysByDate.get(task.effectiveScheduled);
-      if (dayCol) {
-        dayCol.tasks.push(task);
-        mainAreaIds.add(task.id);
-        continue;
-      }
+      if (dayCol) dayCol.tasks.push(task);
     }
-    // Tasks without effectiveScheduled or with a date outside the week:
-    // when no explicit tray is configured, they go into the implicit tray.
-    // When an explicit tray is configured, the tray is computed separately
-    // and these leftovers are not included in the tray (unless they also
-    // match the tray filter).
   }
-
-  const tray = computeTray(traySourceTasks, view, weekStartsOn, mainAreaIds);
-
-  return {
-    type: "week",
-    days,
-    ...(tray ? { tray } : {}),
-  };
+  return { type: "week", days };
 }
 
-function projectMonth(
+export function projectMonthArea(
   tasks: EffectiveTask[],
-  traySourceTasks: EffectiveTask[],
-  view: QueryPresetViewConfig,
-  anchorISO: string,
+  _area: MonthAreaConfig,
+  anchorISO: string = todayISO(),
 ): MonthViewModel {
   const monthStart = startOfMonth(anchorISO);
   const monthEnd = endOfMonth(anchorISO);
   const totalDays = daysBetween(monthStart, monthEnd) + 1;
-
-  // Build cells for every day in the month.
   const cells: MonthCellModel[] = [];
   for (let i = 0; i < totalDays; i++) {
     cells.push({ date: addDays(monthStart, i), tasks: [] });
   }
-
-  const mainAreaIds = new Set<string>();
   const cellsByDate = new Map(cells.map((cell) => [cell.date, cell]));
-
-  const sorted = sortTasks(tasks, view.orderBy);
-  for (const task of sorted) {
+  for (const task of tasks) {
     if (task.effectiveScheduled) {
       const cell = cellsByDate.get(task.effectiveScheduled);
-      if (cell) {
-        cell.tasks.push(task);
-        mainAreaIds.add(task.id);
-        continue;
-      }
+      if (cell) cell.tasks.push(task);
     }
   }
-
-  const tray = computeTray(traySourceTasks, view, 0, mainAreaIds);
-
-  return {
-    type: "month",
-    cells,
-    ...(tray ? { tray } : {}),
-  };
+  return { type: "month", cells };
 }
 
 /**
- * Matrix projection: builds a true 2D matrix where each cell is the
- * intersection of one X-axis bucket and one Y-axis bucket.
- *
- * - A task must match BOTH the X bucket AND Y bucket conditions to be in a cell.
- * - With multiMatch="first", a task appears in the first matching cell.
- * - With multiMatch="duplicate", a task appears in every matching cell.
- * - Unmatched tasks go into the unmatched section (unless unmatched="hide").
+ * Matrix area projection: a 2D matrix where each cell is the intersection of
+ * one X-axis bucket and one Y-axis bucket. The matrix config is inlined on the
+ * area (x / y / unmatched / multiMatch / showEmptyBuckets).
  */
-function projectMatrix(
+export function projectMatrixArea(
   tasks: EffectiveTask[],
-  view: QueryPresetViewConfig,
+  area: MatrixAreaConfig,
   weekStartsOn: 0 | 1,
 ): MatrixViewModel {
-  const mx = view.matrix;
-  if (!mx) {
-    return {
-      type: "matrix",
-      cells: [],
-      xAxis: { id: "", title: "", buckets: [] },
-      yAxis: { id: "", title: "", buckets: [] },
-      unmatched: tasks,
-    };
-  }
+  const xBuckets = area.x?.buckets ?? [];
+  const yBuckets = area.y?.buckets ?? [];
 
-  const xBuckets = mx.x?.buckets ?? [];
-  const yBuckets = mx.y?.buckets ?? [];
-
-  // Build the 2D cell grid: rows (y) × cols (x)
   const cells: MatrixCellModel[] = [];
   const xMatches = new Map<string, Set<string>>();
   const yMatches = new Map<string, Set<string>>();
@@ -349,11 +301,9 @@ function projectMatrix(
 
   for (const yBucket of yBuckets) {
     for (const xBucket of xBuckets) {
-      // A task must match BOTH the X bucket AND Y bucket conditions.
       const xSet = xMatches.get(xBucket.id)!;
       const ySet = yMatches.get(yBucket.id)!;
       const cellTasks = tasks.filter((task) => xSet.has(task.id) && ySet.has(task.id));
-
       cells.push({
         rowId: yBucket.id,
         colId: xBucket.id,
@@ -364,8 +314,7 @@ function projectMatrix(
     }
   }
 
-  // Handle multiMatch: deduplicate across cells when multiMatch="first"
-  if (mx.multiMatch !== "duplicate") {
+  if (area.multiMatch !== "duplicate") {
     const firstSeen = new Set<string>();
     for (const cell of cells) {
       cell.tasks = cell.tasks.filter((t) => {
@@ -376,29 +325,18 @@ function projectMatrix(
     }
   }
 
-  // Collect all task IDs that appear in any cell
   const allCellTaskIds = new Set<string>();
   for (const cell of cells) {
     for (const t of cell.tasks) allCellTaskIds.add(t.id);
   }
 
-  // Unmatched: tasks not in any cell
-  const unmatched = mx.unmatched === "hide"
+  const unmatched = area.unmatched === "hide"
     ? []
     : tasks.filter((t) => !allCellTaskIds.has(t.id));
 
-  // showEmptyBuckets: when false, hide cells with no tasks.
-  // This also filters axis bucket metadata so that only buckets
-  // contributing to at least one visible cell are exposed — empty
-  // row/column labels are not rendered.
-  const showEmpty = mx.showEmptyBuckets !== false;
-  const visibleCells = showEmpty
-    ? cells
-    : cells.filter((c) => c.tasks.length > 0);
+  const showEmpty = area.showEmptyBuckets !== false;
+  const visibleCells = showEmpty ? cells : cells.filter((c) => c.tasks.length > 0);
 
-  // Derive visible axis bucket metadata from visible cells.
-  // When showEmptyBuckets=false, xAxis/yAxis.buckets should only
-  // list buckets that appear in at least one visible cell.
   const visibleColIds = new Set(visibleCells.map((c) => c.colId));
   const visibleRowIds = new Set(visibleCells.map((c) => c.rowId));
   const xAxisBuckets = xBuckets
@@ -411,45 +349,10 @@ function projectMatrix(
   return {
     type: "matrix",
     cells: visibleCells,
-    xAxis: { id: mx.x.id, title: mx.x.title, buckets: xAxisBuckets },
-    yAxis: { id: mx.y.id, title: mx.y.title, buckets: yAxisBuckets },
-    unmatched: sortTasks(unmatched, view.orderBy),
+    xAxis: { id: area.x.id, title: area.x.title, buckets: xAxisBuckets },
+    yAxis: { id: area.y.id, title: area.y.title, buckets: yAxisBuckets },
+    unmatched,
   };
-}
-
-// ── Main entry point ──
-
-/**
- * Project a filtered EffectiveTask[] into a view layout model.
- *
- * The same task set can be projected into list, week, month, or matrix.
- * Views do not own business collections — they only organize the given tasks.
- *
- * @param tasks  Filtered EffectiveTask[] (output of applyQueryFilters)
- * @param view   QueryPresetViewConfig from the active QueryPreset
- * @param weekStartsOn  0=Sunday, 1=Monday
- * @param anchorISO  ISO date for the current view cursor (defaults to today)
- * @returns ViewModel for rendering
- */
-export function applyViewProjection(
-  tasks: EffectiveTask[],
-  view: QueryPresetViewConfig,
-  weekStartsOn: 0 | 1,
-  anchorISO: string = todayISO(),
-  traySourceTasks: EffectiveTask[] = tasks,
-): ViewModel {
-  switch (view.type) {
-    case "list":
-      return projectList(tasks, view);
-    case "week":
-      return projectWeek(tasks, traySourceTasks, view, weekStartsOn, anchorISO);
-    case "month":
-      return projectMonth(tasks, traySourceTasks, view, anchorISO);
-    case "matrix":
-      return projectMatrix(tasks, view, weekStartsOn);
-    default:
-      return projectList(tasks, view);
-  }
 }
 
 function matchingTaskIds(

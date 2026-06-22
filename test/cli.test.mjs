@@ -734,7 +734,7 @@ test("US-220: runQueryPreset can show preset-today through a temporary week view
   );
 
   assert.equal(result.viewModel.type, "week");
-  assert.equal(result.view.type, "week");
+  assert.equal(result.view.layout.type, "week");
   assert.equal(result.filteredTasks.length, 2);
   assert.deepEqual(result.viewModel.days.map((day) => day.date), [
     "2026-05-04",

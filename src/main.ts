@@ -1155,10 +1155,6 @@ function mapViewModel(model: QueryRunResult["viewModel"]): unknown {
         date: day.date,
         tasks: day.tasks.map(queryRunTaskJson),
       })),
-      tray: model.tray ? {
-        title: model.tray.title,
-        tasks: model.tray.tasks.map(queryRunTaskJson),
-      } : null,
     };
   }
   if (model.type === "month") {
@@ -1168,10 +1164,6 @@ function mapViewModel(model: QueryRunResult["viewModel"]): unknown {
         date: cell.date,
         tasks: cell.tasks.map(queryRunTaskJson),
       })),
-      tray: model.tray ? {
-        title: model.tray.title,
-        tasks: model.tray.tasks.map(queryRunTaskJson),
-      } : null,
     };
   }
   return {

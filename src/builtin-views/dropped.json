@@ -7,8 +7,9 @@
     "status": ["dropped"]
   },
   "view": {
-    "type": "list",
-    "preset": "dropped"
+    "layout": {
+      "type": "list"
+    }
   },
   "summary": [
     { "type": "count" }

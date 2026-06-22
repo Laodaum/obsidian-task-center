@@ -7,8 +7,9 @@
     "status": ["todo"]
   },
   "view": {
-    "type": "list",
-    "preset": "todo"
+    "layout": {
+      "type": "list"
+    }
   },
   "summary": [
     { "type": "count" }

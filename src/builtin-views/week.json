@@ -7,7 +7,29 @@
     "status": ["todo"]
   },
   "view": {
-    "type": "week"
+    "layout": {
+      "dir": "col",
+      "children": [
+        { "type": "week" },
+        {
+          "dir": "row",
+          "children": [
+            {
+              "type": "grid",
+              "id": "unscheduled-tray",
+              "title": "Unscheduled",
+              "when": { "time": { "scheduled": "unscheduled" } },
+              "onDrop": { "clearScheduled": true }
+            },
+            {
+              "type": "drop",
+              "title": "Drop",
+              "onDrop": { "setStatus": "dropped" }
+            }
+          ]
+        }
+      ]
+    }
   },
   "summary": []
 }

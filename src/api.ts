@@ -27,9 +27,9 @@ import { TaskCache } from "./cache";
 import { todayISO, resolveWhen, isValidISO } from "./dates";
 import { normalizeGroupingTags } from "./grouping";
 import { deriveEffectiveTasks, type EffectiveTask } from "./task-tree";
-import { normalizeQueryPreset } from "./saved-views";
+import { collectAreas, normalizeQueryPreset } from "./saved-views";
 import { applyQueryFilters } from "./query/filter";
-import { applyViewProjection, type ViewModel } from "./query/projection";
+import { projectArea, type ViewModel } from "./query/projection";
 import { computeSummary, type SummaryResultItem } from "./query/summary";
 import { formatMinutes } from "./parser";
 
@@ -227,7 +227,11 @@ export class TaskCenterApi {
     const effective = deriveEffectiveTasks(await this.cache.ensureAll());
     const view = normalizeViewOverride(normalized.view, opts.view);
     const filtered = applyQueryFilters(effective, normalized.filters, opts.weekStartsOn, opts.anchorISO ?? todayISO());
-    const viewModel = applyViewProjection(filtered, view, opts.weekStartsOn, opts.anchorISO ?? todayISO(), effective);
+    // CLI / API represent a preset via its primary content area (first
+    // non-drop area). Drop areas carry no data.
+    const areas = collectAreas(view.layout);
+    const primary = areas.find((a) => a.type !== "drop") ?? areas[0];
+    const viewModel = projectArea(primary, filtered, opts.weekStartsOn, opts.anchorISO ?? todayISO());
     return {
       preset: normalized,
       view,
@@ -398,9 +402,15 @@ export class TaskCenterApi {
   }
 }
 
+// CLI `view=` override replaces the layout with a single area of that type.
+// Matrix needs config we can't synthesize, so a matrix override falls back to
+// the preset's own layout.
 function normalizeViewOverride(view: QueryPresetViewConfig, override?: QueryViewType): QueryPresetViewConfig {
   if (!override) return view;
-  return { ...view, type: override };
+  if (override === "week") return { layout: { type: "week" } };
+  if (override === "month") return { layout: { type: "month" } };
+  if (override === "list") return { layout: { type: "list" } };
+  return view;
 }
 
 function collectDescendants(task: ParsedTask, sameFileTasks: ParsedTask[]): ParsedTask[] {

@@ -90,7 +90,6 @@ interface EffectiveTask extends ParsedTask {
 ### 1.3 QueryPreset
 
 ```ts
-type QueryViewType = "list" | "week" | "month" | "matrix";
 type TaskStateFilter = "todo" | "done" | "dropped";
 
 type DateToken =
@@ -117,6 +116,54 @@ interface QueryFilters {
   };
 }
 
+// ── View = SwiftUI 式布局树：row / col 容器嵌套 area 叶子组件 ──
+// 没有单一 view 类型，也没有 preset 判别字段。一个 view 是一棵布局树：
+// 容器节点 row（≈ HStack）/ col（≈ VStack）排列子节点，叶子节点是 area
+// 组件。旧的「view 类型」升级成「area 类型」：一个 view 不再只有一种类型，
+// 而是可以自由组建多个 area（周视图 = col[ 网格, tray ]；未排期 =
+// col[ 列表, 放弃 ]；用户也能 row[ 工作列表, 个人列表 ] 并排自定义）。
+// 根节点可以直接是单个 area，不必包壳（今日 = 一个 list area）。渲染层
+// 递归遍历布局树，逐个 area 派发到对应组件，不存在 today / completed /
+// unscheduled 等专属渲染分支。（US-720 / US-109k / US-109f）
+
+type LayoutNode = Stack | Area;
+
+interface Stack {
+  dir: "row" | "col"; // row ≈ HStack，col ≈ VStack
+  children: LayoutNode[];
+  weight?: number;    // 在父容器里占的伸缩比例，默认 1
+}
+
+type Area = ListArea | WeekArea | MonthArea | MatrixArea | DropArea;
+
+// 卡片被拖入某个 area 时的写操作；三种语义互斥。
+interface DropEffect {
+  setStatus?: "dropped";      // 放弃区
+  setScheduled?: DateToken;   // 写排期（week / month 日格隐式用当日）
+  clearScheduled?: true;      // tray：清空被拖任务自己行的 ⏳
+}
+
+interface AreaBase {
+  type: Area["type"];
+  title?: string;
+  weight?: number; // 在父容器里占的伸缩比例，默认 1
+  onDrop?: DropEffect;
+}
+
+// list：在 preset.filters 基础上再用 when 收窄，渲染一列任务卡。
+// 可选 sections —— 一个 list 内部按 when 再分成若干带标题的分组。
+// 今日 = 一个配了 3 个 section 的 list；TODO = 一个不分组的 list；
+// 两者是同一个组件，看起来一样，只是 DSL 不同。
+// 取代旧的 QuerySection 顶层概念与 QueryTray —— tray 也只是个 list area。
+interface ListArea extends AreaBase {
+  type: "list";
+  when?: QueryFilters;
+  sections?: QuerySection[];
+  orderBy?: string[];
+  limit?: number;
+  emptyText?: string;
+}
+
 interface QuerySection {
   id: string;
   title: string;
@@ -126,39 +173,43 @@ interface QuerySection {
   emptyText?: string;
 }
 
-interface QueryTray {
-  enabled: boolean;
-  title: string;
-  filters: QueryFilters;
-  orderBy?: string[];
+// week / month：日期网格组件。日格内部自排布局，每个日格隐式
+// onDrop:{ setScheduled: <当日> }。
+interface WeekArea extends AreaBase {
+  type: "week";
+  firstDayOfWeek?: "monday" | "sunday";
+}
+
+interface MonthArea extends AreaBase {
+  type: "month";
+  firstDayOfWeek?: "monday" | "sunday";
+  density?: "compact" | "cards";
 }
 
 interface MatrixAxis {
   id: string;
   title: string;
-  buckets: MatrixBucket[];
+  buckets: { id: string; title: string; when: QueryFilters }[];
 }
 
-interface MatrixBucket {
-  id: string;
-  title: string;
-  when: QueryFilters;
+// matrix：2D bucket 网格组件。
+interface MatrixArea extends AreaBase {
+  type: "matrix";
+  x: MatrixAxis;
+  y: MatrixAxis;
+  unmatched: "show" | "hide";
+  multiMatch: "first" | "duplicate";
+  showEmptyBuckets: boolean;
+}
+
+// drop：纯动作落区，无 query；onDrop 必填。放弃区就是 drop area。
+interface DropArea extends AreaBase {
+  type: "drop";
+  onDrop: DropEffect;
 }
 
 interface QueryViewConfig {
-  type: QueryViewType;
-  sections?: QuerySection[];     // list / today preset
-  tray?: QueryTray;              // week / month 附加未排期区
-  orderBy?: string[];
-  firstDayOfWeek?: "monday" | "sunday";
-  monthDensity?: "compact" | "cards";
-  matrix?: {
-    x: MatrixAxis;
-    y: MatrixAxis;
-    unmatched: "show" | "hide";
-    multiMatch: "first" | "duplicate";
-    showEmptyBuckets: boolean;
-  };
+  layout: LayoutNode; // 根节点：可以是 Stack，也可以直接是单个 area
 }
 
 interface QuerySummaryMetric {
@@ -176,19 +227,21 @@ interface QueryPreset {
   name: string;
   builtin: boolean;
   hidden: boolean;
-  filters: QueryFilters;
-  view: QueryViewConfig;
-  summary: QuerySummaryMetric[];
+  filters: QueryFilters;     // 整个 view 的基础集合
+  view: QueryViewConfig;     // area 布局树
+  summary: QuerySummaryMetric[]; // 顶部 summary，标准位置渲染
 }
 ```
 
 Schema 约束：
 
-- `filters / view / summary` 是一个对象的三个分区。
-- 今日是 `view.type = "list"` + sections，不是新 view 类型。（US-720）
-- 未排期 tray 是 `view.tray`，数据来源是单独 query，不改变主日期区集合。（US-109j）
+- `filters / view / summary` 是一个对象的三个分区。`filters` 是 view 的基础集合，每个 list area / section 的 `when` 在此之上再收窄。
+- 没有 view 类型枚举，也没有 `preset` 判别字段。view 行为完全由 `view.layout` 布局树决定，渲染层不得按 today / completed / unscheduled 等名字分支。（US-720 / US-109k）
+- 内置 view 的布局：今日 = 一个含 3 个 section 的 `list`（与 TODO 同组件，差异只在 DSL）；未排期 = `col[ list, drop ]`；已完成 = `list` + 顶层 summary；周 / 月 = `col[ week|month, list(tray) ]`；矩阵 = `matrix`。都是 area 组合，不是新 view 类型。（US-720 / US-103）
+- 未排期 tray 是一个 `list` area，数据来源是它自己的 `when`，不改变同一布局里 week / month area 的集合。（US-109j）
+- 「改到明天」「清空排期」「放弃」是列表卡片与 drop area 的通用能力，不是某个 preset 的专属动作。（US-103 / US-123）
 - `unscheduled` 属于 `time.scheduled is empty`，不是日期范围 token。（US-109e）
-- View 配置不能硬编码业务分类；section、axis、bucket 名称和条件来自 DSL。（US-109f / US-103a）
+- View 配置不能硬编码业务分类；area 的 title、matrix axis / bucket 名称和条件都来自 DSL。（US-109f / US-103a）
 
 ### 1.4 TabState 与 Settings
 
@@ -393,20 +446,27 @@ TaskCache.flatten()
 
 ### 4.3 View Projection
 
-View projection 不再筛选业务集合，只把 query 结果投影成渲染模型。
+View projection 不再筛选业务集合，只把 query 结果投影成渲染模型。它递归遍历 `view.layout`：容器节点（row / col）投影成 `StackModel`，叶子 area 各自投影成对应的 area model。
 
 ```ts
-type ViewModel =
-  | { type: "list"; sections: ListSectionModel[] }
-  | { type: "week"; days: DayColumnModel[]; tray?: ListSectionModel }
-  | { type: "month"; cells: MonthCellModel[]; tray?: ListSectionModel }
-  | { type: "matrix"; buckets: MatrixCellModel[]; unmatched: EffectiveTask[] };
+type LayoutModel = StackModel | AreaModel;
+
+interface StackModel { kind: "stack"; dir: "row" | "col"; weight: number; children: LayoutModel[]; }
+
+type AreaModel =
+  | { kind: "area"; type: "list"; weight: number; sections: ListSectionModel[]; onDrop?: DropEffect }
+  | { kind: "area"; type: "week"; weight: number; days: DayColumnModel[]; onDrop?: DropEffect }
+  | { kind: "area"; type: "month"; weight: number; cells: MonthCellModel[]; onDrop?: DropEffect }
+  | { kind: "area"; type: "matrix"; weight: number; buckets: MatrixCellModel[]; unmatched: EffectiveTask[] }
+  | { kind: "area"; type: "drop"; weight: number; onDrop: DropEffect };
 ```
 
-- List：按 sections 分组；无 sections 时使用一个默认 section。
-- Week：按有效 `scheduled` 落入 7 天；无有效 scheduled 不进日期区，可进入 tray。移动端折叠状态只影响 day row body 可见性，不改变 day model。
+- 容器：row / col 决定子节点横向 / 纵向排列，`weight` 决定伸缩比。
+- List：先用 area `when` 在 `preset.filters` 上收窄，再按 `sections` 分组；无 sections 时一个默认 section 装全部。今日与 TODO 走同一条 list 投影，差异只在 DSL。
+- Week：按有效 `scheduled` 落入 7 天；无有效 scheduled 不进日期区。移动端折叠状态只影响 day row body 可见性，不改变 day model。
 - Month：按有效 `scheduled` 落入月历日期格；移动端只改变渲染密度，并把当前选中日期的任务列表作为月历下方内联 panel 渲染。
 - Matrix：按用户配置 bucket 条件匹配；未命中进入 unmatched。
+- Drop：纯落区，无数据投影，只携带 `onDrop`。
 
 ### 4.4 Summary
 
@@ -670,7 +730,7 @@ QueryPreset 动词调用 `QueryPresetService`：
 
 - `query-list`：列出 id、name、builtin、hidden、default。
 - `query-show id=<id>`：输出完整 DSL。
-- `query-run id=<id> [view=list|week|month|matrix] [anchor=YYYY-MM-DD]`：执行 QueryPreset filters，计算 summary，并按 view projection 输出结果；`view` 只覆盖本次展示，不写回 preset。
+- `query-run id=<id> [view=list|week|month|matrix] [anchor=YYYY-MM-DD]`：执行 QueryPreset filters，计算 summary，并按 view projection 输出结果；`view` 把本次展示临时替换成「单个该类型 area」的布局，不写回 preset。
 - `query-create`：读取 DSL 创建 tab。
 - `query-update id=<id>`：校验后覆盖。
 - `query-rename` / `query-copy` / `query-hide` / `query-delete` / `query-set-default`。

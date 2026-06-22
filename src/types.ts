@@ -202,13 +202,93 @@ export interface QueryTray {
   orderBy?: string[];
 }
 
-export interface QueryPresetViewConfig {
-  type: QueryViewType;
-  preset?: string;
-  orderBy?: string[];
+// ── View = SwiftUI 式布局树（ARCHITECTURE.md §1.3）──
+// 没有单一 view 类型，也没有 preset。一个 view 是一棵布局树：row / col
+// 容器（≈ HStack / VStack）嵌套 area 叶子组件。旧的 {type, preset,
+// sections, tray, matrix} 形状由 normalize 迁移成 { layout }。
+
+export type AreaType = "list" | "grid" | "week" | "month" | "matrix" | "drop";
+
+// 卡片被拖入某个 area 时的写操作；三种语义互斥。
+export interface DropEffect {
+  setStatus?: "dropped";    // 放弃区
+  setScheduled?: string;    // 写排期 DateToken（week / month 日格隐式用当日）
+  clearScheduled?: true;    // tray：清空被拖任务自己行的 ⏳
+}
+
+export interface AreaBase {
+  // Stable id for builtin areas, used to localize the title at render time
+  // (builtin defaults are localized; user-set titles are shown verbatim).
+  id?: string;
+  title?: string;
+  weight?: number;
+  onDrop?: DropEffect;
+}
+
+// list / grid 共享字段：when 收窄、sections 分组、排序、限制。
+export interface ListLikeFields {
+  when?: QueryPresetFilters;
   sections?: QuerySection[];
-  tray?: QueryTray;
-  matrix?: QueryPresetMatrixConfig;
+  orderBy?: string[];
+  limit?: number;
+  emptyText?: string;
+}
+
+// list：渲染一列任务卡。可选 sections 把列表内部再分成带标题的分组。
+// 今日 = 配了 3 个 section 的 list，与 TODO 同组件、看起来一样。
+export interface ListAreaConfig extends AreaBase, ListLikeFields {
+  type: "list";
+}
+
+// grid：与 list 同配置、同投影，但卡片以响应式多列网格排列（未排期 tray 用）。
+export interface GridAreaConfig extends AreaBase, ListLikeFields {
+  type: "grid";
+}
+
+export interface WeekAreaConfig extends AreaBase {
+  type: "week";
+  firstDayOfWeek?: "monday" | "sunday";
+}
+
+export interface MonthAreaConfig extends AreaBase {
+  type: "month";
+  firstDayOfWeek?: "monday" | "sunday";
+  density?: "compact" | "cards";
+}
+
+// 内联 QueryPresetMatrixConfig 的 x / y / unmatched / multiMatch / showEmptyBuckets。
+export interface MatrixAreaConfig extends AreaBase, QueryPresetMatrixConfig {
+  type: "matrix";
+}
+
+// drop：纯动作落区，无 query；onDrop 必填。放弃区就是 drop area。
+export interface DropAreaConfig extends AreaBase {
+  type: "drop";
+  onDrop: DropEffect;
+}
+
+export type AreaConfig =
+  | ListAreaConfig
+  | GridAreaConfig
+  | WeekAreaConfig
+  | MonthAreaConfig
+  | MatrixAreaConfig
+  | DropAreaConfig;
+
+export interface StackConfig {
+  dir: "row" | "col"; // row ≈ HStack，col ≈ VStack
+  weight?: number;
+  children: LayoutNode[];
+}
+
+export type LayoutNode = StackConfig | AreaConfig;
+
+export function isStackNode(node: LayoutNode): node is StackConfig {
+  return (node as StackConfig).dir !== undefined && Array.isArray((node as StackConfig).children);
+}
+
+export interface QueryPresetViewConfig {
+  layout: LayoutNode; // 根节点：可以是 Stack，也可以直接是单个 area
 }
 
 export interface QueryPresetSummaryMetric {

@@ -105,7 +105,8 @@ test("VAL-GUI-004: undo delete restores QueryPreset snapshot with all fields", (
   assert.deepEqual(snapshot.filters.tags, ["#work", "#urgent"]);
   assert.deepEqual(snapshot.filters.status, ["todo", "in_progress"]);
   assert.deepEqual(snapshot.filters.time, { scheduled: "week", deadline: "overdue" });
-  assert.deepEqual(snapshot.view, { type: "week", preset: "today", orderBy: ["deadline_risk"] });
+  // Legacy {type:week, preset, orderBy} migrates to a week area; preset is dropped.
+  assert.deepEqual(snapshot.view, { layout: { type: "week" } });
   assert.equal(snapshot.summary.length, 2);
 
   // Delete from the array
@@ -438,7 +439,7 @@ test("VAL-GUI-004: full delete+undo flow preserves original order with default a
   assert.deepEqual(plan.snapshot.filters.search, "docs");
   assert.deepEqual(plan.snapshot.filters.tags, ["#docs"]);
   assert.deepEqual(plan.snapshot.filters.status, ["done"]);
-  assert.deepEqual(plan.snapshot.view, { type: "list" });
+  assert.deepEqual(plan.snapshot.view, { layout: { type: "list" } });
   assert.equal(plan.snapshot.summary.length, 1);
 
   // --- Capture state before delete (as deleteSavedViewWithConfirm does) ---
@@ -534,39 +535,40 @@ test("VAL-GUI-004: delete+undo preserves full QueryPreset detail through product
       time: { scheduled: "week", deadline: "overdue", completed: "month" },
     },
     view: {
-      type: "matrix",
-      sections: [
-        { id: "urgent", title: "Urgent", when: { time: { deadline: "overdue" } }, limit: 5, orderBy: ["deadline_asc"] },
-      ],
-      tray: {
-        enabled: true,
-        title: "Backlog",
-        filters: { status: ["todo"], time: { scheduled: "unscheduled" } },
-        orderBy: ["deadline_asc"],
+      layout: {
+        dir: "col",
+        children: [
+          {
+            type: "matrix",
+            x: {
+              id: "pri",
+              title: "Priority",
+              buckets: [
+                { id: "high", title: "High", when: { tags: ["#high"] } },
+                { id: "low", title: "Low", when: { tags: ["#low"] } },
+              ],
+            },
+            y: {
+              id: "stat",
+              title: "Status",
+              buckets: [
+                { id: "open", title: "Open", when: { status: ["todo"] } },
+                { id: "done", title: "Done", when: { status: ["done"] } },
+              ],
+            },
+            unmatched: "hide",
+            multiMatch: "duplicate",
+            showEmptyBuckets: false,
+          },
+          {
+            type: "list",
+            title: "Backlog",
+            when: { status: ["todo"], time: { scheduled: "unscheduled" } },
+            orderBy: ["deadline_asc"],
+            onDrop: { clearScheduled: true },
+          },
+        ],
       },
-      matrix: {
-        x: {
-          id: "pri",
-          title: "Priority",
-          buckets: [
-            { id: "high", title: "High", when: { tags: ["#high"] } },
-            { id: "low", title: "Low", when: { tags: ["#low"] } },
-          ],
-        },
-        y: {
-          id: "stat",
-          title: "Status",
-          buckets: [
-            { id: "open", title: "Open", when: { status: ["todo"] } },
-            { id: "done", title: "Done", when: { status: ["done"] } },
-          ],
-        },
-        unmatched: "hide",
-        multiMatch: "duplicate",
-        showEmptyBuckets: false,
-      },
-      orderBy: ["deadline_asc", "created_desc"],
-      preset: "today",
     },
     summary: [
       { type: "count" },
@@ -592,21 +594,18 @@ test("VAL-GUI-004: delete+undo preserves full QueryPreset detail through product
     scheduled: "week", deadline: "overdue", completed: "month",
   });
 
-  // View
-  assert.equal(snapshot.view.type, "matrix");
-  assert.equal(snapshot.view.preset, "today");
-  assert.deepEqual(snapshot.view.orderBy, ["deadline_asc", "created_desc"]);
-  assert.ok(snapshot.view.sections);
-  assert.equal(snapshot.view.sections.length, 1);
-  assert.equal(snapshot.view.sections[0].id, "urgent");
-  assert.ok(snapshot.view.tray);
-  assert.equal(snapshot.view.tray.title, "Backlog");
-  assert.ok(snapshot.view.matrix);
-  assert.equal(snapshot.view.matrix.x.id, "pri");
-  assert.equal(snapshot.view.matrix.y.id, "stat");
-  assert.equal(snapshot.view.matrix.unmatched, "hide");
-  assert.equal(snapshot.view.matrix.multiMatch, "duplicate");
-  assert.equal(snapshot.view.matrix.showEmptyBuckets, false);
+  // View — area layout tree (col[ matrix, list-tray ])
+  const richLayout = snapshot.view.layout;
+  assert.equal(richLayout.dir, "col");
+  assert.equal(richLayout.children.length, 2);
+  assert.equal(richLayout.children[0].type, "matrix");
+  assert.equal(richLayout.children[0].x.id, "pri");
+  assert.equal(richLayout.children[0].y.id, "stat");
+  assert.equal(richLayout.children[0].unmatched, "hide");
+  assert.equal(richLayout.children[0].multiMatch, "duplicate");
+  assert.equal(richLayout.children[0].showEmptyBuckets, false);
+  assert.equal(richLayout.children[1].type, "list");
+  assert.equal(richLayout.children[1].title, "Backlog");
 
   // Summary — all 5 metric types preserved
   assert.equal(snapshot.summary.length, 5);
@@ -671,15 +670,17 @@ test("roundtrip: normalizeQueryPresetView preserves sections", () => {
     summary: [],
   });
 
-  assert.equal(preset.view.type, "list");
-  assert.ok(Array.isArray(preset.view.sections));
-  assert.equal(preset.view.sections.length, 2);
-  assert.equal(preset.view.sections[0].id, "s1");
-  assert.equal(preset.view.sections[0].title, "Urgent");
-  assert.deepEqual(preset.view.sections[0].when.status, ["todo"]);
-  assert.deepEqual(preset.view.sections[0].when.time, { deadline: "overdue" });
-  assert.equal(preset.view.sections[1].id, "s2");
-  assert.equal(preset.view.sections[1].limit, 10);
+  // Legacy {type:list, sections} migrates to a single list area carrying the sections.
+  const layout = preset.view.layout;
+  assert.equal(layout.type, "list");
+  assert.ok(Array.isArray(layout.sections));
+  assert.equal(layout.sections.length, 2);
+  assert.equal(layout.sections[0].id, "s1");
+  assert.equal(layout.sections[0].title, "Urgent");
+  assert.deepEqual(layout.sections[0].when.status, ["todo"]);
+  assert.deepEqual(layout.sections[0].when.time, { deadline: "overdue" });
+  assert.equal(layout.sections[1].id, "s2");
+  assert.equal(layout.sections[1].limit, 10);
 });
 
 test("roundtrip: normalizeQueryPresetView preserves tray config", () => {
@@ -701,13 +702,19 @@ test("roundtrip: normalizeQueryPresetView preserves tray config", () => {
     summary: [],
   });
 
-  assert.equal(preset.view.type, "week");
-  assert.ok(preset.view.tray);
-  assert.equal(preset.view.tray.enabled, true);
-  assert.equal(preset.view.tray.title, "Unscheduled");
-  assert.deepEqual(preset.view.tray.filters.status, ["todo"]);
-  assert.deepEqual(preset.view.tray.filters.time, { scheduled: "unscheduled" });
-  assert.deepEqual(preset.view.tray.orderBy, ["deadline_asc"]);
+  // Legacy {type:week, tray} migrates to col[ week, list(tray) ]; the tray
+  // becomes a list area whose when = the tray filters, with clearScheduled onDrop.
+  const layout = preset.view.layout;
+  assert.equal(layout.dir, "col");
+  assert.equal(layout.children.length, 2);
+  assert.equal(layout.children[0].type, "week");
+  const tray = layout.children[1];
+  assert.equal(tray.type, "list");
+  assert.equal(tray.title, "Unscheduled");
+  assert.deepEqual(tray.when.status, ["todo"]);
+  assert.deepEqual(tray.when.time, { scheduled: "unscheduled" });
+  assert.deepEqual(tray.orderBy, ["deadline_asc"]);
+  assert.equal(tray.onDrop.clearScheduled, true);
 });
 
 test("roundtrip: normalizeQueryPresetView preserves matrix config", () => {
@@ -744,15 +751,16 @@ test("roundtrip: normalizeQueryPresetView preserves matrix config", () => {
     summary: [],
   });
 
-  assert.equal(preset.view.type, "matrix");
-  assert.ok(preset.view.matrix);
-  assert.equal(preset.view.matrix.x.id, "priority");
-  assert.equal(preset.view.matrix.x.buckets.length, 2);
-  assert.equal(preset.view.matrix.y.id, "status");
-  assert.equal(preset.view.matrix.y.buckets.length, 2);
-  assert.equal(preset.view.matrix.unmatched, "hide");
-  assert.equal(preset.view.matrix.multiMatch, "duplicate");
-  assert.equal(preset.view.matrix.showEmptyBuckets, false);
+  // Legacy {type:matrix, matrix:{...}} migrates to a matrix area with inline x/y.
+  const layout = preset.view.layout;
+  assert.equal(layout.type, "matrix");
+  assert.equal(layout.x.id, "priority");
+  assert.equal(layout.x.buckets.length, 2);
+  assert.equal(layout.y.id, "status");
+  assert.equal(layout.y.buckets.length, 2);
+  assert.equal(layout.unmatched, "hide");
+  assert.equal(layout.multiMatch, "duplicate");
+  assert.equal(layout.showEmptyBuckets, false);
 });
 
 test("roundtrip: normalizeQueryPresetView preserves orderBy", () => {
@@ -769,8 +777,8 @@ test("roundtrip: normalizeQueryPresetView preserves orderBy", () => {
     summary: [],
   });
 
-  assert.equal(preset.view.type, "list");
-  assert.deepEqual(preset.view.orderBy, ["deadline_asc", "created_desc"]);
+  assert.equal(preset.view.layout.type, "list");
+  assert.deepEqual(preset.view.layout.orderBy, ["deadline_asc", "created_desc"]);
 });
 
 test("roundtrip: normalizeQueryPresetSummary preserves all metric types", () => {
@@ -819,23 +827,25 @@ test("roundtrip: parseQueryDsl → stringifyQueryPreset full roundtrip", () => {
       time: { scheduled: "week", deadline: "overdue" },
     },
     view: {
-      type: "matrix",
-      sections: [
-        { id: "urgent", title: "Urgent", when: { time: { deadline: "overdue" } }, limit: 5 },
-      ],
-      tray: {
-        enabled: true,
-        title: "Backlog",
-        filters: { status: ["todo"], time: { scheduled: "unscheduled" } },
+      layout: {
+        dir: "col",
+        children: [
+          {
+            type: "matrix",
+            x: { id: "pri", title: "Pri", buckets: [{ id: "high", title: "High", when: { tags: ["#high"] } }] },
+            y: { id: "stat", title: "Stat", buckets: [{ id: "open", title: "Open", when: { status: ["todo"] } }] },
+            unmatched: "hide",
+            multiMatch: "duplicate",
+            showEmptyBuckets: false,
+          },
+          {
+            type: "list",
+            title: "Backlog",
+            when: { status: ["todo"], time: { scheduled: "unscheduled" } },
+            onDrop: { clearScheduled: true },
+          },
+        ],
       },
-      matrix: {
-        x: { id: "pri", title: "Pri", buckets: [{ id: "high", title: "High", when: { tags: ["#high"] } }] },
-        y: { id: "stat", title: "Stat", buckets: [{ id: "open", title: "Open", when: { status: ["todo"] } }] },
-        unmatched: "hide",
-        multiMatch: "duplicate",
-        showEmptyBuckets: false,
-      },
-      orderBy: ["deadline_asc"],
     },
     summary: [
       { type: "count" },
@@ -855,20 +865,18 @@ test("roundtrip: parseQueryDsl → stringifyQueryPreset full roundtrip", () => {
   assert.deepEqual(parsed.filters.status, ["todo", "in_progress"]);
   assert.deepEqual(parsed.filters.time, { scheduled: "week", deadline: "overdue" });
 
-  // View
-  assert.equal(parsed.view.type, "matrix");
-  assert.ok(parsed.view.sections);
-  assert.equal(parsed.view.sections.length, 1);
-  assert.equal(parsed.view.sections[0].id, "urgent");
-  assert.ok(parsed.view.tray);
-  assert.equal(parsed.view.tray.title, "Backlog");
-  assert.ok(parsed.view.matrix);
-  assert.equal(parsed.view.matrix.x.id, "pri");
-  assert.equal(parsed.view.matrix.y.id, "stat");
-  assert.equal(parsed.view.matrix.unmatched, "hide");
-  assert.equal(parsed.view.matrix.multiMatch, "duplicate");
-  assert.equal(parsed.view.matrix.showEmptyBuckets, false);
-  assert.deepEqual(parsed.view.orderBy, ["deadline_asc"]);
+  // View — area layout tree (col[ matrix, list-tray ])
+  const layout = parsed.view.layout;
+  assert.equal(layout.dir, "col");
+  assert.equal(layout.children.length, 2);
+  assert.equal(layout.children[0].type, "matrix");
+  assert.equal(layout.children[0].x.id, "pri");
+  assert.equal(layout.children[0].y.id, "stat");
+  assert.equal(layout.children[0].unmatched, "hide");
+  assert.equal(layout.children[0].multiMatch, "duplicate");
+  assert.equal(layout.children[0].showEmptyBuckets, false);
+  assert.equal(layout.children[1].type, "list");
+  assert.equal(layout.children[1].title, "Backlog");
 
   // Summary
   assert.equal(parsed.summary.length, 5);
@@ -1039,7 +1047,7 @@ test("summary: draft merge — draft view overrides saved when present", () => {
     view: draft.view,
   });
 
-  assert.equal(merged.view.type, "week");
+  assert.equal(merged.view.layout.type, "week");
   assert.equal(merged.id, saved.id);
   assert.equal(merged.name, "Saved");
 });
@@ -1207,7 +1215,7 @@ test("summary: currentQuerySnapshot merge preserves identity from saved, content
   assert.equal(snapshot.builtin, true);
   assert.equal(snapshot.hidden, false);
   assert.deepEqual(snapshot.filters.status, ["todo"]);
-  assert.equal(snapshot.view.type, "week", "draft view wins over saved");
+  assert.equal(snapshot.view.layout.type, "week", "draft view wins over saved");
   assert.equal(snapshot.summary.length, 1, "draft summary wins over saved");
   assert.equal(snapshot.summary[0].type, "sum");
 });
@@ -1231,7 +1239,7 @@ test("summary: currentQuerySnapshot fallback to saved when no draft exists", () 
     summary: saved.summary,
   });
 
-  assert.equal(snapshot.view.type, "month");
+  assert.equal(snapshot.view.layout.type, "month");
   assert.equal(snapshot.summary.length, 2);
   assert.equal(snapshot.summary[1].type, "top_n");
   assert.equal(snapshot.summary[1].by, "tags");
@@ -1358,7 +1366,7 @@ test("VAL-GUI-004 production: confirm → delete → presetsAfter removes target
   assert.deepEqual(result.undoPlan.snapshot.filters.search, "docs");
   assert.deepEqual(result.undoPlan.snapshot.filters.tags, ["#docs"]);
   assert.deepEqual(result.undoPlan.snapshot.filters.status, ["done"]);
-  assert.deepEqual(result.undoPlan.snapshot.view, { type: "list" });
+  assert.deepEqual(result.undoPlan.snapshot.view, { layout: { type: "list" } });
   assert.equal(result.undoPlan.snapshot.summary.length, 1);
 
   // Verify state flags
@@ -1487,38 +1495,40 @@ test("VAL-GUI-004 production: confirm-delete-undo roundtrip preserves all QueryP
       time: { scheduled: "week", deadline: "overdue", completed: "month" },
     },
     view: {
-      type: "matrix",
-      sections: [
-        { id: "urgent", title: "Urgent", when: { time: { deadline: "overdue" } }, limit: 5, orderBy: ["deadline_asc"] },
-      ],
-      tray: {
-        enabled: true,
-        title: "Backlog",
-        filters: { status: ["todo"], time: { scheduled: "unscheduled" } },
-        orderBy: ["deadline_asc"],
+      layout: {
+        dir: "col",
+        children: [
+          {
+            type: "matrix",
+            x: {
+              id: "pri",
+              title: "Priority",
+              buckets: [
+                { id: "high", title: "High", when: { tags: ["#high"] } },
+                { id: "low", title: "Low", when: { tags: ["#low"] } },
+              ],
+            },
+            y: {
+              id: "stat",
+              title: "Status",
+              buckets: [
+                { id: "open", title: "Open", when: { status: ["todo"] } },
+                { id: "done", title: "Done", when: { status: ["done"] } },
+              ],
+            },
+            unmatched: "hide",
+            multiMatch: "duplicate",
+            showEmptyBuckets: false,
+          },
+          {
+            type: "list",
+            title: "Backlog",
+            when: { status: ["todo"], time: { scheduled: "unscheduled" } },
+            orderBy: ["deadline_asc"],
+            onDrop: { clearScheduled: true },
+          },
+        ],
       },
-      matrix: {
-        x: {
-          id: "pri",
-          title: "Priority",
-          buckets: [
-            { id: "high", title: "High", when: { tags: ["#high"] } },
-            { id: "low", title: "Low", when: { tags: ["#low"] } },
-          ],
-        },
-        y: {
-          id: "stat",
-          title: "Status",
-          buckets: [
-            { id: "open", title: "Open", when: { status: ["todo"] } },
-            { id: "done", title: "Done", when: { status: ["done"] } },
-          ],
-        },
-        unmatched: "hide",
-        multiMatch: "duplicate",
-        showEmptyBuckets: false,
-      },
-      orderBy: ["deadline_asc", "created_desc"],
     },
     summary: [
       { type: "count" },
@@ -1567,18 +1577,17 @@ test("VAL-GUI-004 production: confirm-delete-undo roundtrip preserves all QueryP
   assert.deepEqual(snap.filters.status, ["todo", "in_progress"]);
   assert.deepEqual(snap.filters.time, { scheduled: "week", deadline: "overdue", completed: "month" });
 
-  // View — matrix, sections, tray all preserved
-  assert.equal(snap.view.type, "matrix");
-  assert.equal(snap.view.sections.length, 1);
-  assert.equal(snap.view.sections[0].id, "urgent");
-  assert.ok(snap.view.tray);
-  assert.equal(snap.view.tray.title, "Backlog");
-  assert.ok(snap.view.matrix);
-  assert.equal(snap.view.matrix.x.id, "pri");
-  assert.equal(snap.view.matrix.y.id, "stat");
-  assert.equal(snap.view.matrix.unmatched, "hide");
-  assert.equal(snap.view.matrix.multiMatch, "duplicate");
-  assert.equal(snap.view.matrix.showEmptyBuckets, false);
+  // View — col[ matrix, list-tray ] preserved
+  const snapLayout = snap.view.layout;
+  assert.equal(snapLayout.dir, "col");
+  assert.equal(snapLayout.children[0].type, "matrix");
+  assert.equal(snapLayout.children[0].x.id, "pri");
+  assert.equal(snapLayout.children[0].y.id, "stat");
+  assert.equal(snapLayout.children[0].unmatched, "hide");
+  assert.equal(snapLayout.children[0].multiMatch, "duplicate");
+  assert.equal(snapLayout.children[0].showEmptyBuckets, false);
+  assert.equal(snapLayout.children[1].type, "list");
+  assert.equal(snapLayout.children[1].title, "Backlog");
 
   // Summary — all 5 types
   assert.equal(snap.summary.length, 5);
@@ -1857,8 +1866,8 @@ test("VAL-GUI-004: computeUndoQueryPresetState — preserves all snapshot fields
   assert.deepEqual(restored.filters, undoPlan.snapshot.filters);
   assert.deepEqual(restored.view, undoPlan.snapshot.view);
   assert.deepEqual(restored.summary, undoPlan.snapshot.summary);
-  assert.equal(restored.view.matrix.x.id, "pri");
-  assert.equal(restored.view.matrix.unmatched, "hide");
+  assert.equal(restored.view.layout.children[0].x.id, "pri");
+  assert.equal(restored.view.layout.children[0].unmatched, "hide");
   assert.equal(restored.summary[3].by, "tags");
   assert.equal(undoState.restoredView?.id, "sv-full");
   assert.equal(undoState.shouldRestoreActive, true);
@@ -1983,7 +1992,7 @@ test("VAL-GUI-004 production view-path: confirm → delete → compute state →
   assert.deepEqual(restoredBeta.filters.search, "docs");
   assert.deepEqual(restoredBeta.filters.tags, ["#docs"]);
   assert.deepEqual(restoredBeta.filters.status, ["done"]);
-  assert.deepEqual(restoredBeta.view, { type: "list" });
+  assert.deepEqual(restoredBeta.view, { layout: { type: "list" } });
   assert.equal(restoredBeta.summary.length, 1);
 });
 
@@ -2057,8 +2066,7 @@ test("VAL-GUI-004 production view-path: delete default+active tab → undo resto
   const restoredAlpha = undoState.presetsRestored[0];
   assert.equal(restoredAlpha.name, "Alpha");
   assert.deepEqual(restoredAlpha.filters.tags, ["#primary"]);
-  assert.equal(restoredAlpha.view.type, "list");
-  assert.equal(restoredAlpha.view.preset, "today");
+  assert.equal(restoredAlpha.view.layout.type, "list");
   assert.equal(restoredAlpha.summary.length, 1);
 });
 
@@ -2161,38 +2169,40 @@ test("VAL-GUI-004 production view-path: undo preserves full QueryPreset fields (
       time: { scheduled: "week", deadline: "overdue", completed: "month" },
     },
     view: {
-      type: "matrix",
-      sections: [
-        { id: "urgent", title: "Urgent", when: { time: { deadline: "overdue" } }, limit: 5, orderBy: ["deadline_asc"] },
-      ],
-      tray: {
-        enabled: true,
-        title: "Backlog",
-        filters: { status: ["todo"], time: { scheduled: "unscheduled" } },
-        orderBy: ["deadline_asc"],
+      layout: {
+        dir: "col",
+        children: [
+          {
+            type: "matrix",
+            x: {
+              id: "pri",
+              title: "Priority",
+              buckets: [
+                { id: "high", title: "High", when: { tags: ["#high"] } },
+                { id: "low", title: "Low", when: { tags: ["#low"] } },
+              ],
+            },
+            y: {
+              id: "stat",
+              title: "Status",
+              buckets: [
+                { id: "open", title: "Open", when: { status: ["todo"] } },
+                { id: "done", title: "Done", when: { status: ["done"] } },
+              ],
+            },
+            unmatched: "hide",
+            multiMatch: "duplicate",
+            showEmptyBuckets: false,
+          },
+          {
+            type: "list",
+            title: "Backlog",
+            when: { status: ["todo"], time: { scheduled: "unscheduled" } },
+            orderBy: ["deadline_asc"],
+            onDrop: { clearScheduled: true },
+          },
+        ],
       },
-      matrix: {
-        x: {
-          id: "pri",
-          title: "Priority",
-          buckets: [
-            { id: "high", title: "High", when: { tags: ["#high"] } },
-            { id: "low", title: "Low", when: { tags: ["#low"] } },
-          ],
-        },
-        y: {
-          id: "stat",
-          title: "Status",
-          buckets: [
-            { id: "open", title: "Open", when: { status: ["todo"] } },
-            { id: "done", title: "Done", when: { status: ["done"] } },
-          ],
-        },
-        unmatched: "hide",
-        multiMatch: "duplicate",
-        showEmptyBuckets: false,
-      },
-      orderBy: ["deadline_asc", "created_desc"],
     },
     summary: [
       { type: "count" },
@@ -2253,28 +2263,25 @@ test("VAL-GUI-004 production view-path: undo preserves full QueryPreset fields (
       scheduled: "week", deadline: "overdue", completed: "month",
     });
 
-    // View sections
-    assert.equal(restored.view.type, "matrix");
-    assert.equal(restored.view.sections.length, 1);
-    assert.equal(restored.view.sections[0].id, "urgent");
-    assert.equal(restored.view.sections[0].limit, 5);
+    // View — col[ matrix, list-tray ]
+    const rLayout = restored.view.layout;
+    assert.equal(rLayout.dir, "col");
+    assert.equal(rLayout.children.length, 2);
 
-    // Tray
-    assert.ok(restored.view.tray);
-    assert.equal(restored.view.tray.title, "Backlog");
+    // Matrix area
+    const rMatrix = rLayout.children[0];
+    assert.equal(rMatrix.type, "matrix");
+    assert.equal(rMatrix.x.id, "pri");
+    assert.equal(rMatrix.x.buckets.length, 2);
+    assert.equal(rMatrix.y.id, "stat");
+    assert.equal(rMatrix.y.buckets.length, 2);
+    assert.equal(rMatrix.unmatched, "hide");
+    assert.equal(rMatrix.multiMatch, "duplicate");
+    assert.equal(rMatrix.showEmptyBuckets, false);
 
-    // Matrix
-    assert.ok(restored.view.matrix);
-    assert.equal(restored.view.matrix.x.id, "pri");
-    assert.equal(restored.view.matrix.x.buckets.length, 2);
-    assert.equal(restored.view.matrix.y.id, "stat");
-    assert.equal(restored.view.matrix.y.buckets.length, 2);
-    assert.equal(restored.view.matrix.unmatched, "hide");
-    assert.equal(restored.view.matrix.multiMatch, "duplicate");
-    assert.equal(restored.view.matrix.showEmptyBuckets, false);
-
-    // OrderBy
-    assert.deepEqual(restored.view.orderBy, ["deadline_asc", "created_desc"]);
+    // Tray (list area)
+    assert.equal(rLayout.children[1].type, "list");
+    assert.equal(rLayout.children[1].title, "Backlog");
 
     // Summary — all 5 types
     assert.equal(restored.summary.length, 5);
@@ -2330,7 +2337,7 @@ test("production: computeQueryPresetSnapshot merges tabDrafts view over saved vi
   });
 
   // Draft view wins
-  assert.equal(snapshot.view.type, "week", "draft view must win over saved view");
+  assert.equal(snapshot.view.layout.type, "week", "draft view must win over saved view");
   // Identity preserved from saved
   assert.equal(snapshot.id, "sv-1");
   assert.equal(snapshot.name, "My Tab");
@@ -2375,7 +2382,7 @@ test("production: computeQueryPresetSnapshot merges tabDrafts summary over saved
   assert.equal(snapshot.summary[0].type, "sum");
   assert.equal(snapshot.summary[0].field, "planned");
   // View unchanged — draft didn't touch it → falls back to saved
-  assert.equal(snapshot.view.type, "list");
+  assert.equal(snapshot.view.layout.type, "list");
   // Filters from explicit state
   assert.equal(snapshot.filters.search, "focus");
   assert.deepEqual(snapshot.filters.tags, ["#work", "#urgent"]);
@@ -2459,7 +2466,7 @@ test("production: draft with both view and summary changed merges correctly", ()
   assert.equal(snapshot.builtin, true);
   assert.equal(snapshot.hidden, false);
   // Draft view wins
-  assert.equal(snapshot.view.type, "week");
+  assert.equal(snapshot.view.layout.type, "week");
   // Draft summary wins
   assert.equal(snapshot.summary.length, 2);
   assert.equal(snapshot.summary[0].type, "sum");
@@ -2498,7 +2505,7 @@ test("production: snapshot falls back to saved when no draft exists in tabDrafts
   });
 
   // No draft → saved wins
-  assert.equal(snapshot.view.type, "month");
+  assert.equal(snapshot.view.layout.type, "month");
   assert.equal(snapshot.summary.length, 2);
   assert.equal(snapshot.summary[0].type, "count");
   assert.equal(snapshot.summary[1].type, "ratio");
@@ -2514,7 +2521,7 @@ test("production: snapshot falls back to explicit fallbacks when no saved and no
     filterTags: "#alpha",
     filterTime: { scheduled: "today" },
     filterStatus: ["todo"],
-    fallbackView: () => ({ type: "week", orderBy: ["deadline_asc"] }),
+    fallbackView: () => ({ layout: { type: "week" } }),
     fallbackSummary: () => [{ type: "count" }, { type: "group_by", by: "tags" }],
     name: "New Snapshot",
   });
@@ -2527,8 +2534,7 @@ test("production: snapshot falls back to explicit fallbacks when no saved and no
   assert.deepEqual(snapshot.filters.time, { scheduled: "today" });
   assert.deepEqual(snapshot.filters.status, ["todo"]);
   // Fallback view used
-  assert.equal(snapshot.view.type, "week");
-  assert.deepEqual(snapshot.view.orderBy, ["deadline_asc"]);
+  assert.equal(snapshot.view.layout.type, "week");
   // Fallback summary used
   assert.equal(snapshot.summary.length, 2);
   assert.equal(snapshot.summary[1].type, "group_by");
@@ -3589,7 +3595,7 @@ test("real-path: draft view and summary both flow through currentQuerySnapshot",
   assert.equal(snapshot.name, "Both Draft");
 
   // Draft view wins
-  assert.equal(snapshot.view.type, "week", "draft view must win");
+  assert.equal(snapshot.view.layout.type, "week", "draft view must win");
 
   // Draft summary wins (count from viewDraft + sum from summaryAdd)
   assert.equal(snapshot.summary.length, 2);
@@ -3620,7 +3626,7 @@ test("real-path: snapshot falls back to saved when no draft exists in tabDrafts"
 
   const snapshot = makeGetSnapshot(stub)(savedPreset);
 
-  assert.equal(snapshot.view.type, "month", "saved view wins when no draft");
+  assert.equal(snapshot.view.layout.type, "month", "saved view wins when no draft");
   assert.equal(snapshot.summary.length, 2, "saved summary wins when no draft");
   assert.equal(snapshot.summary[0].type, "count");
   assert.equal(snapshot.summary[1].type, "ratio");

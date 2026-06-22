@@ -371,7 +371,7 @@ test("query-show 返回当前 preset 的 DSL JSON", async () => {
       status: ["todo", "done"],
       time: { scheduled: "week" },
     },
-    view: { type: "month", preset: "today" },
+    view: { layout: { type: "month" } },
     summary: [{ type: "count" }],
   });
 });
@@ -441,7 +441,7 @@ test("query-save 总是新建 preset id，而不是复用 DSL 里的 id", async 
   assert.equal(plugin.settings.queryPresets[0].name, "Deep Work");
   assert.equal(plugin.settings.queryPresets[0].filters.search, "docs");
   assert.deepEqual(plugin.settings.queryPresets[0].filters.status, ["todo"]);
-  assert.deepEqual(plugin.settings.queryPresets[0].view, { type: "week" });
+  assert.deepEqual(plugin.settings.queryPresets[0].view, { layout: { type: "week" } });
   assert.equal(calls.save, 1);
   assert.equal(calls.refresh, 1);
 });
@@ -485,7 +485,7 @@ test("query-update 固定覆盖当前 id，不允许 DSL 偷换 preset 身份", 
       builtin: false,
       hidden: false,
       filters: { search: "new", tags: ["#beta"], status: ["done"], time: { completed: "month" } },
-      view: { type: "month", preset: "completed" },
+      view: { layout: { type: "month" } },
       summary: [{ type: "sum", field: "actual", format: "duration" }],
     },
   ]);
@@ -547,7 +547,7 @@ test("query-copy / hide / set-default / delete 维护 preset 生命周期与默�
       builtin: false,
       hidden: true,
       filters: { search: "focus", tags: ["#alpha"], status: ["todo"] },
-      view: { type: "list" },
+      view: { layout: { type: "list" } },
       summary: [],
     },
   ]);
@@ -991,7 +991,7 @@ test("query-create 创建新 preset，输出稳定 id，且不覆盖已有 prese
   assert.equal(created.name, "New via Create");
   assert.equal(created.filters.search, "focus");
   assert.deepEqual(created.filters.tags, ["#work"]);
-  assert.deepEqual(created.view, { type: "week" });
+  assert.deepEqual(created.view, { layout: { type: "week" } });
   assert.deepEqual(created.summary, [{ type: "count" }]);
   assert.equal(calls.save, 1);
   assert.equal(calls.refresh, 1);

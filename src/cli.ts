@@ -95,7 +95,7 @@ export function formatList(tasks: ParsedTask[], header: string, opts: CliFormatO
 export function formatQueryRun(result: QueryRunResult, opts: CliFormatOptions = {}): string {
   const lines: string[] = [];
   lines.push(`Query ${result.preset.id} · ${result.preset.name}`);
-  lines.push(`view ${result.view.type} · ${result.filteredTasks.length} tasks · anchor ${result.anchorISO}`);
+  lines.push(`view ${result.viewModel.type} · ${result.filteredTasks.length} tasks · anchor ${result.anchorISO}`);
   if (result.summary.length > 0) {
     lines.push(`summary ${formatSummaryItems(result.summary)}`);
   }
@@ -106,10 +106,10 @@ export function formatQueryRun(result: QueryRunResult, opts: CliFormatOptions = 
       renderQueryList(lines, result.viewModel.sections, opts);
       break;
     case "week":
-      renderQueryWeek(lines, result.viewModel.days, result.viewModel.tray, opts);
+      renderQueryWeek(lines, result.viewModel.days, opts);
       break;
     case "month":
-      renderQueryMonth(lines, result.viewModel.cells, result.viewModel.tray, opts);
+      renderQueryMonth(lines, result.viewModel.cells, opts);
       break;
     case "matrix":
       renderQueryMatrix(lines, result.viewModel.cells, result.viewModel.unmatched, opts);
@@ -139,7 +139,6 @@ function renderQueryList(lines: string[], sections: Array<{ title: string; tasks
 function renderQueryWeek(
   lines: string[],
   days: Array<{ date: string; tasks: EffectiveTask[] }>,
-  tray: { title: string; tasks: EffectiveTask[] } | undefined,
   opts: CliFormatOptions,
 ): void {
   for (const day of days) {
@@ -147,17 +146,11 @@ function renderQueryWeek(
     renderTaskRows(day.tasks, lines, "    ", opts);
     if (day.tasks.length === 0) lines.push("    —");
   }
-  if (tray) {
-    lines.push("");
-    lines.push(`${tray.title} · ${tray.tasks.length} tasks`);
-    renderTaskRows(tray.tasks, lines, "    ", opts);
-  }
 }
 
 function renderQueryMonth(
   lines: string[],
   cells: Array<{ date: string; tasks: EffectiveTask[] }>,
-  tray: { title: string; tasks: EffectiveTask[] } | undefined,
   opts: CliFormatOptions,
 ): void {
   const nonEmpty = cells.filter((cell) => cell.tasks.length > 0);
@@ -167,11 +160,6 @@ function renderQueryMonth(
     renderTaskRows(cell.tasks, lines, "    ", opts);
   }
   if (nonEmpty.length === 0) lines.push("    —");
-  if (tray) {
-    lines.push("");
-    lines.push(`${tray.title} · ${tray.tasks.length} tasks`);
-    renderTaskRows(tray.tasks, lines, "    ", opts);
-  }
 }
 
 function renderQueryMatrix(

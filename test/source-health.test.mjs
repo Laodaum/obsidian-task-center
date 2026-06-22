@@ -48,7 +48,9 @@ test("US-602 quality gate rejects duplicate unscheduled CSS selectors", async ()
   const withoutComments = css.replace(/\/\*[\s\S]*?\*\//g, "");
   const count = [...withoutComments.matchAll(/\.task-center-view\s+\.bt-unscheduled-col-head\s*\{/g)].length;
 
-  assert.equal(count, 1, "bt-unscheduled-col-head rules should be merged instead of duplicated");
+  // Selector may be absent (feature removed in the 1.0 area-layout refactor);
+  // the guard is "never duplicated", so 0 or 1 is acceptable.
+  assert.ok(count <= 1, "bt-unscheduled-col-head rules should be merged instead of duplicated");
 });
 
 test("US-102/US-305: month mini cards expose distinct todo/done/dropped states", async () => {

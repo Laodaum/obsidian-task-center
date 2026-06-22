@@ -1,11 +1,19 @@
 // Unit tests for VAL-CORE-008: View projection does not own business collections.
-// List/week/month/matrix project the same filtered task set into layout models.
+// List/week/month/matrix project the same filtered task set into per-area models.
 // Today/TODO/Unscheduled/Completed/Dropped are QueryPresets, not view types.
 //
-// Also covers M2 scrutiny fixes:
-//   - List sections from configured view.sections
-//   - Week/month trays from explicit view.tray.filters
-//   - Matrix 2D cells (X×Y intersection) with unmatched/multiMatch
+// The view model is now a SwiftUI-style layout tree (row/col stacks of area
+// leaves); each area projects independently via a per-area projector. The old
+// single-view `applyViewProjection` is gone.
+//
+//   - projectListArea(tasks, ListAreaConfig, weekStartsOn)
+//   - projectWeekArea(tasks, WeekAreaConfig, weekStartsOn, anchorISO)
+//   - projectMonthArea(tasks, MonthAreaConfig, anchorISO)
+//   - projectMatrixArea(tasks, MatrixAreaConfig, weekStartsOn)  // x/y/... inlined
+//
+// Trays are no longer embedded in week/month projections; a tray is a separate
+// list area in the layout. We model "tray" behavior by projecting a list area
+// whose `when` selects unscheduled tasks.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -17,7 +25,7 @@ function compilePure() {
     [
       "esbuild",
       "src/query/projection.ts",
-      "--bundle",
+      "--bundle=true",
       "--format=esm",
       "--platform=node",
       "--outdir=test/.compiled",
@@ -85,10 +93,10 @@ function effectiveTask(overrides = {}) {
 
 // ── VAL-CORE-008: List projection ──
 
-test("VAL-CORE-008: list view — all tasks in a single default section", async () => {
+test("VAL-CORE-008: list area — all tasks in a single ungrouped section", async () => {
   if (compileErr) throw compileErr;
 
-  const { applyViewProjection } = await import("../test/.compiled/projection.js");
+  const { projectListArea } = await import("../test/.compiled/projection.js");
 
   const tasks = [
     effectiveTask({ id: "test.md:L1", title: "Task A", effectiveScheduled: "2026-05-04" }),
@@ -96,17 +104,19 @@ test("VAL-CORE-008: list view — all tasks in a single default section", async 
     effectiveTask({ id: "test.md:L3", title: "Task C", effectiveScheduled: "2026-05-05" }),
   ];
 
-  const model = applyViewProjection(tasks, { type: "list" }, 1);
+  const model = projectListArea(tasks, { type: "list" }, 1);
   assert.equal(model.type, "list");
+  assert.equal(model.grouped, false, "No sections → ungrouped");
   assert.ok(Array.isArray(model.sections));
   assert.equal(model.sections.length, 1, "One default section");
+  assert.equal(model.sections[0].title, "", "Ungrouped section has empty title");
   assert.equal(model.sections[0].tasks.length, 3);
 });
 
-test("VAL-CORE-008: list view — tasks sorted by orderBy", async () => {
+test("VAL-CORE-008: list area — tasks sorted by orderBy", async () => {
   if (compileErr) throw compileErr;
 
-  const { applyViewProjection } = await import("../test/.compiled/projection.js");
+  const { projectListArea } = await import("../test/.compiled/projection.js");
 
   const tasks = [
     effectiveTask({ id: "test.md:L1", title: "ZZZ Task", effectiveScheduled: null }),
@@ -114,22 +124,23 @@ test("VAL-CORE-008: list view — tasks sorted by orderBy", async () => {
     effectiveTask({ id: "test.md:L3", title: "MMM Task", effectiveScheduled: null }),
   ];
 
-  const model = applyViewProjection(
+  const model = projectListArea(
     tasks,
     { type: "list", orderBy: ["title_asc"] },
     1,
   );
+  assert.equal(model.grouped, false);
   assert.equal(model.sections[0].tasks[0].title, "AAA Task");
   assert.equal(model.sections[0].tasks[1].title, "MMM Task");
   assert.equal(model.sections[0].tasks[2].title, "ZZZ Task");
 });
 
-// ── M2: List sections from configured view.sections ──
+// ── M2: List sections from configured area.sections ──
 
-test("M2: list view — configured sections partition tasks by filter", async () => {
+test("M2: list area — configured sections partition tasks by filter", async () => {
   if (compileErr) throw compileErr;
 
-  const { applyViewProjection } = await import("../test/.compiled/projection.js");
+  const { projectListArea } = await import("../test/.compiled/projection.js");
 
   const tasks = [
     effectiveTask({ id: "test.md:L1", title: "Work task", tags: ["#work"] }),
@@ -138,7 +149,7 @@ test("M2: list view — configured sections partition tasks by filter", async ()
     effectiveTask({ id: "test.md:L4", title: "No tag", tags: [] }),
   ];
 
-  const model = applyViewProjection(
+  const model = projectListArea(
     tasks,
     {
       type: "list",
@@ -151,6 +162,7 @@ test("M2: list view — configured sections partition tasks by filter", async ()
   );
 
   assert.equal(model.type, "list");
+  assert.equal(model.grouped, true, "Sections → grouped");
   assert.equal(model.sections.length, 2, "Two configured sections");
 
   const workSection = model.sections.find((s) => s.title === "Work");
@@ -163,17 +175,17 @@ test("M2: list view — configured sections partition tasks by filter", async ()
   assert.equal(personalSection.tasks.length, 2, "Personal section has 2 tasks matching #personal");
 });
 
-test("M2: list view — section with empty when includes all tasks", async () => {
+test("M2: list area — section with empty when includes all tasks", async () => {
   if (compileErr) throw compileErr;
 
-  const { applyViewProjection } = await import("../test/.compiled/projection.js");
+  const { projectListArea } = await import("../test/.compiled/projection.js");
 
   const tasks = [
     effectiveTask({ id: "test.md:L1", title: "Task A" }),
     effectiveTask({ id: "test.md:L2", title: "Task B" }),
   ];
 
-  const model = applyViewProjection(
+  const model = projectListArea(
     tasks,
     {
       type: "list",
@@ -184,14 +196,15 @@ test("M2: list view — section with empty when includes all tasks", async () =>
     1,
   );
 
+  assert.equal(model.grouped, true);
   assert.equal(model.sections.length, 1);
   assert.equal(model.sections[0].tasks.length, 2);
 });
 
-test("M2: list view — section limit caps task count", async () => {
+test("M2: list area — section limit caps task count", async () => {
   if (compileErr) throw compileErr;
 
-  const { applyViewProjection } = await import("../test/.compiled/projection.js");
+  const { projectListArea } = await import("../test/.compiled/projection.js");
 
   const tasks = [
     effectiveTask({ id: "test.md:L1", title: "Task A" }),
@@ -200,7 +213,7 @@ test("M2: list view — section limit caps task count", async () => {
     effectiveTask({ id: "test.md:L4", title: "Task D" }),
   ];
 
-  const model = applyViewProjection(
+  const model = projectListArea(
     tasks,
     {
       type: "list",
@@ -214,10 +227,10 @@ test("M2: list view — section limit caps task count", async () => {
   assert.equal(model.sections[0].tasks.length, 2, "Section limited to 2 tasks");
 });
 
-test("M2: list view — section-specific orderBy overrides view orderBy", async () => {
+test("M2: list area — section-specific orderBy overrides area orderBy", async () => {
   if (compileErr) throw compileErr;
 
-  const { applyViewProjection } = await import("../test/.compiled/projection.js");
+  const { projectListArea } = await import("../test/.compiled/projection.js");
 
   const tasks = [
     effectiveTask({ id: "test.md:L1", title: "ZZZ" }),
@@ -225,7 +238,7 @@ test("M2: list view — section-specific orderBy overrides view orderBy", async 
     effectiveTask({ id: "test.md:L3", title: "MMM" }),
   ];
 
-  const model = applyViewProjection(
+  const model = projectListArea(
     tasks,
     {
       type: "list",
@@ -241,12 +254,73 @@ test("M2: list view — section-specific orderBy overrides view orderBy", async 
   assert.equal(model.sections[0].tasks[2].title, "ZZZ");
 });
 
-// ── VAL-CORE-008: Week projection ──
+// ── List area as "tray": unscheduled filter ──
+// Trays are no longer embedded in week/month projections. A tray is just a list
+// area whose `when` selects unscheduled tasks. This replaces the old
+// `view.tray` assertions.
 
-test("VAL-CORE-008: week view — 7 day columns with tasks grouped by effectiveScheduled", async () => {
+test("M2: list area — unscheduled when filter selects only unscheduled tasks (tray semantics)", async () => {
   if (compileErr) throw compileErr;
 
-  const { applyViewProjection } = await import("../test/.compiled/projection.js");
+  const { projectListArea } = await import("../test/.compiled/projection.js");
+
+  const tasks = [
+    effectiveTask({ id: "test.md:L1", effectiveScheduled: "2026-05-04", title: "Scheduled" }),
+    effectiveTask({ id: "test.md:L2", effectiveScheduled: null, title: "Unscheduled" }),
+    effectiveTask({ id: "test.md:L3", effectiveScheduled: null, title: "Also unscheduled" }),
+  ];
+
+  // The tray area: list with when:{time:{scheduled:"unscheduled"}}
+  const tray = projectListArea(
+    tasks,
+    {
+      type: "list",
+      title: "未排期",
+      when: { time: { scheduled: "unscheduled" } },
+    },
+    1,
+  );
+
+  assert.equal(tray.type, "list");
+  assert.equal(tray.grouped, false);
+  assert.equal(tray.sections.length, 1);
+  assert.equal(tray.sections[0].title, "未排期");
+  assert.equal(tray.sections[0].tasks.length, 2, "Tray has the 2 unscheduled tasks");
+  const trayIds = tray.sections[0].tasks.map((t) => t.id).sort();
+  assert.deepEqual(trayIds, ["test.md:L2", "test.md:L3"]);
+});
+
+test("M2: list area — tray with extra filter (unscheduled + tag)", async () => {
+  if (compileErr) throw compileErr;
+
+  const { projectListArea } = await import("../test/.compiled/projection.js");
+
+  const tasks = [
+    effectiveTask({ id: "test.md:L1", effectiveScheduled: "2026-05-04", title: "Scheduled" }),
+    effectiveTask({ id: "test.md:L2", effectiveScheduled: null, tags: ["#work"], title: "Unscheduled work" }),
+    effectiveTask({ id: "test.md:L3", effectiveScheduled: null, tags: ["#personal"], title: "Unscheduled personal" }),
+  ];
+
+  const tray = projectListArea(
+    tasks,
+    {
+      type: "list",
+      title: "未排期工作",
+      when: { time: { scheduled: "unscheduled" }, tags: ["#work"] },
+    },
+    1,
+  );
+
+  assert.equal(tray.sections[0].tasks.length, 1, "Only 1 task matches tray filter");
+  assert.equal(tray.sections[0].tasks[0].id, "test.md:L2");
+});
+
+// ── VAL-CORE-008: Week projection ──
+
+test("VAL-CORE-008: week area — 7 day columns with tasks grouped by effectiveScheduled", async () => {
+  if (compileErr) throw compileErr;
+
+  const { projectWeekArea } = await import("../test/.compiled/projection.js");
 
   const tasks = [
     effectiveTask({ id: "test.md:L1", effectiveScheduled: "2026-05-04" }), // Monday
@@ -256,7 +330,7 @@ test("VAL-CORE-008: week view — 7 day columns with tasks grouped by effectiveS
     effectiveTask({ id: "test.md:L5", effectiveScheduled: null }),          // unscheduled — not in any column
   ];
 
-  const model = applyViewProjection(
+  const model = projectWeekArea(
     tasks,
     { type: "week" },
     1,
@@ -277,15 +351,15 @@ test("VAL-CORE-008: week view — 7 day columns with tasks grouped by effectiveS
   assert.equal(wednesday.date, "2026-05-06");
   assert.equal(wednesday.tasks.length, 1);
 
-  // Total tasks in columns = 4 (null-scheduled task excluded)
+  // Total tasks in columns = 4 (null-scheduled task excluded; week area has no tray)
   const totalInColumns = model.days.reduce((sum, d) => sum + d.tasks.length, 0);
   assert.equal(totalInColumns, 4);
 });
 
-test("VAL-CORE-008: week view — respects weekStartsOn=0 (Sunday)", async () => {
+test("VAL-CORE-008: week area — respects weekStartsOn=0 (Sunday)", async () => {
   if (compileErr) throw compileErr;
 
-  const { applyViewProjection } = await import("../test/.compiled/projection.js");
+  const { projectWeekArea } = await import("../test/.compiled/projection.js");
 
   // 2026-05-04 is Monday. With weekStartsOn=0 (Sunday), the week starts on May 3.
   const tasks = [
@@ -293,7 +367,7 @@ test("VAL-CORE-008: week view — respects weekStartsOn=0 (Sunday)", async () =>
     effectiveTask({ id: "test.md:L2", effectiveScheduled: "2026-05-04" }), // Monday
   ];
 
-  const model = applyViewProjection(tasks, { type: "week" }, 0, "2026-05-04");
+  const model = projectWeekArea(tasks, { type: "week" }, 0, "2026-05-04");
 
   assert.equal(model.days[0].date, "2026-05-03");
   assert.equal(model.days[0].tasks.length, 1);
@@ -301,107 +375,32 @@ test("VAL-CORE-008: week view — respects weekStartsOn=0 (Sunday)", async () =>
   assert.equal(model.days[1].tasks.length, 1);
 });
 
-// ── M2: Week tray from explicit view.tray.filters ──
-
-test("M2: week view — explicit tray filters produce independent tray", async () => {
+test("VAL-CORE-008: week area — does not embed unscheduled tasks (no tray)", async () => {
   if (compileErr) throw compileErr;
 
-  const { applyViewProjection } = await import("../test/.compiled/projection.js");
-
-  const tasks = [
-    effectiveTask({ id: "test.md:L1", effectiveScheduled: "2026-05-04", title: "In week" }),
-    effectiveTask({ id: "test.md:L2", effectiveScheduled: null, title: "Unscheduled" }),
-    effectiveTask({ id: "test.md:L3", effectiveScheduled: null, title: "Also unscheduled" }),
-  ];
-
-  const model = applyViewProjection(
-    tasks,
-    {
-      type: "week",
-      tray: {
-        enabled: true,
-        title: "未排期",
-        filters: {},  // all tasks — but deduped against main area
-      },
-    },
-    1,
-    "2026-05-04",
-  );
-
-  // Main area: task in week
-  assert.equal(model.days[0].tasks.length, 1);
-
-  // Tray: unscheduled tasks (excludes the one already in main area)
-  assert.ok(model.tray, "Week should have a tray");
-  assert.equal(model.tray.title, "未排期");
-  assert.equal(model.tray.tasks.length, 2, "Tray has 2 unscheduled tasks not in main area");
-  const trayIds = model.tray.tasks.map((t) => t.id).sort();
-  assert.deepEqual(trayIds, ["test.md:L2", "test.md:L3"]);
-});
-
-test("M2: week view — tray with specific filter (unscheduled only)", async () => {
-  if (compileErr) throw compileErr;
-
-  const { applyViewProjection } = await import("../test/.compiled/projection.js");
-
-  const tasks = [
-    effectiveTask({ id: "test.md:L1", effectiveScheduled: "2026-05-04", title: "Scheduled" }),
-    effectiveTask({ id: "test.md:L2", effectiveScheduled: null, tags: ["#work"], title: "Unscheduled work" }),
-    effectiveTask({ id: "test.md:L3", effectiveScheduled: null, tags: ["#personal"], title: "Unscheduled personal" }),
-  ];
-
-  const model = applyViewProjection(
-    tasks,
-    {
-      type: "week",
-      tray: {
-        enabled: true,
-        title: "未排期工作",
-        filters: { tags: ["#work"] },
-      },
-    },
-    1,
-    "2026-05-04",
-  );
-
-  assert.ok(model.tray, "Tray exists");
-  assert.equal(model.tray.tasks.length, 1, "Only 1 task matches tray filter");
-  assert.equal(model.tray.tasks[0].id, "test.md:L2");
-});
-
-test("M2: week view — tray disabled produces no tray even with unscheduled tasks", async () => {
-  if (compileErr) throw compileErr;
-
-  const { applyViewProjection } = await import("../test/.compiled/projection.js");
+  const { projectWeekArea } = await import("../test/.compiled/projection.js");
 
   const tasks = [
     effectiveTask({ id: "test.md:L1", effectiveScheduled: "2026-05-04" }),
     effectiveTask({ id: "test.md:L2", effectiveScheduled: null }),
   ];
 
-  const model = applyViewProjection(
-    tasks,
-    {
-      type: "week",
-      tray: {
-        enabled: false,
-        title: "未排期",
-        filters: {},
-      },
-    },
-    1,
-    "2026-05-04",
-  );
+  const model = projectWeekArea(tasks, { type: "week" }, 1, "2026-05-04");
 
-  assert.equal(model.tray, undefined, "No tray when disabled");
+  // Week area only renders day columns; unscheduled tasks live in a separate
+  // list area, not inside the week model.
+  assert.equal(model.days[0].tasks.length, 1, "Scheduled task in Monday column");
+  assert.equal("tray" in model, false, "Week area produces no tray");
+  const totalInColumns = model.days.reduce((sum, d) => sum + d.tasks.length, 0);
+  assert.equal(totalInColumns, 1, "Unscheduled task is not in any day column");
 });
 
 // ── VAL-CORE-008: Month projection ──
 
-test("VAL-CORE-008: month view — calendar grid with tasks per date", async () => {
+test("VAL-CORE-008: month area — calendar grid with tasks per date", async () => {
   if (compileErr) throw compileErr;
 
-  const { applyViewProjection } = await import("../test/.compiled/projection.js");
+  const { projectMonthArea } = await import("../test/.compiled/projection.js");
 
   const tasks = [
     effectiveTask({ id: "test.md:L1", effectiveScheduled: "2026-05-01" }),
@@ -409,10 +408,9 @@ test("VAL-CORE-008: month view — calendar grid with tasks per date", async () 
     effectiveTask({ id: "test.md:L3", effectiveScheduled: "2026-05-31" }),
   ];
 
-  const model = applyViewProjection(
+  const model = projectMonthArea(
     tasks,
     { type: "month" },
-    1,
     "2026-05-04",
   );
 
@@ -424,16 +422,16 @@ test("VAL-CORE-008: month view — calendar grid with tasks per date", async () 
   assert.equal(populatedCells.length, 3);
 });
 
-test("VAL-CORE-008: month view — empty cells still have date", async () => {
+test("VAL-CORE-008: month area — empty cells still have date", async () => {
   if (compileErr) throw compileErr;
 
-  const { applyViewProjection } = await import("../test/.compiled/projection.js");
+  const { projectMonthArea } = await import("../test/.compiled/projection.js");
 
   const tasks = [
     effectiveTask({ id: "test.md:L1", effectiveScheduled: "2026-05-01" }),
   ];
 
-  const model = applyViewProjection(tasks, { type: "month" }, 1, "2026-05-04");
+  const model = projectMonthArea(tasks, { type: "month" }, "2026-05-04");
 
   // May 2026 has 31 days. Cells should cover the full month.
   assert.ok(model.cells.length >= 28, "At least 28 cells for a month");
@@ -443,43 +441,31 @@ test("VAL-CORE-008: month view — empty cells still have date", async () => {
   }
 });
 
-// ── M2: Month tray from explicit view.tray.filters ──
-
-test("M2: month view — explicit tray with filter", async () => {
+test("VAL-CORE-008: month area — does not embed unscheduled tasks (no tray)", async () => {
   if (compileErr) throw compileErr;
 
-  const { applyViewProjection } = await import("../test/.compiled/projection.js");
+  const { projectMonthArea } = await import("../test/.compiled/projection.js");
 
   const tasks = [
     effectiveTask({ id: "test.md:L1", effectiveScheduled: "2026-05-01", title: "In month" }),
     effectiveTask({ id: "test.md:L2", effectiveScheduled: null, title: "Unscheduled" }),
   ];
 
-  const model = applyViewProjection(
-    tasks,
-    {
-      type: "month",
-      tray: {
-        enabled: true,
-        title: "未排期",
-        filters: {},
-      },
-    },
-    1,
-    "2026-05-04",
-  );
+  const model = projectMonthArea(tasks, { type: "month" }, "2026-05-04");
 
-  assert.ok(model.tray, "Month should have a tray");
-  assert.equal(model.tray.tasks.length, 1, "Tray has 1 unscheduled task");
-  assert.equal(model.tray.tasks[0].id, "test.md:L2");
+  // Month area only renders date cells; unscheduled tasks live in a separate
+  // list area, not inside the month model.
+  assert.equal("tray" in model, false, "Month area produces no tray");
+  const totalInCells = model.cells.reduce((sum, c) => sum + c.tasks.length, 0);
+  assert.equal(totalInCells, 1, "Only the scheduled task is placed in a cell");
 });
 
 // ── VAL-CORE-008: Matrix projection (2D cells) ──
 
-test("VAL-CORE-008: matrix view — 2D cells from X×Y bucket intersection", async () => {
+test("VAL-CORE-008: matrix area — 2D cells from X×Y bucket intersection", async () => {
   if (compileErr) throw compileErr;
 
-  const { applyViewProjection } = await import("../test/.compiled/projection.js");
+  const { projectMatrixArea } = await import("../test/.compiled/projection.js");
 
   const tasks = [
     effectiveTask({ id: "test.md:L1", title: "Work + Active", tags: ["#work"], status: "todo", effectiveStatus: "todo" }),
@@ -488,31 +474,29 @@ test("VAL-CORE-008: matrix view — 2D cells from X×Y bucket intersection", asy
     effectiveTask({ id: "test.md:L4", title: "Neither", tags: [], status: "todo", effectiveStatus: "todo" }),
   ];
 
-  const model = applyViewProjection(
+  const model = projectMatrixArea(
     tasks,
     {
       type: "matrix",
-      matrix: {
-        x: {
-          id: "x-tags",
-          title: "Tags",
-          buckets: [
-            { id: "b-work", title: "Work", when: { tags: ["#work"] } },
-            { id: "b-personal", title: "Personal", when: { tags: ["#personal"] } },
-          ],
-        },
-        y: {
-          id: "y-status",
-          title: "Status",
-          buckets: [
-            { id: "s-todo", title: "TODO", when: { status: "todo" } },
-            { id: "s-done", title: "Done", when: { status: "done" } },
-          ],
-        },
-        unmatched: "show",
-        multiMatch: "first",
-        showEmptyBuckets: true,
+      x: {
+        id: "x-tags",
+        title: "Tags",
+        buckets: [
+          { id: "b-work", title: "Work", when: { tags: ["#work"] } },
+          { id: "b-personal", title: "Personal", when: { tags: ["#personal"] } },
+        ],
       },
+      y: {
+        id: "y-status",
+        title: "Status",
+        buckets: [
+          { id: "s-todo", title: "TODO", when: { status: "todo" } },
+          { id: "s-done", title: "Done", when: { status: "done" } },
+        ],
+      },
+      unmatched: "show",
+      multiMatch: "first",
+      showEmptyBuckets: true,
     },
     1,
   );
@@ -560,39 +544,37 @@ test("VAL-CORE-008: matrix view — 2D cells from X×Y bucket intersection", asy
   assert.equal(model.unmatched[0].id, "test.md:L4");
 });
 
-test("VAL-CORE-008: matrix view — multiMatch=duplicate puts task in all matching cells", async () => {
+test("VAL-CORE-008: matrix area — multiMatch=duplicate puts task in all matching cells", async () => {
   if (compileErr) throw compileErr;
 
-  const { applyViewProjection } = await import("../test/.compiled/projection.js");
+  const { projectMatrixArea } = await import("../test/.compiled/projection.js");
 
   const tasks = [
     effectiveTask({ id: "test.md:L1", title: "Both tags", tags: ["#work", "#personal"], status: "todo", effectiveStatus: "todo" }),
   ];
 
-  const model = applyViewProjection(
+  const model = projectMatrixArea(
     tasks,
     {
       type: "matrix",
-      matrix: {
-        x: {
-          id: "x-tags",
-          title: "Tags",
-          buckets: [
-            { id: "b-work", title: "Work", when: { tags: ["#work"] } },
-            { id: "b-personal", title: "Personal", when: { tags: ["#personal"] } },
-          ],
-        },
-        y: {
-          id: "y-status",
-          title: "Status",
-          buckets: [
-            { id: "s-todo", title: "TODO", when: { status: "todo" } },
-          ],
-        },
-        unmatched: "show",
-        multiMatch: "duplicate",
-        showEmptyBuckets: true,
+      x: {
+        id: "x-tags",
+        title: "Tags",
+        buckets: [
+          { id: "b-work", title: "Work", when: { tags: ["#work"] } },
+          { id: "b-personal", title: "Personal", when: { tags: ["#personal"] } },
+        ],
       },
+      y: {
+        id: "y-status",
+        title: "Status",
+        buckets: [
+          { id: "s-todo", title: "TODO", when: { status: "todo" } },
+        ],
+      },
+      unmatched: "show",
+      multiMatch: "duplicate",
+      showEmptyBuckets: true,
     },
     1,
   );
@@ -609,39 +591,37 @@ test("VAL-CORE-008: matrix view — multiMatch=duplicate puts task in all matchi
   assert.equal(personalTodoCell.tasks[0].id, "test.md:L1");
 });
 
-test("VAL-CORE-008: matrix view — unmatched=hide removes unmatched tasks", async () => {
+test("VAL-CORE-008: matrix area — unmatched=hide removes unmatched tasks", async () => {
   if (compileErr) throw compileErr;
 
-  const { applyViewProjection } = await import("../test/.compiled/projection.js");
+  const { projectMatrixArea } = await import("../test/.compiled/projection.js");
 
   const tasks = [
     effectiveTask({ id: "test.md:L1", title: "Has tag", tags: ["#work"], status: "todo" }),
     effectiveTask({ id: "test.md:L2", title: "No tag", tags: [], status: "todo" }),
   ];
 
-  const model = applyViewProjection(
+  const model = projectMatrixArea(
     tasks,
     {
       type: "matrix",
-      matrix: {
-        x: {
-          id: "x-tags",
-          title: "Tags",
-          buckets: [
-            { id: "b-work", title: "Work", when: { tags: ["#work"] } },
-          ],
-        },
-        y: {
-          id: "y-status",
-          title: "Status",
-          buckets: [
-            { id: "s-todo", title: "TODO", when: { status: "todo" } },
-          ],
-        },
-        unmatched: "hide",
-        multiMatch: "first",
-        showEmptyBuckets: true,
+      x: {
+        id: "x-tags",
+        title: "Tags",
+        buckets: [
+          { id: "b-work", title: "Work", when: { tags: ["#work"] } },
+        ],
       },
+      y: {
+        id: "y-status",
+        title: "Status",
+        buckets: [
+          { id: "s-todo", title: "TODO", when: { status: "todo" } },
+        ],
+      },
+      unmatched: "hide",
+      multiMatch: "first",
+      showEmptyBuckets: true,
     },
     1,
   );
@@ -649,39 +629,37 @@ test("VAL-CORE-008: matrix view — unmatched=hide removes unmatched tasks", asy
   assert.equal(model.unmatched.length, 0, "Unmatched tasks hidden");
 });
 
-test("M2: matrix view — multiMatch=first only puts task in first matching cell", async () => {
+test("M2: matrix area — multiMatch=first only puts task in first matching cell", async () => {
   if (compileErr) throw compileErr;
 
-  const { applyViewProjection } = await import("../test/.compiled/projection.js");
+  const { projectMatrixArea } = await import("../test/.compiled/projection.js");
 
   const tasks = [
     effectiveTask({ id: "test.md:L1", title: "Multi-match", tags: ["#work", "#personal"], status: "todo" }),
   ];
 
-  const model = applyViewProjection(
+  const model = projectMatrixArea(
     tasks,
     {
       type: "matrix",
-      matrix: {
-        x: {
-          id: "x-tags",
-          title: "Tags",
-          buckets: [
-            { id: "b-work", title: "Work", when: { tags: ["#work"] } },
-            { id: "b-personal", title: "Personal", when: { tags: ["#personal"] } },
-          ],
-        },
-        y: {
-          id: "y-status",
-          title: "Status",
-          buckets: [
-            { id: "s-todo", title: "TODO", when: { status: "todo" } },
-          ],
-        },
-        unmatched: "show",
-        multiMatch: "first",
-        showEmptyBuckets: true,
+      x: {
+        id: "x-tags",
+        title: "Tags",
+        buckets: [
+          { id: "b-work", title: "Work", when: { tags: ["#work"] } },
+          { id: "b-personal", title: "Personal", when: { tags: ["#personal"] } },
+        ],
       },
+      y: {
+        id: "y-status",
+        title: "Status",
+        buckets: [
+          { id: "s-todo", title: "TODO", when: { status: "todo" } },
+        ],
+      },
+      unmatched: "show",
+      multiMatch: "first",
+      showEmptyBuckets: true,
     },
     1,
   );
@@ -692,32 +670,30 @@ test("M2: matrix view — multiMatch=first only puts task in first matching cell
   assert.equal(l1Count, 1, "Task appears exactly once with multiMatch=first");
 });
 
-test("M2: matrix view — empty buckets when no Y axis configured", async () => {
+test("M2: matrix area — empty buckets when no Y axis configured", async () => {
   if (compileErr) throw compileErr;
 
-  const { applyViewProjection } = await import("../test/.compiled/projection.js");
+  const { projectMatrixArea } = await import("../test/.compiled/projection.js");
 
   const tasks = [
     effectiveTask({ id: "test.md:L1", title: "Has tag", tags: ["#work"] }),
   ];
 
-  const model = applyViewProjection(
+  const model = projectMatrixArea(
     tasks,
     {
       type: "matrix",
-      matrix: {
-        x: {
-          id: "x-tags",
-          title: "Tags",
-          buckets: [
-            { id: "b-work", title: "Work", when: { tags: ["#work"] } },
-          ],
-        },
-        y: { id: "y-empty", title: "Empty", buckets: [] },
-        unmatched: "show",
-        multiMatch: "first",
-        showEmptyBuckets: true,
+      x: {
+        id: "x-tags",
+        title: "Tags",
+        buckets: [
+          { id: "b-work", title: "Work", when: { tags: ["#work"] } },
+        ],
       },
+      y: { id: "y-empty", title: "Empty", buckets: [] },
+      unmatched: "show",
+      multiMatch: "first",
+      showEmptyBuckets: true,
     },
     1,
   );
@@ -727,12 +703,13 @@ test("M2: matrix view — empty buckets when no Y axis configured", async () => 
   assert.equal(model.unmatched.length, 1, "All tasks unmatched");
 });
 
-// ── VAL-CORE-008: Same tasks projected to different views ──
+// ── VAL-CORE-008: Same tasks projected to different areas ──
 
 test("VAL-CORE-008: same filtered tasks projected to list, week, month produce different models", async () => {
   if (compileErr) throw compileErr;
 
-  const { applyViewProjection } = await import("../test/.compiled/projection.js");
+  const { projectListArea, projectWeekArea, projectMonthArea } =
+    await import("../test/.compiled/projection.js");
 
   const tasks = [
     effectiveTask({ id: "test.md:L1", effectiveScheduled: "2026-05-04" }),
@@ -740,115 +717,109 @@ test("VAL-CORE-008: same filtered tasks projected to list, week, month produce d
     effectiveTask({ id: "test.md:L3", effectiveScheduled: null }),
   ];
 
-  const listModel = applyViewProjection(tasks, { type: "list" }, 1);
-  const weekModel = applyViewProjection(
+  const listModel = projectListArea(tasks, { type: "list" }, 1);
+  const weekModel = projectWeekArea(tasks, { type: "week" }, 1, "2026-05-04");
+  const monthModel = projectMonthArea(tasks, { type: "month" }, "2026-05-04");
+  // The "tray" is a separate list area selecting unscheduled tasks.
+  const trayModel = projectListArea(
     tasks,
-    {
-      type: "week",
-      tray: { enabled: true, title: "未排期", filters: {} },
-    },
+    { type: "list", when: { time: { scheduled: "unscheduled" } } },
     1,
-    "2026-05-04",
-  );
-  const monthModel = applyViewProjection(
-    tasks,
-    {
-      type: "month",
-      tray: { enabled: true, title: "未排期", filters: {} },
-    },
-    1,
-    "2026-05-04",
   );
 
   assert.equal(listModel.type, "list");
   assert.equal(weekModel.type, "week");
   assert.equal(monthModel.type, "month");
 
-  // List contains all 3 tasks in default section
+  // List contains all 3 tasks in its ungrouped section
   const listTaskIds = listModel.sections[0].tasks.map((t) => t.id).sort();
   assert.deepEqual(listTaskIds, ["test.md:L1", "test.md:L2", "test.md:L3"]);
 
-  // Week contains 2 scheduled in day columns + 1 unscheduled in tray
+  // Week contains 2 scheduled in day columns; the tray area carries the 1 unscheduled
   const weekTaskIds = weekModel.days
     .flatMap((d) => d.tasks)
-    .concat(weekModel.tray?.tasks ?? [])
+    .concat(trayModel.sections[0].tasks)
     .map((t) => t.id)
     .sort();
   assert.deepEqual(weekTaskIds, ["test.md:L1", "test.md:L2", "test.md:L3"]);
 
-  // Month contains 2 scheduled in cells + 1 unscheduled in tray
+  // Month contains 2 scheduled in cells; the tray area carries the 1 unscheduled
   const monthTaskIds = monthModel.cells
     .flatMap((c) => c.tasks)
-    .concat(monthModel.tray?.tasks ?? [])
+    .concat(trayModel.sections[0].tasks)
     .map((t) => t.id)
     .sort();
   assert.deepEqual(monthTaskIds, ["test.md:L1", "test.md:L2", "test.md:L3"]);
 });
 
-test("M2: tray does not duplicate tasks already in main date area", async () => {
+test("M2: tray list area and week area partition tasks without overlap", async () => {
   if (compileErr) throw compileErr;
 
-  const { applyViewProjection } = await import("../test/.compiled/projection.js");
+  const { projectListArea, projectWeekArea } =
+    await import("../test/.compiled/projection.js");
 
   const tasks = [
     effectiveTask({ id: "test.md:L1", effectiveScheduled: "2026-05-04", title: "In week" }),
     effectiveTask({ id: "test.md:L2", effectiveScheduled: null, title: "Unscheduled" }),
   ];
 
-  const model = applyViewProjection(
+  const week = projectWeekArea(tasks, { type: "week" }, 1, "2026-05-04");
+  const tray = projectListArea(
     tasks,
-    {
-      type: "week",
-      tray: {
-        enabled: true,
-        title: "All",
-        filters: {}, // matches everything
-      },
-    },
+    { type: "list", title: "未排期", when: { time: { scheduled: "unscheduled" } } },
     1,
-    "2026-05-04",
   );
 
-  // Main area has L1
-  assert.equal(model.days[0].tasks.length, 1);
-  assert.equal(model.days[0].tasks[0].id, "test.md:L1");
+  // Week area has the scheduled task in Monday
+  assert.equal(week.days[0].tasks.length, 1);
+  assert.equal(week.days[0].tasks[0].id, "test.md:L1");
 
-  // Tray should NOT include L1 (already in main area)
-  assert.ok(model.tray, "Tray exists");
-  const trayIds = model.tray.tasks.map((t) => t.id);
-  assert.ok(!trayIds.includes("test.md:L1"), "Tray excludes main area tasks");
+  // Tray (unscheduled list) has only the unscheduled task; no overlap with week
+  const trayIds = tray.sections[0].tasks.map((t) => t.id);
+  assert.ok(!trayIds.includes("test.md:L1"), "Tray excludes scheduled task");
   assert.ok(trayIds.includes("test.md:L2"), "Tray includes unscheduled task");
 });
 
 // ── Negative / edge cases ──
 
-test("M2: matrix no config fallback — all tasks unmatched", async () => {
+test("M2: matrix empty axes — all tasks unmatched", async () => {
   if (compileErr) throw compileErr;
 
-  const { applyViewProjection } = await import("../test/.compiled/projection.js");
+  const { projectMatrixArea } = await import("../test/.compiled/projection.js");
 
   const tasks = [
     effectiveTask({ id: "test.md:L1", title: "Task A" }),
     effectiveTask({ id: "test.md:L2", title: "Task B" }),
   ];
 
-  const model = applyViewProjection(tasks, { type: "matrix" }, 1);
+  const model = projectMatrixArea(
+    tasks,
+    {
+      type: "matrix",
+      x: { id: "x", title: "X", buckets: [] },
+      y: { id: "y", title: "Y", buckets: [] },
+      unmatched: "show",
+      multiMatch: "first",
+      showEmptyBuckets: true,
+    },
+    1,
+  );
 
   assert.equal(model.type, "matrix");
-  assert.equal(model.cells.length, 0, "No cells without matrix config");
+  assert.equal(model.cells.length, 0, "No cells without buckets");
   assert.equal(model.unmatched.length, 2, "All tasks unmatched");
 });
 
 test("M2: sections with no matching tasks produce empty sections", async () => {
   if (compileErr) throw compileErr;
 
-  const { applyViewProjection } = await import("../test/.compiled/projection.js");
+  const { projectListArea } = await import("../test/.compiled/projection.js");
 
   const tasks = [
     effectiveTask({ id: "test.md:L1", title: "Task A", tags: [] }),
   ];
 
-  const model = applyViewProjection(
+  const model = projectListArea(
     tasks,
     {
       type: "list",
@@ -859,6 +830,7 @@ test("M2: sections with no matching tasks produce empty sections", async () => {
     1,
   );
 
+  assert.equal(model.grouped, true);
   assert.equal(model.sections.length, 1);
   assert.equal(model.sections[0].tasks.length, 0, "Section is empty when no tasks match filter");
 });
@@ -868,37 +840,35 @@ test("M2: sections with no matching tasks produce empty sections", async () => {
 test("M4: showEmptyBuckets=true preserves all configured cells including empty ones", async () => {
   if (compileErr) throw compileErr;
 
-  const { applyViewProjection } = await import("../test/.compiled/projection.js");
+  const { projectMatrixArea } = await import("../test/.compiled/projection.js");
 
   const tasks = [
     effectiveTask({ id: "test.md:L1", title: "Work task", tags: ["#work"], status: "todo", effectiveStatus: "todo" }),
   ];
 
-  const model = applyViewProjection(
+  const model = projectMatrixArea(
     tasks,
     {
       type: "matrix",
-      matrix: {
-        x: {
-          id: "x-tags",
-          title: "Tags",
-          buckets: [
-            { id: "b-work", title: "Work", when: { tags: ["#work"] } },
-            { id: "b-personal", title: "Personal", when: { tags: ["#personal"] } },
-          ],
-        },
-        y: {
-          id: "y-status",
-          title: "Status",
-          buckets: [
-            { id: "s-todo", title: "TODO", when: { status: "todo" } },
-            { id: "s-done", title: "Done", when: { status: "done" } },
-          ],
-        },
-        unmatched: "show",
-        multiMatch: "first",
-        showEmptyBuckets: true,
+      x: {
+        id: "x-tags",
+        title: "Tags",
+        buckets: [
+          { id: "b-work", title: "Work", when: { tags: ["#work"] } },
+          { id: "b-personal", title: "Personal", when: { tags: ["#personal"] } },
+        ],
       },
+      y: {
+        id: "y-status",
+        title: "Status",
+        buckets: [
+          { id: "s-todo", title: "TODO", when: { status: "todo" } },
+          { id: "s-done", title: "Done", when: { status: "done" } },
+        ],
+      },
+      unmatched: "show",
+      multiMatch: "first",
+      showEmptyBuckets: true,
     },
     1,
   );
@@ -915,37 +885,35 @@ test("M4: showEmptyBuckets=true preserves all configured cells including empty o
 test("M4: showEmptyBuckets=false hides empty cells", async () => {
   if (compileErr) throw compileErr;
 
-  const { applyViewProjection } = await import("../test/.compiled/projection.js");
+  const { projectMatrixArea } = await import("../test/.compiled/projection.js");
 
   const tasks = [
     effectiveTask({ id: "test.md:L1", title: "Work task", tags: ["#work"], status: "todo", effectiveStatus: "todo" }),
   ];
 
-  const model = applyViewProjection(
+  const model = projectMatrixArea(
     tasks,
     {
       type: "matrix",
-      matrix: {
-        x: {
-          id: "x-tags",
-          title: "Tags",
-          buckets: [
-            { id: "b-work", title: "Work", when: { tags: ["#work"] } },
-            { id: "b-personal", title: "Personal", when: { tags: ["#personal"] } },
-          ],
-        },
-        y: {
-          id: "y-status",
-          title: "Status",
-          buckets: [
-            { id: "s-todo", title: "TODO", when: { status: "todo" } },
-            { id: "s-done", title: "Done", when: { status: "done" } },
-          ],
-        },
-        unmatched: "show",
-        multiMatch: "first",
-        showEmptyBuckets: false,
+      x: {
+        id: "x-tags",
+        title: "Tags",
+        buckets: [
+          { id: "b-work", title: "Work", when: { tags: ["#work"] } },
+          { id: "b-personal", title: "Personal", when: { tags: ["#personal"] } },
+        ],
       },
+      y: {
+        id: "y-status",
+        title: "Status",
+        buckets: [
+          { id: "s-todo", title: "TODO", when: { status: "todo" } },
+          { id: "s-done", title: "Done", when: { status: "done" } },
+        ],
+      },
+      unmatched: "show",
+      multiMatch: "first",
+      showEmptyBuckets: false,
     },
     1,
   );
@@ -966,69 +934,37 @@ test("M4: showEmptyBuckets=false hides empty cells", async () => {
 test("M4: showEmptyBuckets=false does not change unmatched behavior", async () => {
   if (compileErr) throw compileErr;
 
-  const { applyViewProjection } = await import("../test/.compiled/projection.js");
+  const { projectMatrixArea } = await import("../test/.compiled/projection.js");
 
   const tasks = [
     effectiveTask({ id: "test.md:L1", title: "Work task", tags: ["#work"], status: "todo", effectiveStatus: "todo" }),
     effectiveTask({ id: "test.md:L2", title: "Unmatched", tags: [], status: "todo", effectiveStatus: "todo" }),
   ];
 
-  // Build both models with identical configs except showEmptyBuckets
-  const modelTrue = applyViewProjection(
-    tasks,
-    {
-      type: "matrix",
-      matrix: {
-        x: {
-          id: "x-tags",
-          title: "Tags",
-          buckets: [
-            { id: "b-work", title: "Work", when: { tags: ["#work"] } },
-            { id: "b-personal", title: "Personal", when: { tags: ["#personal"] } },
-          ],
-        },
-        y: {
-          id: "y-status",
-          title: "Status",
-          buckets: [
-            { id: "s-todo", title: "TODO", when: { status: "todo" } },
-          ],
-        },
-        unmatched: "show",
-        multiMatch: "first",
-        showEmptyBuckets: true,
-      },
+  const matrixArea = (showEmptyBuckets) => ({
+    type: "matrix",
+    x: {
+      id: "x-tags",
+      title: "Tags",
+      buckets: [
+        { id: "b-work", title: "Work", when: { tags: ["#work"] } },
+        { id: "b-personal", title: "Personal", when: { tags: ["#personal"] } },
+      ],
     },
-    1,
-  );
+    y: {
+      id: "y-status",
+      title: "Status",
+      buckets: [
+        { id: "s-todo", title: "TODO", when: { status: "todo" } },
+      ],
+    },
+    unmatched: "show",
+    multiMatch: "first",
+    showEmptyBuckets,
+  });
 
-  const modelFalse = applyViewProjection(
-    tasks,
-    {
-      type: "matrix",
-      matrix: {
-        x: {
-          id: "x-tags",
-          title: "Tags",
-          buckets: [
-            { id: "b-work", title: "Work", when: { tags: ["#work"] } },
-            { id: "b-personal", title: "Personal", when: { tags: ["#personal"] } },
-          ],
-        },
-        y: {
-          id: "y-status",
-          title: "Status",
-          buckets: [
-            { id: "s-todo", title: "TODO", when: { status: "todo" } },
-          ],
-        },
-        unmatched: "show",
-        multiMatch: "first",
-        showEmptyBuckets: false,
-      },
-    },
-    1,
-  );
+  const modelTrue = projectMatrixArea(tasks, matrixArea(true), 1);
+  const modelFalse = projectMatrixArea(tasks, matrixArea(false), 1);
 
   // Unmatched is identical regardless of showEmptyBuckets
   assert.equal(modelTrue.unmatched.length, modelFalse.unmatched.length, "Unmatched count unchanged");
@@ -1042,36 +978,34 @@ test("M4: showEmptyBuckets=false does not change unmatched behavior", async () =
 test("M4: showEmptyBuckets=false does not change multiMatch=first behavior", async () => {
   if (compileErr) throw compileErr;
 
-  const { applyViewProjection } = await import("../test/.compiled/projection.js");
+  const { projectMatrixArea } = await import("../test/.compiled/projection.js");
 
   const tasks = [
     effectiveTask({ id: "test.md:L1", title: "Multi-tag", tags: ["#work", "#personal"], status: "todo", effectiveStatus: "todo" }),
   ];
 
-  const model = applyViewProjection(
+  const model = projectMatrixArea(
     tasks,
     {
       type: "matrix",
-      matrix: {
-        x: {
-          id: "x-tags",
-          title: "Tags",
-          buckets: [
-            { id: "b-work", title: "Work", when: { tags: ["#work"] } },
-            { id: "b-personal", title: "Personal", when: { tags: ["#personal"] } },
-          ],
-        },
-        y: {
-          id: "y-status",
-          title: "Status",
-          buckets: [
-            { id: "s-todo", title: "TODO", when: { status: "todo" } },
-          ],
-        },
-        unmatched: "show",
-        multiMatch: "first",
-        showEmptyBuckets: false,
+      x: {
+        id: "x-tags",
+        title: "Tags",
+        buckets: [
+          { id: "b-work", title: "Work", when: { tags: ["#work"] } },
+          { id: "b-personal", title: "Personal", when: { tags: ["#personal"] } },
+        ],
       },
+      y: {
+        id: "y-status",
+        title: "Status",
+        buckets: [
+          { id: "s-todo", title: "TODO", when: { status: "todo" } },
+        ],
+      },
+      unmatched: "show",
+      multiMatch: "first",
+      showEmptyBuckets: false,
     },
     1,
   );
@@ -1088,36 +1022,34 @@ test("M4: showEmptyBuckets=false does not change multiMatch=first behavior", asy
 test("M4: showEmptyBuckets=false does not change multiMatch=duplicate behavior", async () => {
   if (compileErr) throw compileErr;
 
-  const { applyViewProjection } = await import("../test/.compiled/projection.js");
+  const { projectMatrixArea } = await import("../test/.compiled/projection.js");
 
   const tasks = [
     effectiveTask({ id: "test.md:L1", title: "Multi-tag", tags: ["#work", "#personal"], status: "todo", effectiveStatus: "todo" }),
   ];
 
-  const model = applyViewProjection(
+  const model = projectMatrixArea(
     tasks,
     {
       type: "matrix",
-      matrix: {
-        x: {
-          id: "x-tags",
-          title: "Tags",
-          buckets: [
-            { id: "b-work", title: "Work", when: { tags: ["#work"] } },
-            { id: "b-personal", title: "Personal", when: { tags: ["#personal"] } },
-          ],
-        },
-        y: {
-          id: "y-status",
-          title: "Status",
-          buckets: [
-            { id: "s-todo", title: "TODO", when: { status: "todo" } },
-          ],
-        },
-        unmatched: "show",
-        multiMatch: "duplicate",
-        showEmptyBuckets: false,
+      x: {
+        id: "x-tags",
+        title: "Tags",
+        buckets: [
+          { id: "b-work", title: "Work", when: { tags: ["#work"] } },
+          { id: "b-personal", title: "Personal", when: { tags: ["#personal"] } },
+        ],
       },
+      y: {
+        id: "y-status",
+        title: "Status",
+        buckets: [
+          { id: "s-todo", title: "TODO", when: { status: "todo" } },
+        ],
+      },
+      unmatched: "show",
+      multiMatch: "duplicate",
+      showEmptyBuckets: false,
     },
     1,
   );
@@ -1132,36 +1064,34 @@ test("M4: showEmptyBuckets=false does not change multiMatch=duplicate behavior",
 test("M4: showEmptyBuckets=false with no tasks — all cells empty → zero cells returned", async () => {
   if (compileErr) throw compileErr;
 
-  const { applyViewProjection } = await import("../test/.compiled/projection.js");
+  const { projectMatrixArea } = await import("../test/.compiled/projection.js");
 
   const tasks = [
     // No tasks match any bucket
     effectiveTask({ id: "test.md:L1", title: "No match", tags: [], status: "todo", effectiveStatus: "todo" }),
   ];
 
-  const model = applyViewProjection(
+  const model = projectMatrixArea(
     tasks,
     {
       type: "matrix",
-      matrix: {
-        x: {
-          id: "x-tags",
-          title: "Tags",
-          buckets: [
-            { id: "b-work", title: "Work", when: { tags: ["#work"] } },
-          ],
-        },
-        y: {
-          id: "y-status",
-          title: "Status",
-          buckets: [
-            { id: "s-done", title: "Done", when: { status: "done" } },
-          ],
-        },
-        unmatched: "show",
-        multiMatch: "first",
-        showEmptyBuckets: false,
+      x: {
+        id: "x-tags",
+        title: "Tags",
+        buckets: [
+          { id: "b-work", title: "Work", when: { tags: ["#work"] } },
+        ],
       },
+      y: {
+        id: "y-status",
+        title: "Status",
+        buckets: [
+          { id: "s-done", title: "Done", when: { status: "done" } },
+        ],
+      },
+      unmatched: "show",
+      multiMatch: "first",
+      showEmptyBuckets: false,
     },
     1,
   );
@@ -1174,36 +1104,34 @@ test("M4: showEmptyBuckets=false with no tasks — all cells empty → zero cell
 test("M4: showEmptyBuckets default fallback — missing field preserves all cells", async () => {
   if (compileErr) throw compileErr;
 
-  const { applyViewProjection } = await import("../test/.compiled/projection.js");
+  const { projectMatrixArea } = await import("../test/.compiled/projection.js");
 
   const tasks = [
     effectiveTask({ id: "test.md:L1", title: "Work task", tags: ["#work"], status: "todo", effectiveStatus: "todo" }),
   ];
 
-  const model = applyViewProjection(
+  const model = projectMatrixArea(
     tasks,
     {
       type: "matrix",
-      matrix: {
-        x: {
-          id: "x-tags",
-          title: "Tags",
-          buckets: [
-            { id: "b-work", title: "Work", when: { tags: ["#work"] } },
-            { id: "b-personal", title: "Personal", when: { tags: ["#personal"] } },
-          ],
-        },
-        y: {
-          id: "y-status",
-          title: "Status",
-          buckets: [
-            { id: "s-todo", title: "TODO", when: { status: "todo" } },
-          ],
-        },
-        unmatched: "show",
-        multiMatch: "first",
-        // showEmptyBuckets intentionally absent
+      x: {
+        id: "x-tags",
+        title: "Tags",
+        buckets: [
+          { id: "b-work", title: "Work", when: { tags: ["#work"] } },
+          { id: "b-personal", title: "Personal", when: { tags: ["#personal"] } },
+        ],
       },
+      y: {
+        id: "y-status",
+        title: "Status",
+        buckets: [
+          { id: "s-todo", title: "TODO", when: { status: "todo" } },
+        ],
+      },
+      unmatched: "show",
+      multiMatch: "first",
+      // showEmptyBuckets intentionally absent
     },
     1,
   );
@@ -1216,37 +1144,35 @@ test("M4: showEmptyBuckets default fallback — missing field preserves all cell
 test("M4: showEmptyBuckets=true with multiMatch=duplicate — empty cells remain", async () => {
   if (compileErr) throw compileErr;
 
-  const { applyViewProjection } = await import("../test/.compiled/projection.js");
+  const { projectMatrixArea } = await import("../test/.compiled/projection.js");
 
   const tasks = [
     effectiveTask({ id: "test.md:L1", title: "Work task", tags: ["#work"], status: "todo", effectiveStatus: "todo" }),
   ];
 
-  const model = applyViewProjection(
+  const model = projectMatrixArea(
     tasks,
     {
       type: "matrix",
-      matrix: {
-        x: {
-          id: "x-tags",
-          title: "Tags",
-          buckets: [
-            { id: "b-work", title: "Work", when: { tags: ["#work"] } },
-            { id: "b-personal", title: "Personal", when: { tags: ["#personal"] } },
-          ],
-        },
-        y: {
-          id: "y-status",
-          title: "Status",
-          buckets: [
-            { id: "s-todo", title: "TODO", when: { status: "todo" } },
-            { id: "s-done", title: "Done", when: { status: "done" } },
-          ],
-        },
-        unmatched: "show",
-        multiMatch: "duplicate",
-        showEmptyBuckets: true,
+      x: {
+        id: "x-tags",
+        title: "Tags",
+        buckets: [
+          { id: "b-work", title: "Work", when: { tags: ["#work"] } },
+          { id: "b-personal", title: "Personal", when: { tags: ["#personal"] } },
+        ],
       },
+      y: {
+        id: "y-status",
+        title: "Status",
+        buckets: [
+          { id: "s-todo", title: "TODO", when: { status: "todo" } },
+          { id: "s-done", title: "Done", when: { status: "done" } },
+        ],
+      },
+      unmatched: "show",
+      multiMatch: "duplicate",
+      showEmptyBuckets: true,
     },
     1,
   );
@@ -1262,37 +1188,35 @@ test("M4: showEmptyBuckets=true with multiMatch=duplicate — empty cells remain
 test("M4: showEmptyBuckets=false — xAxis buckets only include columns with visible cells", async () => {
   if (compileErr) throw compileErr;
 
-  const { applyViewProjection } = await import("../test/.compiled/projection.js");
+  const { projectMatrixArea } = await import("../test/.compiled/projection.js");
 
   const tasks = [
     effectiveTask({ id: "test.md:L1", title: "Work task", tags: ["#work"], status: "todo", effectiveStatus: "todo" }),
   ];
 
-  const model = applyViewProjection(
+  const model = projectMatrixArea(
     tasks,
     {
       type: "matrix",
-      matrix: {
-        x: {
-          id: "x-tags",
-          title: "Tags",
-          buckets: [
-            { id: "b-work", title: "Work", when: { tags: ["#work"] } },
-            { id: "b-personal", title: "Personal", when: { tags: ["#personal"] } },
-          ],
-        },
-        y: {
-          id: "y-status",
-          title: "Status",
-          buckets: [
-            { id: "s-todo", title: "TODO", when: { status: "todo" } },
-            { id: "s-done", title: "Done", when: { status: "done" } },
-          ],
-        },
-        unmatched: "show",
-        multiMatch: "first",
-        showEmptyBuckets: false,
+      x: {
+        id: "x-tags",
+        title: "Tags",
+        buckets: [
+          { id: "b-work", title: "Work", when: { tags: ["#work"] } },
+          { id: "b-personal", title: "Personal", when: { tags: ["#personal"] } },
+        ],
       },
+      y: {
+        id: "y-status",
+        title: "Status",
+        buckets: [
+          { id: "s-todo", title: "TODO", when: { status: "todo" } },
+          { id: "s-done", title: "Done", when: { status: "done" } },
+        ],
+      },
+      unmatched: "show",
+      multiMatch: "first",
+      showEmptyBuckets: false,
     },
     1,
   );
@@ -1319,37 +1243,35 @@ test("M4: showEmptyBuckets=false — xAxis buckets only include columns with vis
 test("M4: showEmptyBuckets=true — xAxis/yAxis buckets include all configured buckets", async () => {
   if (compileErr) throw compileErr;
 
-  const { applyViewProjection } = await import("../test/.compiled/projection.js");
+  const { projectMatrixArea } = await import("../test/.compiled/projection.js");
 
   const tasks = [
     effectiveTask({ id: "test.md:L1", title: "Work task", tags: ["#work"], status: "todo", effectiveStatus: "todo" }),
   ];
 
-  const model = applyViewProjection(
+  const model = projectMatrixArea(
     tasks,
     {
       type: "matrix",
-      matrix: {
-        x: {
-          id: "x-tags",
-          title: "Tags",
-          buckets: [
-            { id: "b-work", title: "Work", when: { tags: ["#work"] } },
-            { id: "b-personal", title: "Personal", when: { tags: ["#personal"] } },
-          ],
-        },
-        y: {
-          id: "y-status",
-          title: "Status",
-          buckets: [
-            { id: "s-todo", title: "TODO", when: { status: "todo" } },
-            { id: "s-done", title: "Done", when: { status: "done" } },
-          ],
-        },
-        unmatched: "show",
-        multiMatch: "first",
-        showEmptyBuckets: true,
+      x: {
+        id: "x-tags",
+        title: "Tags",
+        buckets: [
+          { id: "b-work", title: "Work", when: { tags: ["#work"] } },
+          { id: "b-personal", title: "Personal", when: { tags: ["#personal"] } },
+        ],
       },
+      y: {
+        id: "y-status",
+        title: "Status",
+        buckets: [
+          { id: "s-todo", title: "TODO", when: { status: "todo" } },
+          { id: "s-done", title: "Done", when: { status: "done" } },
+        ],
+      },
+      unmatched: "show",
+      multiMatch: "first",
+      showEmptyBuckets: true,
     },
     1,
   );
@@ -1367,35 +1289,33 @@ test("M4: showEmptyBuckets=true — xAxis/yAxis buckets include all configured b
 test("M4: showEmptyBuckets=false — all cells empty → both axes have empty buckets", async () => {
   if (compileErr) throw compileErr;
 
-  const { applyViewProjection } = await import("../test/.compiled/projection.js");
+  const { projectMatrixArea } = await import("../test/.compiled/projection.js");
 
   const tasks = [
     effectiveTask({ id: "test.md:L1", title: "No match", tags: [], status: "todo", effectiveStatus: "todo" }),
   ];
 
-  const model = applyViewProjection(
+  const model = projectMatrixArea(
     tasks,
     {
       type: "matrix",
-      matrix: {
-        x: {
-          id: "x-tags",
-          title: "Tags",
-          buckets: [
-            { id: "b-work", title: "Work", when: { tags: ["#work"] } },
-          ],
-        },
-        y: {
-          id: "y-status",
-          title: "Status",
-          buckets: [
-            { id: "s-done", title: "Done", when: { status: "done" } },
-          ],
-        },
-        unmatched: "show",
-        multiMatch: "first",
-        showEmptyBuckets: false,
+      x: {
+        id: "x-tags",
+        title: "Tags",
+        buckets: [
+          { id: "b-work", title: "Work", when: { tags: ["#work"] } },
+        ],
       },
+      y: {
+        id: "y-status",
+        title: "Status",
+        buckets: [
+          { id: "s-done", title: "Done", when: { status: "done" } },
+        ],
+      },
+      unmatched: "show",
+      multiMatch: "first",
+      showEmptyBuckets: false,
     },
     1,
   );
@@ -1414,7 +1334,7 @@ test("M4: showEmptyBuckets=false — all cells empty → both axes have empty bu
 test("M4: showEmptyBuckets=false — mixed visibility: some rows visible, some columns hidden", async () => {
   if (compileErr) throw compileErr;
 
-  const { applyViewProjection } = await import("../test/.compiled/projection.js");
+  const { projectMatrixArea } = await import("../test/.compiled/projection.js");
 
   // Two tasks: one matches Work×TODO, one matches Personal×TODO
   // Work column has content, Personal also has content (via task L2)
@@ -1424,32 +1344,30 @@ test("M4: showEmptyBuckets=false — mixed visibility: some rows visible, some c
     effectiveTask({ id: "test.md:L2", title: "Personal todo", tags: ["#personal"], status: "todo", effectiveStatus: "todo" }),
   ];
 
-  const model = applyViewProjection(
+  const model = projectMatrixArea(
     tasks,
     {
       type: "matrix",
-      matrix: {
-        x: {
-          id: "x-tags",
-          title: "Tags",
-          buckets: [
-            { id: "b-work", title: "Work", when: { tags: ["#work"] } },
-            { id: "b-personal", title: "Personal", when: { tags: ["#personal"] } },
-            { id: "b-none", title: "None", when: { tags: ["#nonexistent"] } },
-          ],
-        },
-        y: {
-          id: "y-status",
-          title: "Status",
-          buckets: [
-            { id: "s-todo", title: "TODO", when: { status: "todo" } },
-            { id: "s-done", title: "Done", when: { status: "done" } },
-          ],
-        },
-        unmatched: "show",
-        multiMatch: "first",
-        showEmptyBuckets: false,
+      x: {
+        id: "x-tags",
+        title: "Tags",
+        buckets: [
+          { id: "b-work", title: "Work", when: { tags: ["#work"] } },
+          { id: "b-personal", title: "Personal", when: { tags: ["#personal"] } },
+          { id: "b-none", title: "None", when: { tags: ["#nonexistent"] } },
+        ],
       },
+      y: {
+        id: "y-status",
+        title: "Status",
+        buckets: [
+          { id: "s-todo", title: "TODO", when: { status: "todo" } },
+          { id: "s-done", title: "Done", when: { status: "done" } },
+        ],
+      },
+      unmatched: "show",
+      multiMatch: "first",
+      showEmptyBuckets: false,
     },
     1,
   );
@@ -1470,7 +1388,7 @@ test("M4: showEmptyBuckets=false — mixed visibility: some rows visible, some c
 test("M4: showEmptyBuckets=false — axis metadata unchanged when all cells have content", async () => {
   if (compileErr) throw compileErr;
 
-  const { applyViewProjection } = await import("../test/.compiled/projection.js");
+  const { projectMatrixArea } = await import("../test/.compiled/projection.js");
 
   // Every cell has at least one task — no filtering needed
   const tasks = [
@@ -1480,31 +1398,29 @@ test("M4: showEmptyBuckets=false — axis metadata unchanged when all cells have
     effectiveTask({ id: "test.md:L4", title: "Personal done", tags: ["#personal"], status: "done", effectiveStatus: "done" }),
   ];
 
-  const model = applyViewProjection(
+  const model = projectMatrixArea(
     tasks,
     {
       type: "matrix",
-      matrix: {
-        x: {
-          id: "x-tags",
-          title: "Tags",
-          buckets: [
-            { id: "b-work", title: "Work", when: { tags: ["#work"] } },
-            { id: "b-personal", title: "Personal", when: { tags: ["#personal"] } },
-          ],
-        },
-        y: {
-          id: "y-status",
-          title: "Status",
-          buckets: [
-            { id: "s-todo", title: "TODO", when: { status: "todo" } },
-            { id: "s-done", title: "Done", when: { status: "done" } },
-          ],
-        },
-        unmatched: "show",
-        multiMatch: "first",
-        showEmptyBuckets: false,
+      x: {
+        id: "x-tags",
+        title: "Tags",
+        buckets: [
+          { id: "b-work", title: "Work", when: { tags: ["#work"] } },
+          { id: "b-personal", title: "Personal", when: { tags: ["#personal"] } },
+        ],
       },
+      y: {
+        id: "y-status",
+        title: "Status",
+        buckets: [
+          { id: "s-todo", title: "TODO", when: { status: "todo" } },
+          { id: "s-done", title: "Done", when: { status: "done" } },
+        ],
+      },
+      unmatched: "show",
+      multiMatch: "first",
+      showEmptyBuckets: false,
     },
     1,
   );
@@ -1519,37 +1435,35 @@ test("M4: showEmptyBuckets=false — axis metadata unchanged when all cells have
 test("M4: showEmptyBuckets=false — unmatched and multiMatch=duplicate unaffected by axis filtering", async () => {
   if (compileErr) throw compileErr;
 
-  const { applyViewProjection } = await import("../test/.compiled/projection.js");
+  const { projectMatrixArea } = await import("../test/.compiled/projection.js");
 
   const tasks = [
     effectiveTask({ id: "test.md:L1", title: "Multi-tag", tags: ["#work", "#personal"], status: "todo", effectiveStatus: "todo" }),
     effectiveTask({ id: "test.md:L2", title: "Unmatched", tags: [], status: "todo", effectiveStatus: "todo" }),
   ];
 
-  const model = applyViewProjection(
+  const model = projectMatrixArea(
     tasks,
     {
       type: "matrix",
-      matrix: {
-        x: {
-          id: "x-tags",
-          title: "Tags",
-          buckets: [
-            { id: "b-work", title: "Work", when: { tags: ["#work"] } },
-            { id: "b-personal", title: "Personal", when: { tags: ["#personal"] } },
-          ],
-        },
-        y: {
-          id: "y-status",
-          title: "Status",
-          buckets: [
-            { id: "s-todo", title: "TODO", when: { status: "todo" } },
-          ],
-        },
-        unmatched: "show",
-        multiMatch: "duplicate",
-        showEmptyBuckets: false,
+      x: {
+        id: "x-tags",
+        title: "Tags",
+        buckets: [
+          { id: "b-work", title: "Work", when: { tags: ["#work"] } },
+          { id: "b-personal", title: "Personal", when: { tags: ["#personal"] } },
+        ],
       },
+      y: {
+        id: "y-status",
+        title: "Status",
+        buckets: [
+          { id: "s-todo", title: "TODO", when: { status: "todo" } },
+        ],
+      },
+      unmatched: "show",
+      multiMatch: "duplicate",
+      showEmptyBuckets: false,
     },
     1,
   );

@@ -10,7 +10,8 @@ import {
 } from "obsidian";
 import { ParsedTask, VIEW_TYPE_TASK_CENTER } from "./types";
 import { formatMinutes } from "./parser";
-import { TaskCenterApi, computeStats } from "./api";
+import { TaskCenterApi } from "./api";
+import { computeSummary, type SummaryResultItem } from "./query/summary";
 import {
   todayISO,
   fromISO,
@@ -45,10 +46,13 @@ import { taskMatchesTimeToken, timeTokenAppliesToField } from "./time-filter";
 import { deriveEffectiveTasks, countTopLevel, recomputeTopLevelInQuery } from "./task-tree";
 import type { EffectiveTask } from "./task-tree";
 import { applyQueryFilters } from "./query/filter";
-import { applyViewProjection } from "./query/projection";
+import { projectListArea, projectMatrixArea } from "./query/projection";
+import type { ListSectionModel, MatrixViewModel } from "./query/projection";
 import {
   applyQueryPresetFilters,
   builtinSavedViewId,
+  collectAreas,
+  findAreaByType,
   computeQueryPresetSnapshot,
   computeDeleteQueryPresetState,
   computeUndoQueryPresetState,
@@ -84,12 +88,19 @@ import type {
   QueryEditorSummaryDraftParams,
 } from "./saved-views";
 import type {
+  AreaConfig,
+  AreaType,
+  GridAreaConfig,
+  LayoutNode,
+  ListAreaConfig,
+  MatrixAreaConfig,
   QueryPreset,
   QueryPresetViewConfig,
   SavedViewStatus,
   QueryPresetSummaryMetric,
   TaskStatus,
 } from "./types";
+import { isStackNode } from "./types";
 import type { SavedViewTimeField, SavedViewTimeFilters } from "./types";
 import type TaskCenterPlugin from "./main";
 
@@ -599,31 +610,7 @@ export class TaskCenterView extends ItemView {
     if (this.tasks.length === 0) {
       this.renderOnboarding(body);
     } else {
-      switch (this.state.tab) {
-        case "today":
-          this.renderToday(body);
-          break;
-        case "week":
-          this.renderWeek(body);
-          this.renderUnscheduledPool(body);
-          break;
-        case "month":
-          this.renderMonth(body);
-          this.renderUnscheduledPool(body);
-          break;
-        case "matrix":
-          this.renderMatrix(body);
-          break;
-        case "completed":
-          this.renderCompleted(body);
-          break;
-        case "unscheduled":
-          this.renderUnscheduledBig(body);
-          break;
-        case "list":
-          this.renderList(body);
-          break;
-      }
+      this.renderViewLayout(body);
     }
 
     this.renderFooter(el);
@@ -1255,10 +1242,11 @@ export class TaskCenterView extends ItemView {
         parts.push(`${this.timeFieldLabel(field)}:${this.timeFilterLabel(field, val)}`);
       }
     }
-    // View type
+    // View type — 主内容 area 类型
     const active = this.activeSavedView();
-    if (active.view?.type && active.view.type !== "list") {
-      parts.push(active.view.type);
+    const primary = active.view ? this.primaryAreaType(active.view) : "list";
+    if (primary !== "list") {
+      parts.push(primary);
     }
 
     if (parts.length === 0) {
@@ -1449,8 +1437,7 @@ export class TaskCenterView extends ItemView {
     if (normalized.id === builtinSavedViewId("month")) return "month";
     if (normalized.id === builtinSavedViewId("completed")) return "completed";
     if (normalized.id === builtinSavedViewId("unscheduled")) return "unscheduled";
-    if (normalized.view?.type === "matrix") return "matrix";
-    return normalized.view?.type === "list" ? "list" : this.tabForSavedView(normalized, "list");
+    return this.tabForSavedView(normalized, "list");
   }
 
   private activateSavedViewById(id: string): void {
@@ -2321,7 +2308,7 @@ export class TaskCenterView extends ItemView {
         time: this.state.savedViewTime,
         status: this.state.savedViewStatus,
       },
-      view: { type: "list" },
+      view: { layout: { type: "list" } },
       summary: [],
     });
   }
@@ -2424,9 +2411,10 @@ export class TaskCenterView extends ItemView {
     const viewSection = parent.createDiv({ cls: "bt-query-editor-section" });
     viewSection.createDiv({ cls: "bt-query-editor-section-title", text: tr("savedViews.queryEditorView") });
     const viewCfg = this.currentQueryPresetViewConfig();
+    const currentType = this.primaryAreaType(viewCfg);
     const viewRow = viewSection.createDiv({ cls: "bt-query-editor-view-row" });
     viewRow.createSpan({ text: tr("savedViews.queryEditorViewType") + ":", cls: "bt-query-editor-view-label" });
-    const viewTypes: Array<{ value: string; label: string }> = [
+    const viewTypes: Array<{ value: AreaType; label: string }> = [
       { value: "list", label: tr("savedViews.viewList") },
       { value: "week", label: tr("savedViews.viewWeek") },
       { value: "month", label: tr("savedViews.viewMonth") },
@@ -2435,11 +2423,11 @@ export class TaskCenterView extends ItemView {
     for (const vt of viewTypes) {
       const btn = viewRow.createEl("button", {
         text: vt.label,
-        cls: "bt-query-editor-view-btn" + (viewCfg.type === vt.value ? " active" : ""),
+        cls: "bt-query-editor-view-btn" + (currentType === vt.value ? " active" : ""),
       });
       btn.addEventListener("click", () => {
         const current = this.currentQueryPresetViewConfig();
-        const next: QueryPresetViewConfig = { ...current, type: vt.value as QueryPresetViewConfig["type"] };
+        const next: QueryPresetViewConfig = { layout: this.buildLayoutForAreaType(vt.value, current) };
         // Update the draft
         const active = this.activeSavedView();
         const draft = this.currentQuerySnapshot(active);
@@ -3675,196 +3663,6 @@ export class TaskCenterView extends ItemView {
     });
   }
 
-  // ---------- Completed ----------
-
-  private renderCompleted(parent: HTMLElement) {
-    const filter = this.getTextFilter();
-    const effectiveTasks = this.getEffectiveTasks();
-    const completedAll = effectiveTasks.filter((t) => t.effectiveStatus === "done" && t.completed);
-    const completedFiltered = completedAll
-      .filter(filter)
-      .sort((a, b) => (b.completed! < a.completed! ? -1 : 1));
-    // Recompute top-level after query filtering.
-    const completed = recomputeTopLevelInQuery(completedFiltered);
-
-    const wrap = parent.createDiv({ cls: "bt-completed" });
-    wrap.dataset.view = "list";
-    if (completed.length === 0 && completedAll.length > 0 && this.hasActiveFilters()) {
-      this.renderFilterEmptyState(wrap);
-      return;
-    }
-
-    // US-303: 7-day estimate-accuracy headline + top-tag minutes preset.
-    // Mirrors the CLI `stats days=7` summary so the GUI user gets the same
-    // calibration signal an AI agent would. Implementation lives in
-    // `computeStats` (cli.ts) — view just renders the StatsResult.
-    // Uses effectiveTasks so inherited-done tasks are counted consistently
-    // with the rendered completed cards.
-    // see USER_STORIES.md
-    const stats = computeStats(effectiveTasks, { days: 7 });
-    if (stats.doneCount > 0) {
-      const header = wrap.createDiv({ cls: "bt-stats-header" });
-      const left = header.createDiv({ cls: "bt-stats-left" });
-      // task #43 (PM HOLD msg cbf0489c): Completed-tab stats header
-      // through tr() so a CN session reads "近 7 日 · 完成 N 条 / 准确率…"
-      // instead of the EN literals.
-      left.createSpan({
-        text: tr("stats.sevenDayDone", { n: stats.doneCount }),
-        cls: "bt-stats-period",
-      });
-      if (stats.ratio !== null) {
-        const delta = Math.round((stats.ratio - 1) * 100);
-        const sign = delta >= 0 ? "+" : "";
-        const cls =
-          stats.ratio >= 0.8 && stats.ratio <= 1.25
-            ? "bt-stats-ok"
-            : "bt-stats-off";
-        left.createSpan({
-          text: tr("stats.ratio", { ratio: stats.ratio.toFixed(2), sign, delta }),
-          cls: "bt-stats-ratio " + cls,
-        });
-        left.createSpan({
-          text: `${stats.sumActual}m / ${stats.sumEstimate}m`,
-          cls: "bt-stats-time",
-        });
-      }
-      const tagsRow = header.createDiv({ cls: "bt-stats-tags" });
-      for (const t of stats.byTag.slice(0, 4)) {
-        const chip = tagsRow.createDiv({ cls: "bt-stats-chip" });
-        chip.createSpan({ text: t.tag, cls: "bt-stats-chip-tag" });
-        chip.createSpan({ text: `${t.minutes}m`, cls: "bt-stats-chip-min" });
-      }
-    }
-
-
-    // Group by week
-    const weeks = new Map<string, ParsedTask[]>();
-    for (const t of completed) {
-      const weekKey = startOfWeek(t.completed!, this.plugin.settings.weekStartsOn);
-      if (!weeks.has(weekKey)) weeks.set(weekKey, []);
-      weeks.get(weekKey)!.push(t);
-    }
-    const weekKeys = Array.from(weeks.keys()).sort((a, b) => (a < b ? 1 : -1));
-
-    if (weekKeys.length === 0) {
-      wrap.createDiv({ text: tr("completed.empty"), cls: "bt-empty" });
-      return;
-    }
-
-    const currentWeek = startOfWeek(todayISO(), this.plugin.settings.weekStartsOn);
-    for (const wk of weekKeys) {
-      // US-304: history weeks default-collapsed, current week expanded —
-      // keeps the past from pushing this week below the fold. The user's
-      // explicit expand / collapse choice lives in collapsedWeeks (with an
-      // `EXPANDED:` marker for the inverse) and overrides the default.
-      // see USER_STORIES.md
-      const hasUserPreference =
-        this.state.collapsedWeeks.has(wk) || this.state.collapsedWeeks.has("EXPANDED:" + wk);
-      const collapsed = hasUserPreference
-        ? this.state.collapsedWeeks.has(wk)
-        : wk < currentWeek;
-      const group = wrap.createDiv({ cls: "bt-completed-week" + (collapsed ? " collapsed" : "") });
-      const items = weeks.get(wk)!;
-      const sumActual = items.reduce((s, t) => s + (t.actual ?? 0), 0);
-      const sumEst = items.reduce((s, t) => s + (t.estimate ?? 0), 0);
-      const accuracy = sumEst > 0 ? (sumActual / sumEst) : null;
-      const accLabel =
-        accuracy !== null
-          ? tr("completed.accuracy", { ratio: accuracy.toFixed(2), actual: sumActual, est: sumEst })
-          : tr("completed.total", { actual: sumActual });
-
-      const head = group.createDiv({ cls: "bt-completed-week-head" });
-      head.createSpan({ text: collapsed ? "▸" : "▾", cls: "bt-completed-toggle" });
-      head.createSpan({ text: tr("completed.weekOf", { date: wk }), cls: "bt-completed-week-label" });
-      head.createSpan({ text: tr("completed.tasks", { n: items.length }), cls: "bt-completed-count" });
-      head.createSpan({ text: accLabel, cls: "bt-completed-accuracy" });
-      head.addEventListener("click", () => {
-        const wasCollapsed = collapsed;
-        if (wasCollapsed) {
-          this.state.collapsedWeeks.delete(wk);
-          this.state.collapsedWeeks.add("EXPANDED:" + wk); // mark as user-chosen expanded
-        } else {
-          this.state.collapsedWeeks.delete("EXPANDED:" + wk);
-          this.state.collapsedWeeks.add(wk);
-        }
-        this.render();
-      });
-
-      if (!collapsed) {
-        const list = group.createDiv({ cls: "bt-completed-list" });
-        for (const t of items) {
-          const row = list.createDiv({ cls: "bt-completed-row" });
-          row.dataset.taskId = t.id;
-          row.createSpan({ text: `${t.completed}`, cls: "bt-completed-date" });
-          row.createSpan({ text: t.title, cls: "bt-completed-title" });
-          const meta = row.createSpan({ cls: "bt-completed-meta" });
-          if (t.estimate || t.actual) {
-            meta.setText(
-              `${t.actual ? formatMinutes(t.actual) : "—"} / ${t.estimate ? formatMinutes(t.estimate) : "—"}`,
-            );
-          }
-          row.addEventListener("click", () => {
-            void this.openSourceEditShell(t);
-          });
-        }
-      }
-    }
-  }
-
-  // ---------- Unscheduled ----------
-
-  // US-104: unscheduled pool sorted "what should I pick next" — deadline
-  // ascending first (nearest 📅 wins), tasks with no deadline fall to the
-  // end, and ties are broken by created date desc (newest on top). Same
-  // sort runs in `renderUnscheduledBig` below; if you change one, change
-  // both — they're the two surfaces that show the pool.
-  // see USER_STORIES.md
-  private renderUnscheduledPool(parent: HTMLElement) {
-    const filter = this.getTextFilter();
-    const effectiveTasks = this.getEffectiveTasks();
-    const unscheduledBase = effectiveTasks.filter(
-      (t) => !t.effectiveScheduled && t.effectiveStatus === "todo",
-    );
-    const unscheduledAll = unscheduledBase.filter(filter);
-    // Sort for triage: deadline ascending first (nearest deadline is urgent),
-    // tasks without deadline fall to the end; tie-break by created date desc
-    // (newer tasks first). Recompute top-level after query filtering.
-    const unscheduledRecomputed = recomputeTopLevelInQuery(unscheduledAll);
-    unscheduledRecomputed.sort((a, b) => {
-      if (a.effectiveDeadline && b.effectiveDeadline) return a.effectiveDeadline.localeCompare(b.effectiveDeadline);
-      if (a.effectiveDeadline) return -1;
-      if (b.effectiveDeadline) return 1;
-      if (a.effectiveCreated && b.effectiveCreated) return b.effectiveCreated.localeCompare(a.effectiveCreated);
-      if (a.effectiveCreated) return -1;
-      if (b.effectiveCreated) return 1;
-      return 0;
-    });
-    const unscheduled = unscheduledRecomputed.filter((t) => t.isTopLevelInQuery);
-    if (unscheduled.length === 0 && !this.state.showUnscheduledPool) return;
-
-    const wrap = parent.createDiv({ cls: "bt-pool-wrap" });
-
-    const section = wrap.createDiv({ cls: "bt-unscheduled-pool" });
-    section.dataset.dropZone = "unscheduled-tray";
-    this.makeDropZone(section, null);
-    const head = section.createDiv({ cls: "bt-unscheduled-head" });
-    head.createSpan({
-      text: `${tr("pool.unscheduled")}  (${unscheduled.length})`,
-      cls: "bt-unscheduled-label",
-    });
-    head.createSpan({
-      text: tr("pool.hint"),
-      cls: "bt-unscheduled-hint",
-    });
-
-    const list = section.createDiv({ cls: "bt-unscheduled-list" });
-    for (const t of unscheduled) {
-      this.renderCard(list, t);
-    }
-
-    this.renderTrashZone(wrap);
-  }
-
   // US-123: bottom abandon target — dragging a card here marks it
   // `[-] ❌ today` (abandoned), and by US-124 cascades to its `todo`
   // descendants while preserving already-done children as history.
@@ -3943,149 +3741,6 @@ export class TaskCenterView extends ItemView {
     });
   }
 
-  // US-720 (task #63): today execution view.
-  //
-  // Single question this view answers: "what should I do today?". Three
-  // capped groups — overdue, scheduled-for-today, and one recommendation
-  // pulled from the inbox/unscheduled. Each card carries the three minimal
-  // inline actions (done / reschedule-to-tomorrow / drop); clicking the
-  // card opens the US-168 source edit shell. The
-  // view intentionally does NOT mirror the full board: per-group cap is 3
-  // so the first screen stays scannable.
-  //
-  // DOM contract (frozen as test fixtures in test/e2e/specs/today-view.e2e.ts):
-  //   [data-view="today"]                    container
-  //   [data-today-group="overdue"]            section
-  //   [data-today-group="today"]              section
-  //   [data-today-group="unscheduled-rec"]    section
-  //   [data-today-empty]                      empty-state element
-  //   [data-action="reschedule-tomorrow"]     per-card primary action
-  // see USER_STORIES.md
-  private renderToday(parent: HTMLElement) {
-    const wrap = parent.createDiv({ cls: "bt-today" });
-    wrap.dataset.view = "today";
-
-    const today = todayISO();
-    const tomorrow = addDays(today, 1);
-    const filter = this.getTextFilter();
-    const effectiveTasks = this.getEffectiveTasks();
-
-    // Apply text filter first, then recompute top-level so children
-    // whose parent was filtered out still appear as top-level cards.
-    let activeTodos = effectiveTasks.filter(
-      (t) => t.effectiveStatus === "todo" && t.title.trim() !== "",
-    );
-    activeTodos = recomputeTopLevelInQuery(activeTodos.filter(filter));
-
-    // Overdue: anything with an effective deadline in the past,
-    // regardless of schedule. Sort earliest-deadline first.
-    // Only top-level cards (children under visible parents are nested).
-    const overdue = activeTodos
-      .filter((t) => t.isTopLevelInQuery && t.effectiveDeadline && t.effectiveDeadline < today)
-      .sort((a, b) => (a.effectiveDeadline ?? "").localeCompare(b.effectiveDeadline ?? ""));
-
-    // Today: effectiveScheduled lands on today. Skip cards already in overdue.
-    const overdueIds = new Set(overdue.map((t) => t.id));
-    const todayList = activeTodos
-      .filter((t) => t.isTopLevelInQuery && t.effectiveScheduled === today && !overdueIds.has(t.id));
-
-    // Unscheduled recommendation: one freshest top-level todo with no
-    // effective scheduled or deadline.
-    const unscheduledRec = activeTodos
-      .filter((t) => t.isTopLevelInQuery && !t.effectiveScheduled && !t.effectiveDeadline)
-      .sort((a, b) => (b.effectiveCreated ?? "").localeCompare(a.effectiveCreated ?? ""))
-      .slice(0, 1);
-
-    const PER_GROUP_CAP = 3;
-
-    const isAllEmpty =
-      overdue.length === 0 && todayList.length === 0 && unscheduledRec.length === 0;
-    if (isAllEmpty) {
-      const empty = wrap.createDiv({ cls: "bt-today-empty" });
-      empty.dataset.todayEmpty = "true";
-      empty.setText(tr("today.empty"));
-      return;
-    }
-
-    this.renderTodayGroup(wrap, "overdue", tr("today.groupOverdue"), overdue.slice(0, PER_GROUP_CAP), tomorrow);
-    this.renderTodayGroup(wrap, "today", tr("today.groupToday"), todayList.slice(0, PER_GROUP_CAP), tomorrow);
-    this.renderTodayGroup(wrap, "unscheduled-rec", tr("today.groupRec"), unscheduledRec, tomorrow);
-  }
-
-  private renderTodayGroup(
-    parent: HTMLElement,
-    key: "overdue" | "today" | "unscheduled-rec",
-    label: string,
-    list: ParsedTask[],
-    tomorrow: string,
-  ) {
-    const section = parent.createDiv({ cls: `bt-today-group bt-today-group-${key}` });
-    section.dataset.todayGroup = key;
-    const head = section.createDiv({ cls: "bt-today-group-head" });
-    head.createSpan({ text: label, cls: "bt-today-group-label" });
-    if (list.length > 0) {
-      head.createSpan({ text: String(list.length), cls: "bt-today-group-count" });
-    }
-    if (list.length === 0) {
-      section.createDiv({ cls: "bt-today-group-empty", text: tr("today.groupEmpty") });
-      return;
-    }
-    for (const t of list) this.renderTodayCard(section, t, tomorrow);
-  }
-
-  private renderTodayCard(parent: HTMLElement, t: ParsedTask, tomorrow: string) {
-    const card = parent.createDiv({ cls: "bt-today-card" });
-    card.dataset.taskId = t.id;
-    if (this.state.selectedTaskId === t.id) card.addClass("selected");
-
-    const main = card.createDiv({ cls: "bt-today-card-main" });
-    main.createDiv({ cls: "bt-today-card-title", text: t.title });
-    this.renderTaskTags(main, t.tags, "bt-today-card-tags");
-    const meta = main.createDiv({ cls: "bt-today-card-meta" });
-    const metaParts: string[] = [];
-    metaParts.push(t.path);
-    if (t.scheduled) metaParts.push(`⏳ ${t.scheduled}`);
-    if (t.deadline) metaParts.push(`📅 ${t.deadline}`);
-    if (typeof t.estimate === "number") metaParts.push(`⏱ ${formatMinutes(t.estimate)}`);
-    meta.setText(metaParts.join(" · "));
-
-    const actions = card.createDiv({ cls: "bt-today-card-actions" });
-    const mkBtn = (
-      text: string,
-      action: "done" | "reschedule-tomorrow" | "drop",
-      handler: () => void | Promise<void>,
-    ) => {
-      const btn = actions.createEl("button", { text, cls: `bt-today-action bt-today-action-${action}` });
-      btn.dataset.action = action;
-      btn.addEventListener("click", (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        Promise.resolve(handler()).catch((err) =>
-          console.warn("[task-center US-720] action failed:", err),
-        );
-      });
-      return btn;
-    };
-
-    mkBtn(tr("today.actionDone"), "done", async () => {
-      await this.api.done(t.id);
-      await this.refreshAfterAction();
-    });
-    mkBtn(tr("today.actionReschedule"), "reschedule-tomorrow", async () => {
-      await this.api.schedule(t.id, tomorrow);
-      await this.refreshAfterAction();
-    });
-    mkBtn(tr("today.actionDrop"), "drop", async () => {
-      await this.api.drop(t.id);
-      await this.refreshAfterAction();
-    });
-
-    card.addEventListener("click", (e) => {
-      e.stopPropagation();
-      void this.openSourceEditShell(t);
-    });
-  }
-
   /**
    * Matrix view rendering (US-103 / UX §6.5).
    *
@@ -4097,17 +3752,8 @@ export class TaskCenterView extends ItemView {
    * Uses the unified projection pipeline (EffectiveTask → filters → projection)
    * as required by VAL-CORE-008 and ARCHITECTURE.md §4.3.
    */
-  private renderMatrix(parent: HTMLElement): void {
+  private renderMatrix(parent: HTMLElement, mx: MatrixAreaConfig): void {
     const active = this.activeSavedView();
-    const view = active.view;
-    const mx = view?.matrix;
-    if (!mx) {
-      parent.createDiv({
-        text: tr("matrix.noConfig"),
-        cls: "bt-empty",
-      });
-      return;
-    }
 
     // ── Projection pipeline ──
     const effectiveTasks = deriveEffectiveTasks(this.tasks);
@@ -4115,12 +3761,7 @@ export class TaskCenterView extends ItemView {
     const filtered = Object.keys(active.filters).length > 0
       ? applyQueryFilters(effectiveTasks, active.filters, weekStartsOn)
       : effectiveTasks;
-    const viewModel = applyViewProjection(filtered, view, weekStartsOn, this.state.anchorISO);
-
-    if (viewModel.type !== "matrix") {
-      parent.createDiv({ text: tr("matrix.noConfig"), cls: "bt-empty" });
-      return;
-    }
+    const viewModel: MatrixViewModel = projectMatrixArea(filtered, mx, weekStartsOn);
 
     const wrapper = parent.createDiv({ cls: "bt-matrix" });
     wrapper.dataset.view = "matrix";
@@ -4252,139 +3893,176 @@ export class TaskCenterView extends ItemView {
     }
   }
 
-  private renderList(parent: HTMLElement): void {
+  // ── View = area 布局树（ARCHITECTURE.md §1.3 / §4.3）──
+  // 遍历 active view 的 layout：row / col 容器递归排列，叶子 area 派发到
+  // 对应组件。没有 today / completed / unscheduled 专属渲染分支。
+  private renderViewLayout(parent: HTMLElement): void {
     const active = this.activeSavedView();
+    this.renderSummaryArea(parent, active);
+    const layout: LayoutNode = active.view?.layout ?? { type: "list" };
+    const root = parent.createDiv({ cls: "bt-view-root" });
+    this.renderLayoutNode(root, layout);
+  }
+
+  // 通用 summary 区：顶层 summary 指标在标准位置渲染，对任何 view 都一样。
+  // 取代过去 completed 视图里硬编码的统计面板。（US-303 / ARCHITECTURE §4.4）
+  private renderSummaryArea(parent: HTMLElement, active: QueryPreset): void {
+    const metrics = active.summary ?? [];
+    if (metrics.length === 0) return;
+    // Count over the same top-level cards the view shows, so summary count
+    // matches the tab badge / footer (not double-counting nested subtasks).
+    const filtered = recomputeTopLevelInQuery(this.getEffectiveTasks().filter(this.getTextFilter()))
+      .filter((t) => t.isTopLevelInQuery);
+    const items = computeSummary(filtered, metrics);
+    if (items.length === 0) return;
+    const bar = parent.createDiv({ cls: "bt-summary-bar" });
+    bar.dataset.summary = "true";
+    for (const item of items) {
+      const chip = bar.createDiv({ cls: `bt-summary-chip bt-summary-${item.type}` });
+      chip.createSpan({ text: this.summaryChipLabel(item), cls: "bt-summary-chip-text" });
+    }
+  }
+
+  private summaryChipLabel(item: SummaryResultItem): string {
+    switch (item.type) {
+      case "count":
+        return `${tr("savedViews.summaryMetricCount")} ${item.value}`;
+      case "sum":
+        return `${item.field} ${item.formatted ?? `${item.value}m`}`;
+      case "ratio":
+        return `${item.numerator}/${item.denominator} ${item.formatted ?? `${item.value}%`}`;
+      case "top_n":
+        return `${item.by}: ${item.items.map((row) => `${row.key} ${row.count}`).join(" · ") || "—"}`;
+      case "group_by":
+        return `${item.by}: ${item.groups.map((row) => `${row.key} ${row.count}`).join(" · ") || "—"}`;
+    }
+  }
+
+  private renderLayoutNode(parent: HTMLElement, node: LayoutNode): void {
+    if (isStackNode(node)) {
+      const box = parent.createDiv({ cls: `bt-stack bt-stack-${node.dir}` });
+      if (node.weight) box.style.flexGrow = String(node.weight);
+      // If any area in a row has a (localized) header, mark the row so its
+      // header-less siblings (e.g. the drop zone) get a matching top offset
+      // and align with the titled area's content.
+      if (node.dir === "row") {
+        const hasTitledChild = node.children.some(
+          (c) => !isStackNode(c)
+            && (c.type === "list" || c.type === "grid")
+            && this.localizeBuiltinTitle(c.id, c.title) !== "",
+        );
+        if (hasTitledChild) box.addClass("bt-row-has-head");
+      }
+      for (const child of node.children) this.renderLayoutNode(box, child);
+      return;
+    }
+    const areaEl = parent.createDiv({ cls: `bt-area bt-area-${node.type}` });
+    if (node.weight) areaEl.style.flexGrow = String(node.weight);
+    switch (node.type) {
+      case "list":
+        this.renderListArea(areaEl, node, false);
+        break;
+      case "grid":
+        this.renderListArea(areaEl, node, true);
+        break;
+      case "week":
+        this.renderWeek(areaEl);
+        break;
+      case "month":
+        this.renderMonth(areaEl);
+        break;
+      case "matrix":
+        this.renderMatrix(areaEl, node);
+        break;
+      case "drop":
+        this.renderTrashZone(areaEl);
+        break;
+    }
+  }
+
+  // list area：today / TODO / completed / unscheduled / 周月 tray 都走这里。
+  // area.when 在已应用的 preset filters 之上再收窄；sections 内部再分组。
+  // area.onDrop 把列表区变成放置目标（tray = 拖入清空 ⏳）。
+  // Builtin section / area ids → i18n keys. Localized at render so the title
+  // follows the UI locale even for presets persisted with English defaults.
+  // Unknown ids (user-created) fall back to the verbatim stored title.
+  private static readonly BUILTIN_TITLE_KEYS: Record<string, string> = {
+    "overdue": "today.groupOverdue",
+    "today": "today.groupToday",
+    "unscheduled-rec": "today.groupRec",
+    "unscheduled-tray": "pool.unscheduled",
+  };
+
+  private localizeBuiltinTitle(id: string | undefined, fallback: string | undefined): string {
+    if (id) {
+      const key = TaskCenterView.BUILTIN_TITLE_KEYS[id];
+      if (key) return tr(key as Parameters<typeof tr>[0]);
+    }
+    return fallback ?? "";
+  }
+
+  private renderListArea(parent: HTMLElement, area: ListAreaConfig | GridAreaConfig, grid: boolean): void {
     const filter = this.getTextFilter();
-    const effectiveTasks = this.getEffectiveTasks();
+    const filtered = recomputeTopLevelInQuery(this.getEffectiveTasks().filter(filter));
+    const model = projectListArea(filtered, area, this.plugin.settings.weekStartsOn);
+    const cardsCls = grid ? "bt-list-grid" : "";
 
-    // Apply text filter, then recompute top-level so children whose
-    // parent was filtered out appear as top-level cards.
-    const filtered = recomputeTopLevelInQuery(effectiveTasks.filter(filter));
+    if (area.onDrop?.clearScheduled) {
+      parent.dataset.dropZone = "unscheduled-tray";
+      this.makeDropZone(parent, null);
+    } else if (area.onDrop?.setScheduled) {
+      this.makeDropZone(parent, area.onDrop.setScheduled);
+    }
 
-    // Use QueryPreset view projection for list sections when configured.
-    const viewConfig = active.view ?? { type: "list" as const };
-    const viewModel = applyViewProjection(
-      filtered,
-      viewConfig,
-      this.plugin.settings.weekStartsOn,
-      this.state.anchorISO,
-    );
+    const areaTitle = this.localizeBuiltinTitle(area.id, area.title);
+    if (areaTitle) {
+      parent.addClass("bt-has-head");
+      const total = model.sections.reduce((s, sec) => s + sec.tasks.filter((t) => t.isTopLevelInQuery).length, 0);
+      parent.createDiv({ cls: "bt-list-area-head", text: `${areaTitle} (${total})` });
+    }
 
-    if (viewModel.type === "list" && viewModel.sections.length > 0) {
-      // Render each section with its own header and tasks.
+    if (model.grouped) {
       let totalVisible = 0;
-      for (const section of viewModel.sections) {
+      for (const section of model.sections) {
         const sectionTasks = section.tasks.filter((t) => t.isTopLevelInQuery);
         totalVisible += sectionTasks.length;
         const sectionWrap = parent.createDiv({ cls: "bt-list-section" });
         const sectionHead = sectionWrap.createDiv({ cls: "bt-list-section-head" });
         sectionHead.createSpan({
-          text: `${section.title} (${sectionTasks.length})`,
+          text: `${this.localizeBuiltinTitle(section.id, section.title)} (${sectionTasks.length})`,
           cls: "bt-list-section-title",
         });
-        const sectionBody = sectionWrap.createDiv({ cls: "bt-list-section-body" });
-        for (const task of sectionTasks) {
-          this.renderCard(sectionBody, task);
+        const sectionBody = sectionWrap.createDiv({ cls: `bt-list-section-body ${cardsCls}`.trim() });
+        if (sectionTasks.length === 0) {
+          sectionBody.createDiv({ cls: "bt-list-section-empty", text: section.emptyText ?? tr("today.groupEmpty") });
+        } else {
+          for (const task of sectionTasks) this.renderCard(sectionBody, task);
         }
       }
-      if (totalVisible === 0) {
+      if (totalVisible === 0 && !area.onDrop) {
         if (this.tasks.length > 0) this.renderFilterEmptyState(parent);
         else parent.createDiv({ text: tr("filters.empty"), cls: "bt-empty" });
       }
       return;
     }
 
-    // Fallback: flat list (no configured sections, or non-list view type).
-    const list = filtered.filter((t) => t.isTopLevelInQuery);
-    this.sortListTasks(list, active.view?.orderBy);
+    const list = model.sections[0]?.tasks.filter((t) => t.isTopLevelInQuery) ?? [];
+    const wrap = parent.createDiv({ cls: `bt-list-view ${cardsCls}`.trim() });
+    wrap.dataset.view = grid ? "grid" : "list";
     if (list.length === 0) {
-      if (this.tasks.length > 0) this.renderFilterEmptyState(parent);
-      else parent.createDiv({ text: tr("filters.empty"), cls: "bt-empty" });
+      // drop-only / tray 区为空时不抢占空状态。
+      if (area.onDrop) return;
+      if (this.tasks.length > 0) this.renderFilterEmptyState(wrap);
+      else wrap.createDiv({ text: tr("filters.empty"), cls: "bt-empty" });
       return;
     }
-    const wrap = parent.createDiv({ cls: "bt-list-view" });
-    wrap.dataset.view = "list";
     for (const task of list) this.renderCard(wrap, task);
-  }
-
-  private sortListTasks(tasks: EffectiveTask[], orderBy: string[] | undefined): void {
-    const order = orderBy ?? [];
-    tasks.sort((left, right) => {
-      for (const rule of order) {
-        if (rule === "completed_desc") {
-          const cmp = (right.completed ?? "").localeCompare(left.completed ?? "");
-          if (cmp !== 0) return cmp;
-          continue;
-        }
-        if (rule === "created_desc") {
-          const cmp = (right.created ?? "").localeCompare(left.created ?? "");
-          if (cmp !== 0) return cmp;
-          continue;
-        }
-        if (rule === "deadline_risk") {
-          const leftDeadline = left.effectiveDeadline ?? "9999-99-99";
-          const rightDeadline = right.effectiveDeadline ?? "9999-99-99";
-          const cmp = leftDeadline.localeCompare(rightDeadline);
-          if (cmp !== 0) return cmp;
-          continue;
-        }
-      }
-      const scheduledCmp = (left.effectiveScheduled ?? "9999-99-99").localeCompare(right.effectiveScheduled ?? "9999-99-99");
-      if (scheduledCmp !== 0) return scheduledCmp;
-      const deadlineCmp = (left.effectiveDeadline ?? "9999-99-99").localeCompare(right.effectiveDeadline ?? "9999-99-99");
-      if (deadlineCmp !== 0) return deadlineCmp;
-      const createdCmp = (right.effectiveCreated ?? "").localeCompare(left.effectiveCreated ?? "");
-      if (createdCmp !== 0) return createdCmp;
-      return left.title.localeCompare(right.title);
-    });
   }
 
   private async refreshAfterAction(): Promise<void> {
     await this.plugin.cache.forFlush();
     await this.reloadTasks();
     this.render();
-  }
-
-  private renderUnscheduledBig(parent: HTMLElement) {
-    const filter = this.getTextFilter();
-    const effectiveTasks = this.getEffectiveTasks();
-    const unscheduledBase = effectiveTasks.filter(
-      (t) => !t.effectiveScheduled && t.effectiveStatus === "todo",
-    );
-    const unscheduledAll = unscheduledBase.filter(filter);
-    // Recompute top-level after query filtering.
-    const unscheduledRecomputed = recomputeTopLevelInQuery(unscheduledAll);
-    unscheduledRecomputed.sort((a, b) => {
-      if (a.effectiveDeadline && b.effectiveDeadline) return a.effectiveDeadline.localeCompare(b.effectiveDeadline);
-      if (a.effectiveDeadline) return -1;
-      if (b.effectiveDeadline) return 1;
-      if (a.effectiveCreated && b.effectiveCreated) return b.effectiveCreated.localeCompare(a.effectiveCreated);
-      if (a.effectiveCreated) return -1;
-      if (b.effectiveCreated) return 1;
-      return 0;
-    });
-    const unscheduled = unscheduledRecomputed.filter((t) => t.isTopLevelInQuery);
-
-    const wrap = parent.createDiv({ cls: "bt-unscheduled-big" });
-    wrap.dataset.view = "list";
-    const head = wrap.createDiv({ cls: "bt-unscheduled-big-head" });
-    head.createSpan({
-      text: `${tr("pool.unscheduled")} (${unscheduled.length})`,
-      cls: "bt-unscheduled-big-label",
-    });
-    const hint = head.createSpan({ cls: "bt-unscheduled-big-hint" });
-    // UX-mobile §10: shortcut hint is desktop-only.
-    hint.setText(tr(Platform.isMobile ? "unscheduled.mobileHint" : "unscheduled.hint"));
-
-    const grid = wrap.createDiv({ cls: "bt-unscheduled-grid" });
-    const col = grid.createDiv({ cls: "bt-unscheduled-col" });
-    if (unscheduled.length === 0 && unscheduledBase.length > 0 && this.hasActiveFilters()) {
-      this.renderFilterEmptyState(col);
-    } else {
-      for (const t of unscheduled) this.renderCard(col, t);
-    }
-
-    this.renderTrashZone(wrap);
   }
 
   // ---------- Card ----------
@@ -5156,7 +4834,7 @@ export class TaskCenterView extends ItemView {
       builtin: true,
       hidden: false,
       filters: { status: ["todo"] },
-      view: { type: "list", preset: "today" },
+      view: { layout: { type: "list" } },
       summary: [],
     });
   }
@@ -5209,18 +4887,11 @@ export class TaskCenterView extends ItemView {
   private defaultViewConfigForLegacyTab(): QueryPresetViewConfig {
     switch (this.state.tab) {
       case "week":
-        return { type: "week" };
+        return { layout: { type: "week" } };
       case "month":
-        return { type: "month" };
-      case "list":
-        return { type: "list" };
-      case "completed":
-        return { type: "list", preset: "completed", orderBy: ["completed_desc"] };
-      case "unscheduled":
-        return { type: "list", preset: "unscheduled", orderBy: ["deadline_risk", "created_desc"] };
-      case "today":
+        return { layout: { type: "month" } };
       default:
-        return { type: "list", preset: "today" };
+        return { layout: { type: "list" } };
     }
   }
 
@@ -5255,16 +4926,42 @@ export class TaskCenterView extends ItemView {
     return [];
   }
 
+  // state.tab 现在只是「主内容 area 类型」的粗标签，用于日期导航与
+  // lastTab 记忆。list 家族（today/todo/completed/unscheduled/dropped）
+  // 统一映射成 "list"。
   private tabForSavedView(view: QueryPreset, fallback: TabKey): TabKey {
     const config = normalizeQueryPreset(view).view;
-    if (config?.type === "week") return "week";
-    if (config?.type === "month") return "month";
-    if (config?.type === "matrix") return "matrix";
-    if (config?.preset === "completed") return "completed";
-    if (config?.preset === "unscheduled") return "unscheduled";
-    if (config?.preset === "today") return "today";
-    if (config?.type === "list") return "list";
+    const type = this.primaryAreaType(config);
+    if (type === "week") return "week";
+    if (type === "month") return "month";
+    if (type === "matrix") return "matrix";
+    if (type === "list") return "list";
     return fallback;
+  }
+
+  // 布局里第一个非 drop area 的类型（找不到则第一个 area，再退化 list）。
+  private primaryAreaType(view: QueryPresetViewConfig): AreaType {
+    const areas = collectAreas(view.layout);
+    const content = areas.find((a) => a.type !== "drop");
+    return (content ?? areas[0])?.type ?? "list";
+  }
+
+  // GUI view-type 切换：把布局换成「单个该类型 area」。matrix 复用已有
+  // 配置，没有则给一个空脚手架供用户配置 bucket。
+  private buildLayoutForAreaType(type: AreaType, current: QueryPresetViewConfig): LayoutNode {
+    if (type === "matrix") {
+      const existing = findAreaByType(current.layout, "matrix");
+      if (existing) return existing;
+      return {
+        type: "matrix",
+        x: { id: "x", title: "X", buckets: [] },
+        y: { id: "y", title: "Y", buckets: [] },
+        unmatched: "show",
+        multiMatch: "first",
+        showEmptyBuckets: true,
+      };
+    }
+    return { type } as AreaConfig;
   }
 
   private refreshFilterControls(rerenderControls?: FilterControlsRerender): void {

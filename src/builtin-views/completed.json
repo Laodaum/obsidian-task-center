@@ -7,9 +7,10 @@
     "status": ["done"]
   },
   "view": {
-    "type": "list",
-    "preset": "completed",
-    "orderBy": ["completed_desc"]
+    "layout": {
+      "type": "list",
+      "orderBy": ["completed_desc"]
+    }
   },
   "summary": [
     { "type": "count" },

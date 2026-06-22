@@ -1,4 +1,10 @@
 import type {
+  AreaBase,
+  AreaConfig,
+  DropEffect,
+  GridAreaConfig,
+  LayoutNode,
+  ListAreaConfig,
   QueryPreset,
   QueryPresetFilters,
   QueryPresetMatrixBucket,
@@ -11,10 +17,10 @@ import type {
   QuerySection,
   QueryTray,
   QueryViewType,
-  SavedViewConfig,
   SavedViewStatus,
   SavedViewSummaryMetric,
   SavedViewTimeFilters,
+  StackConfig,
   TaskStatus,
 } from "./types";
 import { BUILTIN_VIEW_DATA } from "./builtin-views/index";
@@ -48,7 +54,7 @@ export interface SavedViewFilters {
   tag: string;
   time: SavedViewTimeFilters;
   status: SavedViewStatus;
-  view?: SavedViewConfig;
+  view?: QueryPresetViewConfig;
   summary?: SavedViewSummaryMetric[];
 }
 
@@ -115,7 +121,9 @@ function defaultSavedViewId(): string {
 
 function seededBuiltinQueryPreset(tab: BuiltinQueryTab, name: string): QueryPreset {
   const data = BUILTIN_VIEW_DATA[tab] ?? BUILTIN_VIEW_DATA.unscheduled;
-  return normalizeQueryPreset({ ...data, name });
+  // JSON imports infer wide literal types; normalizeQueryPreset validates the
+  // shape at runtime, so cast through unknown.
+  return normalizeQueryPreset({ ...data, name } as unknown as QueryPreset);
 }
 
 function normalizeDslTags(value: unknown): string[] {
@@ -200,25 +208,130 @@ function normalizeQueryPresetFilters(raw: unknown): QueryPresetFilters {
   return out;
 }
 
+// View 现在是一棵 area 布局树。normalize 同时接受新形状（{layout}）和
+// 旧形状（{type, preset, sections, tray, matrix, orderBy}），旧形状一次性
+// 迁移成 { layout }。preset 字段被丢弃。
 function normalizeQueryPresetView(raw: unknown): QueryPresetViewConfig {
   const cfg = isRecord(raw) ? raw : {};
-  const type = normalizeQueryViewType(typeof cfg.type === "string" ? cfg.type : undefined);
-  const preset = typeof cfg.preset === "string" ? cfg.preset.trim() : undefined;
+  if ("layout" in cfg) {
+    return { layout: normalizeLayoutNode(cfg.layout) };
+  }
+  return { layout: migrateLegacyViewToLayout(cfg) };
+}
+
+function normalizeLayoutNode(raw: unknown): LayoutNode {
+  if (isRecord(raw) && typeof raw.dir === "string" && Array.isArray(raw.children)) {
+    const dir = raw.dir === "row" ? "row" : "col";
+    const children = raw.children
+      .map((c) => normalizeLayoutNode(c))
+      .filter((c): c is LayoutNode => c !== null);
+    const out: StackConfig = { dir, children: children.length > 0 ? children : [{ type: "list" }] };
+    const weight = typeof raw.weight === "number" && raw.weight > 0 ? raw.weight : undefined;
+    if (weight !== undefined) out.weight = weight;
+    return out;
+  }
+  return normalizeArea(raw);
+}
+
+function normalizeDropEffect(raw: unknown): DropEffect | undefined {
+  if (!isRecord(raw)) return undefined;
+  const out: DropEffect = {};
+  if (raw.setStatus === "dropped") out.setStatus = "dropped";
+  if (typeof raw.setScheduled === "string" && raw.setScheduled.trim()) out.setScheduled = raw.setScheduled.trim();
+  if (raw.clearScheduled === true) out.clearScheduled = true;
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+function normalizeArea(raw: unknown): AreaConfig {
+  const cfg = isRecord(raw) ? raw : {};
+  const type = typeof cfg.type === "string" ? cfg.type : "list";
+  const id = typeof cfg.id === "string" && cfg.id.trim() ? cfg.id.trim() : undefined;
+  const title = typeof cfg.title === "string" && cfg.title.trim() ? cfg.title.trim() : undefined;
+  const weight = typeof cfg.weight === "number" && cfg.weight > 0 ? cfg.weight : undefined;
+  const onDrop = normalizeDropEffect(cfg.onDrop);
+  const base: AreaBase = {};
+  if (id) base.id = id;
+  if (title) base.title = title;
+  if (weight !== undefined) base.weight = weight;
+  if (onDrop) base.onDrop = onDrop;
+
   const orderBy = Array.isArray(cfg.orderBy)
     ? cfg.orderBy.map((v) => (typeof v === "string" ? v.trim() : "")).filter(Boolean)
     : undefined;
-  const matrix = isRecord(cfg.matrix) ? normalizeMatrixConfig(cfg.matrix) : undefined;
-  const sections = Array.isArray(cfg.sections)
-    ? cfg.sections.map(normalizeQuerySection).filter((s): s is QuerySection => s !== null)
+
+  switch (type) {
+    case "week":
+      return { ...base, type: "week", ...(cfg.firstDayOfWeek === "monday" || cfg.firstDayOfWeek === "sunday" ? { firstDayOfWeek: cfg.firstDayOfWeek } : {}) };
+    case "month":
+      return {
+        ...base,
+        type: "month",
+        ...(cfg.firstDayOfWeek === "monday" || cfg.firstDayOfWeek === "sunday" ? { firstDayOfWeek: cfg.firstDayOfWeek } : {}),
+        ...(cfg.density === "compact" || cfg.density === "cards" ? { density: cfg.density } : {}),
+      };
+    case "matrix": {
+      const matrix = normalizeMatrixConfig(cfg);
+      if (matrix) return { ...base, type: "matrix", ...matrix };
+      return { ...base, type: "list" }; // matrix 配置无效 → 退化成空 list
+    }
+    case "drop":
+      return { ...base, type: "drop", onDrop: onDrop ?? { setStatus: "dropped" } };
+    case "grid":
+    case "list":
+    default: {
+      const when = isRecord(cfg.when) ? normalizeQueryPresetFilters(cfg.when) : undefined;
+      const sections = Array.isArray(cfg.sections)
+        ? cfg.sections.map(normalizeQuerySection).filter((s): s is QuerySection => s !== null)
+        : undefined;
+      const limit = typeof cfg.limit === "number" && cfg.limit > 0 ? cfg.limit : undefined;
+      const emptyText = typeof cfg.emptyText === "string" && cfg.emptyText.trim() ? cfg.emptyText.trim() : undefined;
+      const out: ListAreaConfig | GridAreaConfig = { ...base, type: type === "grid" ? "grid" : "list" };
+      if (when && Object.keys(when).length > 0) out.when = when;
+      if (sections && sections.length > 0) out.sections = sections;
+      if (orderBy && orderBy.length > 0) out.orderBy = orderBy;
+      if (limit !== undefined) out.limit = limit;
+      if (emptyText) out.emptyText = emptyText;
+      return out;
+    }
+  }
+}
+
+// 旧形状 {type, preset, sections, tray, matrix, orderBy} → 布局树。
+function migrateLegacyViewToLayout(cfg: Record<string, unknown>): LayoutNode {
+  const type = normalizeQueryViewType(typeof cfg.type === "string" ? cfg.type : undefined);
+  const orderBy = Array.isArray(cfg.orderBy)
+    ? cfg.orderBy.map((v) => (typeof v === "string" ? v.trim() : "")).filter(Boolean)
     : undefined;
   const tray = isRecord(cfg.tray) ? normalizeQueryTray(cfg.tray) : undefined;
-  const out: QueryPresetViewConfig = { type };
-  if (preset) out.preset = preset;
-  if (orderBy && orderBy.length > 0) out.orderBy = orderBy;
-  if (sections && sections.length > 0) out.sections = sections;
-  if (tray) out.tray = tray;
-  if (matrix) out.matrix = matrix;
-  return out;
+
+  let base: AreaConfig;
+  if (type === "week") base = { type: "week" };
+  else if (type === "month") base = { type: "month" };
+  else if (type === "matrix") {
+    const matrix = isRecord(cfg.matrix) ? normalizeMatrixConfig(cfg.matrix) : undefined;
+    base = matrix ? { type: "matrix", ...matrix } : { type: "list" };
+  } else {
+    const sections = Array.isArray(cfg.sections)
+      ? cfg.sections.map(normalizeQuerySection).filter((s): s is QuerySection => s !== null)
+      : undefined;
+    const list: ListAreaConfig = { type: "list" };
+    if (sections && sections.length > 0) list.sections = sections;
+    if (orderBy && orderBy.length > 0) list.orderBy = orderBy;
+    base = list;
+  }
+
+  if (tray) {
+    const trayArea: ListAreaConfig = {
+      type: "list",
+      id: "unscheduled-tray",
+      title: tray.title,
+      when: tray.filters,
+      onDrop: { clearScheduled: true },
+    };
+    if (tray.orderBy && tray.orderBy.length > 0) trayArea.orderBy = tray.orderBy;
+    return { dir: "col", children: [base, trayArea] };
+  }
+  return base;
 }
 
 function normalizeQuerySection(raw: unknown): QuerySection | null {
@@ -279,6 +392,64 @@ function normalizeMatrixBucket(raw: Record<string, unknown>): QueryPresetMatrixB
   const title = typeof raw.title === "string" ? raw.title.trim() : "";
   const when: QueryPresetFilters = isRecord(raw.when) ? normalizeQueryPresetFilters(raw.when) : {};
   return { id, title: title || id, when };
+}
+
+// ── 布局树校验与遍历 ──
+
+const KNOWN_AREA_TYPES = ["list", "grid", "week", "month", "matrix", "drop"];
+
+function validateLayoutNode(raw: unknown, errors: QueryPresetValidationError[], path: string): void {
+  if (!isRecord(raw)) {
+    errors.push({ section: "view", code: "invalid_layout", message: `${path} 必须是对象。` });
+    return;
+  }
+  if ("dir" in raw || Array.isArray(raw.children)) {
+    if (raw.dir !== "row" && raw.dir !== "col") {
+      errors.push({ section: "view", code: "invalid_stack_dir", message: `${path}.dir 必须是 "row" 或 "col"。` });
+    }
+    if (!Array.isArray(raw.children) || raw.children.length === 0) {
+      errors.push({ section: "view", code: "invalid_stack_children", message: `${path}.children 必须是非空数组。` });
+    } else {
+      raw.children.forEach((c, i) => validateLayoutNode(c, errors, `${path}.children[${i}]`));
+    }
+    return;
+  }
+  // area 叶子
+  const type = raw.type;
+  if (typeof type !== "string" || !KNOWN_AREA_TYPES.includes(type)) {
+    errors.push({
+      section: "view",
+      code: "unknown_area_type",
+      message: `${path}.type 无效 "${String(type)}"，允许: ${KNOWN_AREA_TYPES.join(", ")}。`,
+    });
+    return;
+  }
+  if (type === "drop" && !isRecord(raw.onDrop)) {
+    errors.push({ section: "view", code: "drop_requires_on_drop", message: `${path} 的 drop area 必须有 onDrop。` });
+  }
+}
+
+/** 深度优先收集布局树里所有 area 叶子（顺序 = 渲染顺序）。 */
+export function collectAreas(layout: LayoutNode): AreaConfig[] {
+  if (isStackLayout(layout)) {
+    return layout.children.flatMap((c) => collectAreas(c));
+  }
+  return [layout];
+}
+
+function isStackLayout(node: LayoutNode): node is StackConfig {
+  return (node as StackConfig).dir !== undefined && Array.isArray((node as StackConfig).children);
+}
+
+/** 布局里第一个匹配类型的 area，找不到返回 null。 */
+export function findAreaByType<T extends AreaConfig["type"]>(
+  layout: LayoutNode,
+  type: T,
+): Extract<AreaConfig, { type: T }> | null {
+  for (const area of collectAreas(layout)) {
+    if (area.type === type) return area as Extract<AreaConfig, { type: T }>;
+  }
+  return null;
 }
 
 function normalizeQueryPresetSummary(
@@ -382,53 +553,24 @@ export function validateQueryPreset(raw: unknown): QueryPresetValidationResult {
     }
   }
 
-  // View section
+  // View section — 新形状是一棵 area 布局树（view.layout）；旧形状
+  // （view.type 等）仍可被接受并迁移，校验只对显式提供的字段把关。
   const view = raw.view;
   if (view !== undefined && !isRecord(view)) {
     errors.push({ section: "view", code: "invalid_view", message: "view 必须是对象。" });
   } else if (isRecord(view)) {
-    const viewType = view.type;
-    if (viewType !== undefined && typeof viewType !== "string") {
-      errors.push({
-        section: "view",
-        code: "invalid_view_type",
-        message: 'view.type 必须是 "list" | "week" | "month" | "matrix"。',
-      });
-    } else if (typeof viewType === "string" && !["list", "week", "month", "matrix"].includes(viewType)) {
-      errors.push({
-        section: "view",
-        code: "unknown_view_type",
-        message: `未知 view.type "${viewType}"，允许: list, week, month, matrix。`,
-      });
-    }
-    // Validate orderBy
-    if (view.orderBy !== undefined) {
-      if (!Array.isArray(view.orderBy)) {
+    if ("layout" in view) {
+      validateLayoutNode(view.layout, errors, "view.layout");
+    } else {
+      // 旧形状兜底：仍校验 type 合法，以便给出清晰错误。
+      const viewType = view.type;
+      if (typeof viewType === "string" && !["list", "week", "month", "matrix"].includes(viewType)) {
         errors.push({
           section: "view",
-          code: "invalid_order_by",
-          message: "view.orderBy 必须是字符串数组。",
+          code: "unknown_view_type",
+          message: `未知 view.type "${viewType}"，允许: list, week, month, matrix。`,
         });
-      } else {
-        for (let index = 0; index < view.orderBy.length; index++) {
-          if (typeof view.orderBy[index] !== "string") {
-            errors.push({
-              section: "view",
-              code: "invalid_order_by_item",
-              message: `view.orderBy[${index}] 必须是字符串。`,
-            });
-            break;
-          }
-        }
       }
-    }
-    // Validate preset
-    if (view.preset !== undefined && typeof view.preset !== "string") {
-      errors.push({
-        section: "view",
-        code: "invalid_preset",
-        message: "view.preset 必须是字符串。",
-      });
     }
   }
 
@@ -531,7 +673,7 @@ export function parseQueryDsl(
     builtin: booleanOrFallback(base.builtin, existing.builtin ?? false),
     hidden: booleanOrFallback(base.hidden, existing.hidden ?? false),
     filters: isRecord(base.filters) ? base.filters : {},
-    view: isRecord(base.view) ? base.view : { type: "list" },
+    view: isRecord(base.view) ? base.view : { layout: { type: "list" } },
     summary: Array.isArray(base.summary) ? base.summary : [],
   } as unknown as QueryPreset);
 }
@@ -560,13 +702,25 @@ export function ensureBuiltinQueryPresets(
   presets: readonly QueryPreset[],
   labels: Partial<Record<BuiltinQueryTab, string>> = {},
 ): QueryPreset[] {
-  const existing = new Map(presets.map((p) => [p.id, normalizeQueryPreset(p)]));
+  // 内置 view 的布局是出厂规范（含本地化所需的稳定 id），不作为用户就地
+  // 编辑面（自定义路径是「复制后修改」）。因此 builtin 的 view 始终用最新
+  // 出厂布局刷新，保证升级后布局结构、area id、本地化保持一致；用户对
+  // 名称 / 隐藏 / 排序 / filters / summary 的改动仍然保留。
+  const existingRaw = new Map(presets.map((p) => [p.id, p]));
   const out: QueryPreset[] = [];
   for (const tab of BUILTIN_QUERY_TABS) {
     const seeded = seededBuiltinQueryPreset(tab, labels[tab] ?? DEFAULT_BUILTIN_LABELS[tab]);
-    const current = existing.get(seeded.id);
-    out.push(normalizeQueryPreset(current ? { ...current, builtin: true } : seeded));
-    existing.delete(seeded.id);
+    const current = existingRaw.get(seeded.id);
+    if (current) {
+      out.push(normalizeQueryPreset({
+        ...current,
+        builtin: true,
+        view: seeded.view,
+      }));
+    } else {
+      out.push(normalizeQueryPreset(seeded));
+    }
+    existingRaw.delete(seeded.id);
   }
   for (const preset of presets) {
     if (isBuiltinSavedViewId(preset.id)) continue;
@@ -621,7 +775,7 @@ export function createQueryPreset(
       status: filters.status ?? "all",
       ...(filters.time && Object.keys(filters.time).length > 0 ? { time: normalizeTimeFilters(filters.time) } : {}),
     },
-    view: filters.view ?? { type: "list" },
+    view: filters.view ?? { layout: { type: "list" } },
     summary: filters.summary ?? [],
   });
 }
@@ -664,7 +818,7 @@ export function clearQueryPresetFilters(): AppliedSavedViewFilters {
     tag: "",
     time: {},
     status: "all",
-    view: { type: "list" },
+    view: { layout: { type: "list" } },
     summary: [],
   };
 }
@@ -809,7 +963,7 @@ export function queryPresetTagString(preset: QueryPreset): string {
 export function queryPresetTagsArray(preset: QueryPreset): string[] {
   const tags = normalizeQueryPreset(preset).filters.tags;
   if (Array.isArray(tags)) return tags;
-  if (typeof tags === "string") return parseSavedViewTags(tags);
+  if (typeof tags === "string") return normalizeDslTags(tags);
   return [];
 }
 

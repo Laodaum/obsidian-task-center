@@ -289,16 +289,11 @@ const EN = {
     "Enable Tasks or Dataview — task metadata may not render or query elsewhere",
   "dep.openSettings": "Click to open Obsidian settings",
 
-  // US-720 (task #63): today execution view — entry-point tab that
-  // answers "what should I do today?". Three groups + minimal actions.
+  // US-720: builtin "Today" list sections — localized at render by section id.
   "today.groupOverdue": "Overdue",
   "today.groupToday": "Today",
-  "today.groupRec": "Recommended",
+  "today.groupRec": "Unscheduled",
   "today.groupEmpty": "Nothing in this group.",
-  "today.empty": "Nothing to do today — enjoy the quiet.",
-  "today.actionDone": "✓ Done",
-  "today.actionReschedule": "↷ Tomorrow",
-  "today.actionDrop": "Abandon",
 
   // US-724 (task #67): saved views / custom filters.
   "savedViews.tag": "Tags",
@@ -655,12 +650,8 @@ const ZH: Partial<typeof EN> = {
   // US-720: 今日执行视图
   "today.groupOverdue": "逾期",
   "today.groupToday": "今天",
-  "today.groupRec": "未排期推荐",
+  "today.groupRec": "未排期",
   "today.groupEmpty": "本组暂无内容。",
-  "today.empty": "今天没有可执行任务。",
-  "today.actionDone": "✓ 完成",
-  "today.actionReschedule": "↷ 明天",
-  "today.actionDrop": "放弃",
 
   // US-724: 保存视图 / 自定义过滤
   "savedViews.tag": "标签",

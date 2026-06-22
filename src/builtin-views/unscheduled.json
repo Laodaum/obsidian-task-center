@@ -7,9 +7,16 @@
     "status": ["todo"]
   },
   "view": {
-    "type": "list",
-    "preset": "unscheduled",
-    "orderBy": ["deadline_risk", "created_desc"]
+    "layout": {
+      "dir": "col",
+      "children": [
+        {
+          "type": "list",
+          "when": { "time": { "scheduled": "unscheduled" } },
+          "orderBy": ["deadline_risk", "created_desc"]
+        }
+      ]
+    }
   },
   "summary": [
     { "type": "count" }

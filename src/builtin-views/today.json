@@ -7,8 +7,31 @@
     "status": ["todo"]
   },
   "view": {
-    "type": "list",
-    "preset": "today"
+    "layout": {
+      "type": "list",
+      "sections": [
+        {
+          "id": "overdue",
+          "title": "Overdue",
+          "when": { "time": { "deadline": "overdue" } },
+          "orderBy": ["deadline_asc"],
+          "limit": 3
+        },
+        {
+          "id": "today",
+          "title": "Today",
+          "when": { "time": { "scheduled": "today" } },
+          "limit": 3
+        },
+        {
+          "id": "unscheduled-rec",
+          "title": "Unscheduled",
+          "when": { "time": { "scheduled": "unscheduled", "deadline": "unscheduled" } },
+          "orderBy": ["created_desc"],
+          "limit": 3
+        }
+      ]
+    }
   },
   "summary": []
 }

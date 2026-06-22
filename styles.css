@@ -384,7 +384,128 @@
 .task-center-view .bt-list-view {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 6px;
+}
+
+/* ── View = area 布局树（ARCHITECTURE §1.3）── */
+.task-center-view .bt-view-root {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+}
+.task-center-view .bt-stack {
+  display: flex;
+  gap: 12px;
+  min-width: 0;
+  min-height: 0;
+}
+.task-center-view .bt-stack-col {
+  flex-direction: column;
+}
+.task-center-view .bt-stack-row {
+  flex-direction: row;
+}
+.task-center-view .bt-area {
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+/* drop area：始终是一个固定大小的正方形格子，不随容器拉伸。
+   row 里在右侧（同行的 list / 网格 flex-1 占满剩余）；col 里在下方左对齐。 */
+.task-center-view .bt-area-drop {
+  flex: 0 0 auto;
+  align-self: flex-start;
+}
+.task-center-view .bt-area-drop .bt-trash {
+  width: var(--tc-drop-size, 140px);
+  aspect-ratio: 1 / 1;
+  min-height: 0;
+}
+.task-center-view .bt-stack-row > .bt-area:not(.bt-area-drop) {
+  flex: 1 1 0;
+}
+/* Header-less areas in a row that has a titled sibling get a matching top
+   offset so their content aligns with the titled area's content. */
+.task-center-view .bt-stack-row.bt-row-has-head > .bt-area:not(.bt-has-head) {
+  margin-top: var(--tc-area-head-h, 27px);
+}
+.task-center-view .bt-stack-row > .bt-area-drop .bt-trash {
+  aspect-ratio: 1 / 1;
+  min-height: 0;
+}
+
+/* grid area：响应式多列任务卡（未排期 tray 用） */
+.task-center-view .bt-list-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 6px;
+  align-content: start;
+}
+.task-center-view .bt-list-grid > .bt-card {
+  margin: 0;
+}
+
+/* list area / section 标题：小号、字距、muted，带计数胶囊感的分组头 */
+.task-center-view .bt-list-area-head,
+.task-center-view .bt-list-section-title {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.task-center-view .bt-list-area-head {
+  line-height: 19px;
+  margin: 0 0 8px;
+}
+.task-center-view .bt-list-section {
+  margin: 0 0 14px;
+}
+.task-center-view .bt-list-section:last-child {
+  margin-bottom: 0;
+}
+.task-center-view .bt-list-section-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 6px;
+  padding: 0 0 4px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+.task-center-view .bt-list-section-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.task-center-view .bt-list-section-empty {
+  padding: 4px 2px;
+  font-size: 11px;
+  color: var(--text-faint);
+  font-style: italic;
+}
+
+/* 通用 summary 区：任何 view 顶部的指标条（取代 completed 专属统计面板）*/
+.task-center-view .bt-summary-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 4px;
+}
+.task-center-view .bt-summary-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.task-center-view .bt-summary-chip-text {
+  white-space: nowrap;
 }
 .task-center-view .bt-filter-popover-wrap {
   position: relative;
@@ -931,8 +1052,12 @@
   min-height: 140px;
 }
 .task-center-view .bt-week-col.today {
-  background: var(--background-modifier-active-hover);
-  border: 1px solid var(--interactive-accent);
+  background: color-mix(in srgb, var(--interactive-accent) 6%, var(--background-secondary));
+  box-shadow: inset 0 2px 0 var(--interactive-accent);
+}
+.task-center-view .bt-week-col.today .bt-week-dow,
+.task-center-view .bt-week-col.today .bt-week-date {
+  color: var(--interactive-accent);
 }
 .task-center-view .bt-week-head {
   display: flex;
@@ -1167,9 +1292,11 @@
 .task-center-view .bt-card {
   background: var(--background-primary);
   border: 1px solid var(--background-modifier-border);
-  border-left: 4px solid var(--interactive-accent);
-  border-radius: 4px;
-  padding: 6px 8px;
+  /* Calm neutral spine by default; accent appears on hover and for risk
+     states (overdue / near-deadline) so colour carries meaning, not noise. */
+  border-left: 3px solid var(--background-modifier-border);
+  border-radius: 6px;
+  padding: 7px 10px;
   font-size: 12px;
   cursor: grab;
   touch-action: pan-y;
@@ -1199,11 +1326,11 @@
   outline: 2px solid var(--interactive-accent);
 }
 .task-center-view .bt-card.bt-overdue {
-  box-shadow: 0 0 0 1px var(--color-red) inset;
+  border-left-color: var(--color-red);
   background: color-mix(in srgb, var(--color-red) 6%, var(--background-primary));
 }
 .task-center-view .bt-card.bt-near-deadline {
-  box-shadow: 0 0 0 1px var(--color-orange) inset;
+  border-left-color: var(--color-orange);
 }
 .task-center-view .bt-card.done {
   opacity: 0.5;
@@ -1379,18 +1506,10 @@
   transition: outline 0.08s ease, background 0.08s ease;
 }
 
-/* Pool wrapper: unscheduled + trash side by side */
-.task-center-view .bt-pool-wrap {
-  display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 2px;
-  margin-top: 12px;
-  align-items: stretch;
-}
-
 /* Abandon drop zone — sticky so it stays visible while scrolling the unscheduled pool */
 .task-center-view .bt-trash {
-  grid-column: 7;
+  width: 100%;
+  box-sizing: border-box;
   border: 2px dashed var(--background-modifier-border);
   border-radius: 8px;
   background: var(--background-secondary);
@@ -1403,7 +1522,7 @@
   color: var(--text-muted);
   font-size: 11px;
   transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease;
-  min-height: 116px;
+  min-height: 96px;
 }
 .task-center-view .bt-trash:hover,
 .task-center-view .bt-trash.drop-hover {
@@ -1437,344 +1556,6 @@
 }
 .task-center-view .bt-trash.drop-hover .bt-trash-hint {
   color: var(--color-red);
-}
-
-/* Unscheduled pool */
-.task-center-view .bt-unscheduled-pool {
-  grid-column: 1 / 7;
-  min-width: 0;
-  padding: 10px 12px;
-  min-height: 116px;
-  border: 2px dashed var(--background-modifier-border);
-  border-radius: 8px;
-  background: var(--background-secondary);
-  transition: border-color 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
-}
-.task-center-view.dragging-active .bt-unscheduled-pool {
-  border-color: color-mix(in srgb, var(--interactive-accent) 45%, var(--background-modifier-border));
-}
-.task-center-view .bt-unscheduled-pool.drop-hover {
-  border-color: var(--interactive-accent);
-  background: color-mix(in srgb, var(--interactive-accent) 8%, var(--background-secondary));
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--interactive-accent) 18%, transparent) inset;
-}
-.task-center-view .bt-unscheduled-head {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  margin-bottom: 6px;
-}
-.task-center-view .bt-unscheduled-label {
-  font-weight: 700;
-  font-size: 13px;
-}
-.task-center-view .bt-unscheduled-hint {
-  font-size: 10px;
-  color: var(--text-muted);
-}
-.task-center-view .bt-unscheduled-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 8px;
-  min-height: 64px;
-}
-.task-center-view .bt-unscheduled-list > .bt-card {
-  display: block;
-  width: 100%;
-  margin: 0;
-}
-
-.task-center-view .bt-unscheduled-big {
-  padding: 4px 6px;
-}
-.task-center-view .bt-unscheduled-big-head {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--background-modifier-border);
-}
-.task-center-view .bt-unscheduled-big-label {
-  font-size: 15px;
-  font-weight: 700;
-}
-.task-center-view .bt-unscheduled-big-hint {
-  font-size: 11px;
-  color: var(--text-muted);
-}
-.task-center-view .bt-unscheduled-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 8px;
-  margin-top: 8px;
-}
-.task-center-view .bt-unscheduled-col {
-  background: var(--background-secondary);
-  padding: 6px;
-  border-radius: 6px;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 6px;
-}
-.task-center-view .bt-unscheduled-col > .bt-card {
-  display: block;
-  width: 100%;
-  margin: 0;
-}
-.task-center-view .bt-unscheduled-col-head {
-  grid-column: 1 / -1;
-  font-weight: 600;
-  font-size: 12px;
-  color: var(--text-muted);
-  padding-bottom: 4px;
-  border-bottom: 1px solid var(--background-modifier-border);
-}
-
-/* Completed */
-.task-center-view .bt-completed {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.task-center-view .bt-stats-header {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 10px 12px;
-  background: var(--background-secondary);
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 6px;
-  font-size: 12px;
-}
-.task-center-view .bt-stats-left {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-}
-.task-center-view .bt-stats-period {
-  font-weight: 600;
-  color: var(--text-normal);
-}
-.task-center-view .bt-stats-ratio {
-  font-variant-numeric: tabular-nums;
-  padding: 2px 6px;
-  border-radius: 3px;
-}
-.task-center-view .bt-stats-ratio.bt-stats-ok {
-  color: var(--color-green);
-  background: color-mix(in srgb, var(--color-green) 12%, transparent);
-}
-.task-center-view .bt-stats-ratio.bt-stats-off {
-  color: var(--color-orange);
-  background: color-mix(in srgb, var(--color-orange) 14%, transparent);
-}
-.task-center-view .bt-stats-time {
-  color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
-}
-.task-center-view .bt-stats-tags {
-  display: flex;
-  gap: 6px;
-  margin-left: auto;
-  flex-wrap: wrap;
-}
-.task-center-view .bt-stats-chip {
-  display: inline-flex;
-  gap: 4px;
-  padding: 2px 8px;
-  background: var(--background-primary);
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 10px;
-  font-size: 10px;
-}
-.task-center-view .bt-stats-chip-tag {
-  color: var(--text-normal);
-}
-.task-center-view .bt-stats-chip-min {
-  color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
-}
-.task-center-view .bt-completed-week {
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 6px;
-  overflow: hidden;
-}
-.task-center-view .bt-completed-week-head {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 6px 10px;
-  background: var(--background-secondary);
-  font-size: 12px;
-  cursor: pointer;
-  user-select: none;
-}
-.task-center-view .bt-completed-week-head:hover {
-  background: var(--background-modifier-hover);
-}
-.task-center-view .bt-completed-toggle {
-  color: var(--text-muted);
-  width: 10px;
-}
-.task-center-view .bt-completed-week.collapsed .bt-completed-list {
-  display: none;
-}
-.task-center-view .bt-completed-week-label {
-  font-weight: 600;
-}
-.task-center-view .bt-completed-count {
-  color: var(--text-muted);
-}
-.task-center-view .bt-completed-accuracy {
-  margin-left: auto;
-  color: var(--text-accent);
-}
-.task-center-view .bt-completed-list {
-  padding: 4px 10px 8px;
-}
-.task-center-view .bt-completed-row {
-  display: flex;
-  gap: 10px;
-  padding: 2px 0;
-  font-size: 12px;
-  cursor: pointer;
-}
-.task-center-view .bt-completed-row:hover {
-  background: var(--background-modifier-hover);
-}
-.task-center-view .bt-completed-date {
-  color: var(--text-faint);
-  font-size: 10px;
-  min-width: 80px;
-}
-.task-center-view .bt-completed-title {
-  flex: 1;
-  text-decoration: line-through;
-  color: var(--text-muted);
-}
-.task-center-view .bt-completed-meta {
-  color: var(--text-muted);
-  font-size: 10px;
-}
-
-/* Today execution view */
-.task-center-view .bt-today {
-  display: grid;
-  gap: 12px;
-  width: 100%;
-  max-width: 920px;
-  margin: 0 auto;
-  padding: clamp(32px, 8vh, 72px) 0 16px;
-}
-.task-center-view .bt-today-empty {
-  min-height: min(45vh, 360px);
-  padding: 28px 18px;
-  border: 1px dashed var(--background-modifier-border);
-  border-radius: 8px;
-  background: var(--background-secondary);
-  color: var(--text-muted);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  font-size: 13px;
-}
-.task-center-view .bt-today-group {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 10px;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 8px;
-  background: var(--background-secondary);
-}
-.task-center-view .bt-today-group-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 24px;
-  padding-bottom: 6px;
-  border-bottom: 1px solid var(--background-modifier-border);
-}
-.task-center-view .bt-today-group-label {
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--text-normal);
-}
-.task-center-view .bt-today-group-count {
-  min-width: 18px;
-  padding: 1px 7px;
-  border-radius: 999px;
-  background: var(--background-modifier-border);
-  color: var(--text-muted);
-  font-size: 11px;
-  font-weight: 600;
-  text-align: center;
-}
-.task-center-view .bt-today-group-empty {
-  padding: 10px 4px 2px;
-  color: var(--text-muted);
-  font-size: 12px;
-}
-.task-center-view .bt-today-card {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 8px;
-  background: var(--background-primary);
-  cursor: pointer;
-}
-.task-center-view .bt-today-card:hover {
-  background: var(--background-modifier-hover);
-}
-.task-center-view .bt-today-card-main {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.task-center-view .bt-today-card-title {
-  color: var(--text-normal);
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 1.35;
-}
-.task-center-view .bt-today-card-tags {
-  margin-top: -1px;
-}
-.task-center-view .bt-today-card-meta {
-  color: var(--text-muted);
-  font-size: 11px;
-  line-height: 1.35;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.task-center-view .bt-today-card-actions {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-}
-.task-center-view .bt-today-action {
-  height: 28px;
-  padding: 0 10px;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 6px;
-  background: var(--background-secondary);
-  color: var(--text-normal);
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-}
-.task-center-view .bt-today-action:hover {
-  background: var(--background-modifier-hover);
 }
 
 .task-center-view .bt-empty,
@@ -1948,27 +1729,6 @@
     display: none;
   }
 
-  .task-center-view[data-mobile-layout="true"] .bt-pool-wrap {
-    grid-template-columns: 1fr;
-    gap: 0;
-  }
-
-  .task-center-view[data-mobile-layout="true"] .bt-unscheduled-pool {
-    grid-column: 1 / -1;
-    width: 100%;
-    box-sizing: border-box;
-  }
-
-  .task-center-view[data-mobile-layout="true"] .bt-unscheduled-list {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .task-center-view[data-mobile-layout="true"] .bt-unscheduled-head {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 4px;
-  }
-
   /* Toolbar `+ Add` is duplicated by the action bar; hide on mobile so the
      thumb-reachable bottom button is the canonical entry. */
   .task-center-view[data-mobile-layout="true"] .bt-toolbar .bt-add-btn {
@@ -2049,27 +1809,10 @@
     padding-bottom: calc(76px + env(safe-area-inset-bottom, 0px));
   }
 
-  .task-center-view[data-mobile-layout="true"] .bt-card,
-  .task-center-view[data-mobile-layout="true"] .bt-today-card {
+  .task-center-view[data-mobile-layout="true"] .bt-card {
     width: 100%;
     max-width: 100%;
     box-sizing: border-box;
-  }
-  .task-center-view[data-mobile-layout="true"] .bt-today {
-    max-width: none;
-    gap: 10px;
-    padding-top: clamp(20px, 6vh, 48px);
-  }
-  .task-center-view[data-mobile-layout="true"] .bt-today-card {
-    flex-direction: column;
-    gap: 10px;
-  }
-  .task-center-view[data-mobile-layout="true"] .bt-today-card-actions {
-    width: 100%;
-    justify-content: stretch;
-  }
-  .task-center-view[data-mobile-layout="true"] .bt-today-action {
-    flex: 1 1 0;
   }
 
   /* Tab bar: mobile may pan horizontally across query tabs, but the strip

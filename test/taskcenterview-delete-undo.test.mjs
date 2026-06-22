@@ -23,7 +23,7 @@ function compilePure() {
     [
       "esbuild",
       "src/saved-views.ts",
-      "--bundle=false",
+      "--bundle=true",
       "--format=esm",
       "--platform=node",
       "--outdir=test/.compiled",
@@ -579,8 +579,8 @@ test("round6 snapshot: currentQuerySnapshot merges draft view+summary into saved
   // Identity from saved
   assert.equal(snapshot.id, "sv-snap");
   assert.equal(snapshot.name, "My Tab");
-  // Draft content wins
-  assert.equal(snapshot.view.type, "week");
+  // Draft content wins (view is now a layout tree: { layout: LayoutNode })
+  assert.equal(snapshot.view.layout.type, "week");
   assert.equal(snapshot.summary.length, 1);
   assert.equal(snapshot.summary[0].type, "sum");
 });
