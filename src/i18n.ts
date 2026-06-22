@@ -416,6 +416,23 @@ const EN = {
   "matrix.noConfig": "Matrix view requires x/y axis configuration. Edit Query to set up axes.",
   "matrix.empty": "No tasks match the matrix conditions.",
   "matrix.unmatched": "Unmatched",
+
+  // US-415: full-view upgrade gate (legacy SavedTaskView / old-DSL view →
+  // new QueryPreset model). Shown instead of the board when legacy data is
+  // detected; the board renders only after the user confirms.
+  "migration.title": "Task Center has been upgraded",
+  "migration.lead":
+    "This version reworked how views and queries are stored. We found {n} view setting(s) from your previous version that need to move to the new structure before the board can open.",
+  "migration.whatsNewTitle": "What's new",
+  "migration.whatsNew1":
+    "Views are now composable layouts — stack list / week / month / matrix areas freely in one tab.",
+  "migration.whatsNew2":
+    "Filters, view, and summary share one QueryPreset model and one JSON DSL across GUI and CLI.",
+  "migration.whatsNew3":
+    "Built-in tabs ship as editable presets you can duplicate and tweak.",
+  "migration.note":
+    "Your built-in view tweaks (rename / hide / order) and custom filters are all preserved. This only updates local settings — no task files are touched.",
+  "migration.cta": "Upgrade and open the board",
 };
 
 const ZH: Partial<typeof EN> = {
@@ -775,6 +792,21 @@ const ZH: Partial<typeof EN> = {
   "matrix.noConfig": "矩阵视图需要配置 x/y 轴。请编辑 Query 来设置轴。",
   "matrix.empty": "没有任务匹配矩阵条件。",
   "matrix.unmatched": "未匹配",
+
+  // US-415: 全屏升级闸门页
+  "migration.title": "Task Center 已升级",
+  "migration.lead":
+    "这个版本重构了视图与查询的存储方式。我们检测到来自旧版本的 {n} 个视图配置，需要先迁移到新结构，看板才能打开。",
+  "migration.whatsNewTitle": "新版变化",
+  "migration.whatsNew1":
+    "视图改为可组合布局——列表 / 周 / 月 / 矩阵区域可在同一个 Tab 里自由堆叠。",
+  "migration.whatsNew2":
+    "过滤、视图、统计统一为同一份 QueryPreset 模型和同一份 JSON DSL，GUI 与 CLI 共用。",
+  "migration.whatsNew3":
+    "内置 Tab 成为可编辑的预设，可以复制后改成自己的视图。",
+  "migration.note":
+    "你原来对内置视图的调整（重命名 / 隐藏 / 排序）和自定义过滤都会保留。本次只更新本地配置，不会改动任何任务文件。",
+  "migration.cta": "升级并进入看板",
 };
 
 // US-408: re-detect locale on every `t()` call so that flipping the

@@ -47,7 +47,7 @@ import { deriveEffectiveTasks, countTopLevel, recomputeTopLevelInQuery } from ".
 import type { EffectiveTask } from "./task-tree";
 import { applyQueryFilters } from "./query/filter";
 import { projectListArea, projectMatrixArea } from "./query/projection";
-import type { ListSectionModel, MatrixViewModel } from "./query/projection";
+import type { MatrixViewModel } from "./query/projection";
 import {
   applyQueryPresetFilters,
   builtinSavedViewId,
@@ -594,6 +594,17 @@ export class TaskCenterView extends ItemView {
 
     el.empty();
     el.addClass("task-center-view");
+
+    // US-414 / US-415: when legacy view data was detected at load, the board
+    // must NOT render — instead the whole view becomes a full-screen upgrade
+    // gate. This guarantees the board never has to cope with two data shapes:
+    // the migration is confirmed (and persisted) here before any tab/toolbar/
+    // body is drawn.
+    if (this.plugin.migratedLegacyCount > 0) {
+      this.renderMigrationGate(el);
+      return;
+    }
+
     // Prebuild id→task index for O(1) parent/child lookups (§7.3).
     this._taskIndex = new Map();
     for (const t of this.tasks) this._taskIndex.set(t.id, t);
@@ -627,6 +638,42 @@ export class TaskCenterView extends ItemView {
         });
       }
     }
+  }
+
+  /**
+   * US-415: full-view upgrade gate. Shown instead of the board when legacy
+   * view data (flat SavedTaskView or old-DSL `view`) was detected at load.
+   * Tells the user what changed and what's new, then offers a single confirm
+   * action that persists the already-in-memory-migrated data and enters the
+   * new board. Nothing of the board renders until the user confirms.
+   */
+  private renderMigrationGate(el: HTMLElement): void {
+    const count = this.plugin.migratedLegacyCount;
+    const gate = el.createDiv({ cls: "tc-migration-gate" });
+    gate.dataset.migratedCount = String(count);
+
+    const card = gate.createDiv({ cls: "tc-migration-card" });
+    card.createEl("h2", { text: tr("migration.title") });
+    card.createEl("p", { cls: "tc-migration-lead", text: tr("migration.lead", { n: count }) });
+
+    const whatsNew = card.createDiv({ cls: "tc-migration-section" });
+    whatsNew.createEl("h3", { text: tr("migration.whatsNewTitle") });
+    const list = whatsNew.createEl("ul");
+    for (const key of ["migration.whatsNew1", "migration.whatsNew2", "migration.whatsNew3"] as const) {
+      list.createEl("li", { text: tr(key) });
+    }
+
+    card.createEl("p", { cls: "tc-migration-note", text: tr("migration.note") });
+
+    const actions = card.createDiv({ cls: "tc-migration-actions" });
+    const cta = actions.createEl("button", { text: tr("migration.cta"), cls: "mod-cta" });
+    cta.dataset.action = "complete-migration";
+    cta.addEventListener("click", () => {
+      cta.disabled = true;
+      void this.plugin.completeMigration();
+    });
+
+    window.setTimeout(() => cta.focus(), 10);
   }
 
   /**

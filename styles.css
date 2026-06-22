@@ -7,6 +7,8 @@
   padding: 8px 12px 12px 12px;
   overflow: hidden;
   outline: none;
+  /* anchor for the full-view upgrade gate overlay (US-415) */
+  position: relative;
 }
 
 /* Header */
@@ -1005,6 +1007,73 @@
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+
+/* US-415: full-view upgrade gate — covers the entire view, no board behind it */
+.task-center-view .tc-migration-gate {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  overflow-y: auto;
+  background: var(--background-primary);
+  z-index: 20;
+}
+
+.task-center-view .tc-migration-card {
+  max-width: 560px;
+  width: 100%;
+  margin: auto;
+}
+
+.task-center-view .tc-migration-card h2 {
+  margin: 0 0 8px;
+}
+
+.task-center-view .tc-migration-lead {
+  margin: 0 0 20px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+
+.task-center-view .tc-migration-section {
+  margin-bottom: 20px;
+  padding: 16px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  background: var(--background-secondary);
+}
+
+.task-center-view .tc-migration-section h3 {
+  margin: 0 0 8px;
+  font-size: var(--font-ui-small);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.task-center-view .tc-migration-section ul {
+  margin: 0;
+  padding-left: 20px;
+  line-height: 1.6;
+}
+
+.task-center-view .tc-migration-section li + li {
+  margin-top: 6px;
+}
+
+.task-center-view .tc-migration-note {
+  margin: 0 0 20px;
+  font-size: var(--font-ui-small);
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.task-center-view .tc-migration-actions {
+  display: flex;
+  justify-content: flex-end;
 }
 
 @media (max-width: 640px) {

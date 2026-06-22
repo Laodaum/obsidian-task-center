@@ -29,6 +29,8 @@ import {
   deleteQueryPresetById,
   duplicateQueryPreset,
   isLegacySavedTaskView,
+  isLegacyQueryPresetShape,
+  migrateLegacySavedTaskView,
   normalizeQueryPreset,
   parseQueryDsl,
   renameQueryPresetById,
@@ -63,6 +65,12 @@ export default class TaskCenterPlugin extends Plugin {
   cache!: TaskCache;
   private statusBar: StatusBar | null = null;
   private depHealth: DepHealthBanner | null = null;
+  // US-414 / US-415: number of legacy SavedTaskView entries detected and
+  // migrated in-memory during the last `loadSettings`. While > 0 the migration
+  // has NOT been persisted yet — the board must not render; TaskCenterView
+  // shows the full-view upgrade gate instead, and only `completeMigration`
+  // (the gate's confirm action) writes the migrated data back to disk.
+  migratedLegacyCount = 0;
 
   async onload() {
     await this.loadSettings();
@@ -234,20 +242,22 @@ export default class TaskCenterPlugin extends Plugin {
     const loaded = (await this.loadData()) as Partial<typeof DEFAULT_SETTINGS> | undefined;
     const merged = { ...DEFAULT_SETTINGS, ...loaded };
 
-    // VAL-CORE-005 / VAL-CROSS-002: detect and reject legacy SavedTaskView
-    // shapes (flat `search`/`tag`/`time`/`status` top-level fields) by
-    // filtering them out before builtin seeding. No migration — old data is
-    // silently replaced with defaults.
+    // US-414: detect any legacy stored view that needs migrating —
+    // (a) flat SavedTaskView (top-level search/tag/time/status), or
+    // (b) an old-DSL QueryPreset whose `view` still uses {type/preset/sections/
+    // tray/matrix} instead of {layout}. Both are migrated into normalized
+    // QueryPresets instead of being discarded. Flat shapes need their flat
+    // fields collapsed into `filters` first; old-DSL views are migrated by
+    // `ensureBuiltinQueryPresets` → `normalizeQueryPreset` downstream. Builtin
+    // entries keep their user edits (name/hidden/order/filters/summary) while
+    // their layout is refreshed to the latest factory JSON.
     const rawViews: unknown[] = merged.queryPresets ?? [];
-    const rejectedCount = rawViews.filter((v) => isLegacySavedTaskView(v)).length;
-    if (rejectedCount > 0) {
-      console.warn(
-        `[task-center] 检测到 ${rejectedCount} 个旧版 SavedTaskView，已替换为默认 QueryPreset。旧 saved-view 配置不会迁移。`,
-      );
-    }
-    const cleanViews = rawViews.filter((v) => !isLegacySavedTaskView(v));
+    this.migratedLegacyCount = rawViews.filter((v) => isLegacyQueryPresetShape(v)).length;
+    const migratedViews = rawViews.map((v) =>
+      isLegacySavedTaskView(v) ? migrateLegacySavedTaskView(v) : v,
+    );
 
-    const queryPresets = ensureBuiltinQueryPresets(cleanViews as Parameters<typeof ensureBuiltinQueryPresets>[0], {
+    const queryPresets = ensureBuiltinQueryPresets(migratedViews as Parameters<typeof ensureBuiltinQueryPresets>[0], {
       today: tr("tab.today"),
       week: tr("tab.week"),
       month: tr("tab.month"),
@@ -283,6 +293,19 @@ export default class TaskCenterPlugin extends Plugin {
 
   async saveSettings() {
     await this.saveData(this.settings);
+  }
+
+  // US-415: confirm action of the full-view upgrade gate. Persists the
+  // already-in-memory-migrated settings, clears the gate flag, and re-renders
+  // every open board so it leaves the gate and shows the new-structure UI.
+  // One-shot: once written back, the next load detects no legacy data, so the
+  // gate never reappears. If the user never confirms, nothing is persisted and
+  // the gate shows again on the next launch.
+  async completeMigration() {
+    if (this.migratedLegacyCount === 0) return;
+    await this.saveSettings();
+    this.migratedLegacyCount = 0;
+    await this.refreshOpenViews();
   }
 
   async activateView() {

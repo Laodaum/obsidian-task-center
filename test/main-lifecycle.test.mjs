@@ -296,6 +296,120 @@ test("loadSettings seeds built-in query tabs and migrates legacy defaultView/las
   assert.equal(plugin.settings.lastSavedViewId, "preset-completed");
 });
 
+test("US-414: loadSettings migrates legacy flat SavedTaskView instead of dropping it", async () => {
+  await compile();
+  const { default: TaskCenterPlugin } = await import(`../${compiledPath}?t=${Date.now()}-${Math.random()}`);
+  const app = makeAppWithExistingTaskCenterView();
+  app.__viewCreators.clear();
+  const plugin = new TaskCenterPlugin(app);
+  plugin.loadData = async () => ({
+    queryPresets: [
+      // legacy flat shape (0.8.27): top-level search/tag/status/time, no nested filters
+      { id: "sv-legacy", name: "Legacy", builtin: false, hidden: true, search: "report", tag: "work", status: ["todo"], time: {}, view: { type: "week" }, summary: [] },
+    ],
+  });
+
+  await plugin.loadSettings();
+
+  const migrated = plugin.settings.queryPresets.find((p) => p.id === "sv-legacy");
+  assert.ok(migrated, "legacy custom view survives as a migrated QueryPreset");
+  assert.equal(migrated.hidden, true, "user hidden flag preserved");
+  assert.equal(migrated.filters.search, "report", "flat search migrated into nested filters");
+  assert.deepEqual(migrated.filters.tags, ["#work"], "flat tag migrated into nested tags");
+  assert.ok(migrated.view.layout, "legacy view migrated to a layout tree");
+});
+
+test("US-414: loadSettings flags old-DSL view (nested filters but no layout) for the gate", async () => {
+  await compile();
+  const { default: TaskCenterPlugin } = await import(`../${compiledPath}?t=${Date.now()}-${Math.random()}`);
+  const app = makeAppWithExistingTaskCenterView();
+  app.__viewCreators.clear();
+  const plugin = new TaskCenterPlugin(app);
+  plugin.loadData = async () => ({
+    queryPresets: [
+      // old DSL: filters already nested, but view is the old {type} shape
+      { id: "sv-old-dsl", name: "Old DSL", builtin: false, hidden: false, filters: { status: ["todo"] }, view: { type: "month" }, summary: [] },
+    ],
+  });
+
+  await plugin.loadSettings();
+
+  assert.equal(plugin.migratedLegacyCount, 1, "old-DSL view counted as legacy");
+  const migrated = plugin.settings.queryPresets.find((p) => p.id === "sv-old-dsl");
+  assert.ok(migrated.view.layout, "old-DSL view migrated to a layout tree in memory");
+});
+
+test("US-415: onload does NOT persist migration — the gate must be confirmed first", async () => {
+  await compile();
+  const { default: TaskCenterPlugin } = await import(`../${compiledPath}?t=${Date.now()}-${Math.random()}`);
+  const app = makeAppWithExistingTaskCenterView();
+  app.__viewCreators.clear();
+  const plugin = new TaskCenterPlugin(app);
+  plugin.loadData = async () => ({
+    queryPresets: [
+      { id: "sv-legacy", name: "Legacy", builtin: false, hidden: false, search: "x", tag: "deep", status: "all", time: {}, view: { type: "list" }, summary: [] },
+    ],
+  });
+  let saves = 0;
+  plugin.saveSettings = async () => { saves++; };
+
+  await plugin.onload();
+  for (const cb of app.__layoutCallbacks) cb();
+
+  assert.equal(plugin.migratedLegacyCount, 1, "gate stays armed until user confirms");
+  assert.equal(saves, 0, "onload never auto-persists the migration");
+});
+
+test("US-415: completeMigration persists once, clears the gate, and refreshes views", async () => {
+  await compile();
+  const { default: TaskCenterPlugin } = await import(`../${compiledPath}?t=${Date.now()}-${Math.random()}`);
+  const app = makeAppWithExistingTaskCenterView();
+  app.__viewCreators.clear();
+  const plugin = new TaskCenterPlugin(app);
+  plugin.loadData = async () => ({
+    queryPresets: [
+      { id: "sv-legacy", name: "Legacy", builtin: false, hidden: false, search: "x", tag: "deep", status: "all", time: {}, view: { type: "list" }, summary: [] },
+    ],
+  });
+  let saves = 0;
+  let refreshes = 0;
+  plugin.saveSettings = async () => { saves++; };
+  plugin.refreshOpenViews = async () => { refreshes++; };
+
+  await plugin.loadSettings();
+  assert.equal(plugin.migratedLegacyCount, 1);
+
+  await plugin.completeMigration();
+  assert.equal(saves, 1, "migration persisted exactly once on confirm");
+  assert.equal(plugin.migratedLegacyCount, 0, "gate cleared after confirm");
+  assert.equal(refreshes, 1, "open boards refreshed to leave the gate");
+
+  // idempotent: a second confirm is a no-op
+  await plugin.completeMigration();
+  assert.equal(saves, 1, "no extra persist after the gate is cleared");
+});
+
+test("US-415: completeMigration is a no-op when nothing was migrated", async () => {
+  await compile();
+  const { default: TaskCenterPlugin } = await import(`../${compiledPath}?t=${Date.now()}-${Math.random()}`);
+  const app = makeAppWithExistingTaskCenterView();
+  app.__viewCreators.clear();
+  const plugin = new TaskCenterPlugin(app);
+  plugin.loadData = async () => ({
+    queryPresets: [
+      { id: "sv-modern", name: "Modern", builtin: false, hidden: false, filters: { status: "all" }, view: { layout: { type: "list" } }, summary: [] },
+    ],
+  });
+  let saves = 0;
+  plugin.saveSettings = async () => { saves++; };
+
+  await plugin.loadSettings();
+  assert.equal(plugin.migratedLegacyCount, 0, "modern data is not flagged");
+
+  await plugin.completeMigration();
+  assert.equal(saves, 0, "nothing to persist for new-structure data");
+});
+
 test("query-list 默认隐藏 hidden preset，format=json 会带出 builtin/default/hidden 元数据", async () => {
   const { plugin } = await createPluginForQueryCli({
     defaultSavedViewId: "sv-alpha",

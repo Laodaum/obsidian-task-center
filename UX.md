@@ -617,6 +617,26 @@ Daily Notes：
 - Tasks 或 Dataview 至少安装了一个但两者都未启用：展示 `data-dep-warning="task-format-companion-disabled"`。（US-701e）
 - Tasks 或 Dataview 任意一个正常启用：不显示任务格式 companion 警告。（US-701f）
 
+### 15.4 升级闸门页（全屏）
+
+老用户从 0.8.27 及更早升级、且 `data.json` 里检测到任意旧结构视图时，看板**不直接渲染**，整个 view 先展示一个全屏的升级闸门页。（US-414 / US-415）
+
+旧结构包含两类，任一命中即触发：
+
+- 扁平 `SavedTaskView`（顶层 `search` / `tag` / `time` / `status`）。
+- 旧 DSL 的 `QueryPreset`：`filters` 已嵌套，但 `view` 仍是旧写法 `{type, preset, sections, tray, matrix}` 而非新的 `{layout}` 树。
+
+闸门页要点：
+
+- 全屏遮住 tab 栏、工具栏、看板主体；不在残留旧数据的看板之上浮层。理由：保证看板渲染路径只面对一种数据结构，不必同时兼容新旧两种写法。
+- 内容三段：
+  1. 发生了什么——这个版本重构了视图与查询的存储方式，检测到 N 个旧视图配置需要迁移。
+  2. 新版变化（What's New）——视图改为可组合 layout；filters / view / summary 统一为一份 QueryPreset 模型与一份 JSON DSL；内置 Tab 成为可编辑预设。
+  3. 需要更新什么——一句话说明点击即迁移，旧内置调整与自定义过滤都会保留，且只改本地配置、不动任务文件。
+- 操作：单个主按钮“升级并进入看板”。点击后执行迁移并写回 `data.json`、清除闸门、渲染新版看板。按钮按下即禁用，避免重复触发。
+- 一次性：迁移写回后，下次加载检测不到旧结构，不再出现闸门。若用户没点按钮就关掉 Obsidian，则没有写回，下次仍展示闸门。
+- 新用户与已在新结构上的用户永不触发。文案跟随 Obsidian 语言（US-402）。
+
 ## 16. CLI / AI Agent UX
 
 CLI 注册到 Obsidian CLI，不提供独立二进制。（US-201）

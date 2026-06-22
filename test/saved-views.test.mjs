@@ -49,6 +49,10 @@ const {
   handleQueryEditorSummaryRemove,
   computeSaveAsFromSnapshot,
   computeUpdateFromDraftComponents,
+  migrateLegacySavedTaskView,
+  isLegacySavedTaskView,
+  isLegacyQueryPresetShape,
+  ensureBuiltinQueryPresets,
 } = await import("../test/.compiled/saved-views.js");
 
 test("US-109h: status filters normalize legacy single-select and new multi-select values", () => {
@@ -3630,4 +3634,124 @@ test("real-path: snapshot falls back to saved when no draft exists in tabDrafts"
   assert.equal(snapshot.summary.length, 2, "saved summary wins when no draft");
   assert.equal(snapshot.summary[0].type, "count");
   assert.equal(snapshot.summary[1].type, "ratio");
+});
+
+// ── US-414 / US-415: legacy SavedTaskView → QueryPreset migration ──
+
+test("US-414: isLegacySavedTaskView detects flat shape, ignores nested filters", () => {
+  // legacy: flat top-level filter fields, no nested `filters`
+  assert.equal(isLegacySavedTaskView({ id: "sv-x", name: "X", search: "", tag: "", status: "all", time: {} }), true);
+  assert.equal(isLegacySavedTaskView({ id: "sv-y", name: "Y", status: ["todo"] }), true);
+  // new: nested filters → not legacy
+  assert.equal(isLegacySavedTaskView({ id: "sv-z", name: "Z", filters: { status: "all" } }), false);
+  // neither → not legacy
+  assert.equal(isLegacySavedTaskView({ id: "sv-w", name: "W" }), false);
+  assert.equal(isLegacySavedTaskView(null), false);
+});
+
+test("US-414: migrate custom legacy view collapses flat fields into nested filters", () => {
+  const legacy = {
+    id: "sv-custom",
+    name: "My work",
+    builtin: false,
+    hidden: true,
+    search: "report",
+    tag: "work, urgent",
+    status: ["todo", "done"],
+    time: { scheduled: "2026-01-01..2026-01-31" },
+    view: { type: "week" },
+    summary: [{ type: "count" }],
+  };
+  const migrated = migrateLegacySavedTaskView(legacy);
+
+  assert.equal(migrated.id, "sv-custom");
+  assert.equal(migrated.name, "My work");
+  assert.equal(migrated.hidden, true);
+  assert.equal(migrated.builtin, false);
+  // flat → nested filters
+  assert.equal(migrated.filters.search, "report");
+  assert.deepEqual(migrated.filters.tags, ["#work", "#urgent"]);
+  assert.deepEqual(migrated.filters.status, ["todo", "done"]);
+  assert.equal(migrated.filters.time.scheduled, "2026-01-01..2026-01-31");
+  // legacy view {type} migrated to a layout tree
+  assert.ok(migrated.view.layout, "view.layout exists after migration");
+  // summary preserved
+  assert.equal(migrated.summary.length, 1);
+  assert.equal(migrated.summary[0].type, "count");
+});
+
+test("US-414: migrate is robust to garbage fields and never throws", () => {
+  const migrated = migrateLegacySavedTaskView({ status: 12345, tag: 999, time: "nope", view: 7 });
+  assert.ok(migrated.id, "id falls back to a generated id");
+  assert.ok(migrated.filters, "filters always present");
+  assert.ok(migrated.view.layout, "view.layout always present");
+});
+
+test("US-414: legacy builtin view keeps user edits but refreshes layout from factory", () => {
+  // user had renamed + hidden the builtin Today tab in the old flat shape
+  const legacyToday = {
+    id: "preset-today",
+    name: "我的今天",
+    builtin: true,
+    hidden: true,
+    search: "",
+    tag: "",
+    status: ["todo"],
+    time: {},
+    view: { type: "list", preset: "today" },
+    summary: [],
+  };
+  const migrated = migrateLegacySavedTaskView(legacyToday);
+  const presets = ensureBuiltinQueryPresets([migrated]);
+  const today = presets.find((p) => p.id === "preset-today");
+
+  assert.ok(today, "builtin today preset present");
+  assert.equal(today.name, "我的今天", "user rename preserved");
+  assert.equal(today.hidden, true, "user hidden flag preserved");
+  assert.equal(today.builtin, true);
+  // layout comes from the factory JSON, not the degraded legacy {type:list}
+  assert.ok(today.view.layout, "factory layout applied");
+});
+
+test("US-414: full settings-shaped migration keeps builtins + custom views", () => {
+  const rawViews = [
+    { id: "preset-week", name: "Week", builtin: true, hidden: false, search: "", tag: "", status: ["todo"], time: {}, view: { type: "week" }, summary: [] },
+    { id: "sv-mine", name: "Mine", builtin: false, hidden: false, search: "x", tag: "deep", status: "all", time: {}, view: { type: "list" }, summary: [] },
+  ];
+  const migratedViews = rawViews.map((v) => (isLegacySavedTaskView(v) ? migrateLegacySavedTaskView(v) : v));
+  const presets = ensureBuiltinQueryPresets(migratedViews);
+
+  // all 7 builtins present + the 1 custom view
+  assert.ok(presets.some((p) => p.id === "sv-mine"), "custom view survives migration");
+  const mine = presets.find((p) => p.id === "sv-mine");
+  assert.deepEqual(mine.filters.tags, ["#deep"]);
+  assert.equal(presets.filter((p) => p.builtin).length >= 7, true);
+
+  // re-running detection on migrated output finds nothing legacy (idempotent)
+  assert.equal(presets.filter((p) => isLegacySavedTaskView(p)).length, 0, "migration is idempotent");
+});
+
+// ── US-414: broader legacy detection — old DSL view (no `layout`) ──
+
+test("US-414: isLegacyQueryPresetShape flags old-DSL view even with nested filters", () => {
+  // old DSL: nested filters present, but `view` uses {type} not {layout}
+  assert.equal(isLegacyQueryPresetShape({ id: "q", name: "Q", filters: { status: "all" }, view: { type: "week" } }), true);
+  assert.equal(isLegacyQueryPresetShape({ id: "q", name: "Q", filters: {}, view: { preset: "today" } }), true);
+  assert.equal(isLegacyQueryPresetShape({ id: "q", name: "Q", filters: {}, view: { sections: [] } }), true);
+  // flat SavedTaskView still flagged
+  assert.equal(isLegacyQueryPresetShape({ id: "q", name: "Q", status: ["todo"] }), true);
+  // modern preset (view.layout) → not legacy
+  assert.equal(isLegacyQueryPresetShape({ id: "q", name: "Q", filters: { status: "all" }, view: { layout: { type: "list" } } }), false);
+  // empty view object is not "legacy" (normalizes to default layout)
+  assert.equal(isLegacyQueryPresetShape({ id: "q", name: "Q", filters: {}, view: {} }), false);
+  assert.equal(isLegacyQueryPresetShape(null), false);
+});
+
+test("US-414: detection is idempotent after a full normalize+ensure pass", () => {
+  const oldDsl = { id: "sv-old-dsl", name: "Old DSL", builtin: false, hidden: false, filters: { status: ["todo"] }, view: { type: "month" }, summary: [] };
+  assert.equal(isLegacyQueryPresetShape(oldDsl), true, "old DSL flagged before migration");
+  const presets = ensureBuiltinQueryPresets([normalizeQueryPreset(oldDsl)]);
+  const migrated = presets.find((p) => p.id === "sv-old-dsl");
+  assert.ok(migrated.view.layout, "old DSL view migrated to layout");
+  assert.equal(isLegacyQueryPresetShape(migrated), false, "no longer legacy after migration");
 });

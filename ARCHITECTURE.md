@@ -272,6 +272,22 @@ interface PluginSettings {
 
 持久化设置必须兼容旧 `data.json` 字段；删除旧设置项时可忽略但不能导致启动失败。（US-118）
 
+### 1.5 老数据迁移与升级闸门（US-414 / US-415）
+
+新模型统一为 `QueryPreset`（嵌套 `filters` + `view.layout` 布局树）。两类旧结构需要迁移：
+
+- 扁平 `SavedTaskView`：无嵌套 `filters`，顶层有 `search/tag/time/status`。
+- 旧 DSL 的 `QueryPreset`：`filters` 已嵌套，但 `view` 仍是旧写法 `{type, preset, sections, tray, matrix}`、没有 `layout`。
+
+实现：
+
+- 检测：`isLegacyQueryPresetShape(obj)` —— 命中 `isLegacySavedTaskView(obj)`，或 `view` 是非空旧 DSL 形状（无 `layout` 且含 `type/preset/sections/tray/matrix` 任一）即判定为旧结构。
+- 迁移：`migrateLegacySavedTaskView(obj) → QueryPreset`（纯函数）把扁平字段收进 `filters`；旧 DSL view 由下游 `ensureBuiltinQueryPresets → normalizeQueryPreset → normalizeQueryPresetView` 的 `migrateLegacyViewToLayout` 迁成 `layout`。坏字段按默认值降级，不抛错、不中断加载。
+- 内置视图：迁移后的旧内置项（`preset-*` id）进入 `ensureBuiltinQueryPresets`——保留用户的 name/hidden/排序/filters/summary，view 布局刷新成最新出厂 JSON。自定义项（`sv-*`）整体迁移并追加在内置之后。
+- 闸门与时机：`loadSettings` 在内存里完成迁移并把检测计数记到 `plugin.migratedLegacyCount`，但**不**自动写回。只要该计数 > 0，`TaskCenterView.render()` 早退渲染全屏升级闸门页，不渲染看板——确保看板渲染路径只面对一种数据结构。用户点击闸门确认后调用 `plugin.completeMigration()`：`saveSettings()` 持久化、清零计数、刷新所有打开的看板进入新版 UI。
+- 幂等：确认写回后，下次加载检测不到旧结构、计数为 0、闸门不再出现。用户不确认就退出则不写回，下次仍展示闸门。
+- 边界：迁移只改本地 `data.json`，不触碰任务 Markdown（US-403）。
+
 ## 2. 模块边界
 
 建议结构：

@@ -627,6 +627,64 @@ export function isLegacySavedTaskView(obj: unknown): boolean {
 }
 
 /**
+ * US-414: detect whether a stored view object is in ANY legacy shape that
+ * needs migrating to the current model. Two cases:
+ *   1. legacy flat SavedTaskView (top-level search/tag/time/status), and
+ *   2. an otherwise-modern QueryPreset (nested `filters`) whose `view` still
+ *      uses the OLD DSL — `{type, preset, sections, tray, matrix}` instead of
+ *      the current `{ layout }` tree.
+ * Used to gate the full-view upgrade screen (US-415). The data transform is
+ * idempotent: re-running detection on a normalized preset returns false.
+ */
+export function isLegacyQueryPresetShape(obj: unknown): boolean {
+  if (!isRecord(obj)) return false;
+  if (isLegacySavedTaskView(obj)) return true;
+  const view = obj.view;
+  if (isRecord(view) && !("layout" in view)) {
+    // Old view DSL hallmark keys. An empty `{}` view is not flagged — it
+    // normalizes to a default layout without being "legacy".
+    return (
+      "type" in view
+      || "preset" in view
+      || "sections" in view
+      || "tray" in view
+      || "matrix" in view
+    );
+  }
+  return false;
+}
+
+/**
+ * US-414: migrate a legacy SavedTaskView (flat `search`/`tag`/`time`/`status`
+ * + legacy `view: {type, preset, sections, tray, matrix}`) into a normalized
+ * QueryPreset. Pure function — never throws on bad fields; everything degrades
+ * to defaults via `normalizeQueryPreset`. The flat filter fields collapse into
+ * nested `filters`; the legacy `view` shape is handed straight to
+ * `normalizeQueryPresetView`, whose `migrateLegacyViewToLayout` already turns
+ * `{type, preset, sections, tray, matrix}` into a `layout` tree.
+ */
+export function migrateLegacySavedTaskView(raw: unknown): QueryPreset {
+  const obj = isRecord(raw) ? raw : {};
+  const filters: Record<string, unknown> = {};
+  if (typeof obj.search === "string") filters.search = obj.search;
+  // Legacy `tag` is a comma-separated string; normalizeDslTags accepts it.
+  if (typeof obj.tag === "string" || Array.isArray(obj.tag)) filters.tags = obj.tag;
+  if ("status" in obj) filters.status = obj.status;
+  if (isRecord(obj.time)) filters.time = obj.time;
+  return normalizeQueryPreset({
+    id: typeof obj.id === "string" ? obj.id : defaultSavedViewId(),
+    name: typeof obj.name === "string" ? obj.name : "",
+    builtin: !!obj.builtin,
+    hidden: !!obj.hidden,
+    filters,
+    // Old `view` is the legacy {type, preset, sections, tray, matrix} shape;
+    // normalizeQueryPresetView migrates it to a layout tree.
+    view: isRecord(obj.view) ? obj.view : {},
+    summary: Array.isArray(obj.summary) ? obj.summary : [],
+  } as unknown as QueryPreset);
+}
+
+/**
  * Serialize a QueryPreset to JSON DSL string.
  */
 export function stringifyQueryPreset(preset: QueryPreset): string {
