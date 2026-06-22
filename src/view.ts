@@ -5273,16 +5273,10 @@ export class TaskCenterView extends ItemView {
   }
 
   private handleFilterOutsidePointerDown(event: PointerEvent): void {
-    if (this.filterPopoverOpen === null) return;
-    const target = event.target as HTMLElement | null;
-    if (!target) return;
-    // Close if the click lands outside any filter control or open popover.
-    // Use target.closest() directly — more reliable than composedPath() in
-    // Obsidian's Electron environment where composedPath can miss elements.
-    if (
-      target.closest("[data-saved-views]") ||
-      target.closest(".bt-filter-popover, .bt-tag-popover, .bt-date-popover, .bt-status-popover, .bt-time-more-popover")
-    ) return;
+    if (!shouldCloseFilterPopoverOnPointerDown({
+      isOpen: this.filterPopoverOpen !== null,
+      isInsideFilterControls: isClickInsideFilterControls(event),
+    })) return;
     this.filterPopoverOpen = null;
     this.pendingDateRangeStart = null;
     this.render();
