@@ -4847,3 +4847,20 @@
   color: var(--text-faint);
   font-size: 11px;
 }
+
+/* US-109z2: "add date filter" — progressive disclosure of secondary time fields. */
+.task-center-bottom-sheet .bt-area-add-field {
+  align-self: flex-start;
+  margin-top: 2px;
+  padding: 5px 12px;
+  border: 1px dashed var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+.task-center-bottom-sheet .bt-area-add-field:hover {
+  color: var(--text-normal);
+  border-color: var(--interactive-accent);
+}

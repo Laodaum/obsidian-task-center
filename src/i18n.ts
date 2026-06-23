@@ -407,6 +407,8 @@ const EN = {
   // US-109z2: area filter — searchable tag list + per-field date range.
   "savedViews.tagMore": "{n} more — type to filter",
   "savedViews.dateRangeTo": "to",
+  "savedViews.searchContains": "Task text contains…",
+  "savedViews.addTimeField": "Add date filter",
   // US-109p10 / US-109p11: two-panel Query editor + visual layout tree.
   "savedViews.areaTabAppearance": "Appearance",
   "savedViews.layout": "Layout",
@@ -841,6 +843,8 @@ const ZH: Partial<typeof EN> = {
   "savedViews.queryEditorDsl": "DSL",
   "savedViews.tagMore": "还有 {n} 个，输入以筛选",
   "savedViews.dateRangeTo": "至",
+  "savedViews.searchContains": "任务文本包含…",
+  "savedViews.addTimeField": "添加日期筛选",
   "savedViews.areaTabAppearance": "外观",
   "savedViews.layout": "布局",
   "savedViews.layoutSummary": "{count} 个区域 · {dir}",

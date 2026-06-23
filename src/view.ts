@@ -334,6 +334,10 @@ export class TaskCenterView extends ItemView {
   // lives in view/query-editor.ts now; this view just holds the instance and
   // exposes the shared helpers it reads.
   private readonly queryEditor = new QueryEditorView(this);
+  // US-109z2: secondary time fields (deadline/completed/created) the user has
+  // progressively added in the area filter this session (scheduled is always
+  // shown). Transient UI state — fields with a value show regardless.
+  private readonly areaFilterExtraFields = new Set<SavedViewTimeField>();
   private dateCalendarAnchorISO = startOfMonth(todayISO());
   private pendingDateRangeStart: string | null = null;
   private viewResizeObserver: ResizeObserver | null = null;
@@ -4036,11 +4040,12 @@ export class TaskCenterView extends ItemView {
     const status = normalizeSavedViewStatus(when.status);
     const scheduled = when.time?.scheduled?.trim() ?? "";
 
-    // Search (applied on change to avoid losing focus on every keystroke).
+    // Search — matches task title text. Placeholder reads as "task text
+    // contains …" so it's clear it's a substring match, not a command.
     const search = parent.createEl("input", {
       type: "text",
       cls: "bt-area-search",
-      placeholder: tr("toolbar.filter"),
+      placeholder: tr("savedViews.searchContains"),
     });
     search.value = when.search ?? "";
     search.addEventListener("change", () => {
@@ -4067,11 +4072,34 @@ export class TaskCenterView extends ItemView {
       });
     }
 
-    // US-109z2: time fields — scheduled (primary) + deadline / completed /
-    // created. Each gets quick-token chips AND a native date-range picker.
+    // US-109z2: time fields are progressive. Scheduled (the primary one) always
+    // shows; deadline / completed / created only show once they have a value or
+    // the user adds them via "添加日期筛选" — keeps the common panel short.
     void scheduled;
-    for (const field of [PRIMARY_TIME_FIELD, ...SECONDARY_TIME_FIELDS]) {
+    this.renderAreaTimeField(parent, areaIndex, when, PRIMARY_TIME_FIELD, rerenderControls);
+    const shownSecondary = SECONDARY_TIME_FIELDS.filter(
+      (f) => (when.time?.[f]?.trim()) || this.areaFilterExtraFields.has(f),
+    );
+    for (const field of shownSecondary) {
       this.renderAreaTimeField(parent, areaIndex, when, field, rerenderControls);
+    }
+    const addable = SECONDARY_TIME_FIELDS.filter((f) => !shownSecondary.includes(f));
+    if (addable.length > 0) {
+      const addField = parent.createEl("button", {
+        cls: "bt-area-add-field",
+        text: `＋ ${tr("savedViews.addTimeField")}`,
+      });
+      addField.dataset.action = "add-time-field";
+      addField.addEventListener("click", (e) => {
+        const menu = new Menu();
+        for (const f of addable) {
+          menu.addItem((i) => i.setTitle(this.timeFieldLabel(f)).onClick(() => {
+            this.areaFilterExtraFields.add(f);
+            this.refreshFilterControls(rerenderControls);
+          }));
+        }
+        menu.showAtMouseEvent(e);
+      });
     }
 
     // Tags — a searchable, scrollable list (scales to thousands of tags).
