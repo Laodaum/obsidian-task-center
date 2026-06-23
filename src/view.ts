@@ -46,7 +46,7 @@ import { formatDateFilterLabel } from "./date-filter";
 import { taskMatchesTimeToken, timeTokenAppliesToField } from "./time-filter";
 import { deriveEffectiveTasks, countTopLevel, recomputeTopLevelInQuery } from "./task-tree";
 import type { EffectiveTask } from "./task-tree";
-import { applyQueryFilters } from "./query/filter";
+import { applyQueryFilters, queryFilterHasActiveConditions } from "./query/filter";
 import { projectListArea } from "./query/projection";
 import {
   applyQueryPresetFilters,
@@ -94,6 +94,7 @@ import type {
   ListAreaConfig,
   UnknownAreaConfig,
   QueryPreset,
+  QueryPresetFilters,
   QueryPresetViewConfig,
   SavedViewStatus,
   QueryPresetSummaryMetric,
@@ -252,6 +253,12 @@ export class TaskCenterView extends ItemView {
   // see USER_STORIES.md
   private undoStack: UndoStack;
   private filterPopoverOpen: FilterPopoverKey | null = null;
+  // US-109w: per-area filter popover. Holds the DFS area index whose filter
+  // popover is open (aligned with collectAreas order), or null when closed.
+  private filterPopoverArea: number | null = null;
+  // Render-time DFS area counter, reset at the start of renderViewLayout so each
+  // rendered area's index matches collectAreas(layout) order (for setAreaWhen).
+  private renderAreaCounter = 0;
   private dateCalendarAnchorISO = startOfMonth(todayISO());
   private pendingDateRangeStart: string | null = null;
   private viewResizeObserver: ResizeObserver | null = null;
@@ -1155,63 +1162,43 @@ export class TaskCenterView extends ItemView {
         void this.reorderQueryTab(draggedId, insertAt).then(() => closeSheet());
       });
 
-      // Main row: name, dirty dot, count
+      // DESIGN §5.0: same row + kebab pattern as the Manage Tabs panel —
+      // name + badges + count inline, management collapsed into one ⋮ menu.
+      // "更多" is primarily a quick switcher: click row = open the tab.
       const main = row.createDiv({ cls: "bt-overflow-tab-main" });
-      const titleWrap = main.createDiv({ cls: "bt-overflow-tab-title" });
-      titleWrap.createSpan({ text: view.name, cls: "bt-overflow-tab-name" });
-      if (dirty) {
-        titleWrap.createSpan({ text: "•", cls: "bt-tab-dirty-dot" });
+      main.createSpan({ text: view.name, cls: "bt-overflow-tab-name" });
+      if (dirty) main.createSpan({ text: "•", cls: "bt-tab-dirty-dot" });
+      for (const badge of this.savedViewBadges(view)) {
+        main.createSpan({ cls: "bt-overflow-tab-badge", text: badge });
       }
       const count = this.countForSavedView(view);
       if (count > 0) {
         main.createSpan({ text: String(count), cls: "bt-overflow-tab-count" });
       }
 
-      // Badges: 当前 / 默认 / 已修改 / 已隐藏 / 预设
-      const badges = this.savedViewBadges(view);
-      if (badges.length > 0) {
-        const badgeRow = main.createDiv({ cls: "bt-overflow-tab-badges" });
-        for (const badge of badges) {
-          badgeRow.createSpan({ cls: "bt-overflow-tab-badge", text: badge });
-        }
-      }
+      const runRowAction = (handler: () => void | Promise<void>) =>
+        Promise.resolve(handler()).then(() => closeSheet()).catch((error) =>
+          new Notice(tr("notice.error", { msg: error instanceof Error ? error.message : String(error) }), 4000),
+        );
 
-      // Click to activate: close sheet and switch to this tab
+      // Click row = switch to this tab (and close the sheet).
       row.addEventListener("click", () => {
         closeSheet();
         this.activateSavedView(view);
       });
-
-      // Context menu with full management actions
+      // Right-click / kebab = the shared tab management menu (§5.0).
       row.addEventListener("contextmenu", (event) => {
         event.preventDefault();
         event.stopPropagation();
-        this.openSavedViewMenu(event, view);
+        this.openManageTabRowMenu(event, view, (handler) => { void runRowAction(handler); });
       });
-
-      // Quick action buttons for management
-      const actions = row.createDiv({ cls: "bt-overflow-tab-actions" });
-      const makeAction = (label: string, handler: () => void | Promise<void>) => {
-        const btn = actions.createEl("button", { text: label, cls: "bt-overflow-tab-btn" });
-        btn.addEventListener("click", (e) => {
-          e.stopPropagation();
-          Promise.resolve(handler()).then(() => {
-            closeSheet();
-          }).catch((error) =>
-            new Notice(tr("notice.error", { msg: error instanceof Error ? error.message : String(error) }), 4000),
-          );
-        });
-      };
-
-      makeAction(tr("savedViews.rename"), () => this.renameSavedView(view));
-      makeAction(tr("savedViews.copy"), () => this.copySavedView(view));
-      makeAction(tr("savedViews.setDefault"), () => this.setDefaultSavedView(view.id));
-      makeAction(view.hidden ? tr("savedViews.show") : tr("savedViews.hide"), () =>
-        this.toggleSavedViewHidden(view, !view.hidden),
-      );
-      if (!view.builtin) {
-        makeAction(tr("savedViews.delete"), () => this.deleteSavedViewWithConfirm(view));
-      }
+      const kebab = row.createEl("button", { cls: "bt-overflow-tab-kebab" });
+      setIcon(kebab, "more-vertical");
+      kebab.setAttr("aria-label", tr("savedViews.more"));
+      kebab.addEventListener("click", (e) => {
+        e.stopPropagation();
+        this.openManageTabRowMenu(e, view, (handler) => { void runRowAction(handler); });
+      });
     }
   }
 
@@ -1272,34 +1259,10 @@ export class TaskCenterView extends ItemView {
       this.renderRangeNav(mainRow);
     }
 
-    if (!mobileLayout) {
-      // US-109: title / tag search box. The matching impl in `getTextFilter`
-      // also searches across tags so users can type `#3象限` or part of a
-      // tag to narrow the board; CLI exposes the same filter via
-      // `task-center:list search=…`.
-      // see USER_STORIES.md
-      const search = mainRow.createEl("input", { type: "text", placeholder: tr("toolbar.filter") });
-      search.addClass("bt-search");
-      search.value = this.state.filter;
-      // §7.3: debounce search input to avoid full teardown+rebuild per keystroke
-      let searchTimer: number | null = null;
-      search.addEventListener("input", () => {
-        const val = search.value;
-        const caret = search.selectionStart;
-        if (searchTimer !== null) window.clearTimeout(searchTimer);
-        searchTimer = window.setTimeout(() => {
-          searchTimer = null;
-          this.state.filter = val;
-          this.render();
-          const el = this.contentEl.querySelector<HTMLInputElement>(".bt-search");
-          if (el) {
-            el.focus();
-            const pos = caret ?? el.value.length;
-            el.selectionStart = el.selectionEnd = pos;
-          }
-        }, 150);
-      });
-    }
+    // US-109w/US-109z: the global filter (search box + tag/schedule/time/status
+    // chips) is gone from the toolbar — filtering belongs to each list/grid area
+    // (renderAreaFilter). The shared base `preset.filters` is still applied
+    // programmatically and editable via the Query editor, not via a global chip.
 
     if (mobileLayout) {
       const mobileFilters = mainRow.createEl("button", {
@@ -1329,10 +1292,12 @@ export class TaskCenterView extends ItemView {
     const wrap = parent.createDiv({ cls: "bt-saved-views" });
     wrap.dataset.savedViews = "true";
 
-    const filters = wrap.createDiv({ cls: "bt-saved-view-filters" });
     const actions = wrap.createDiv({ cls: "bt-saved-view-actions" });
 
-    this.renderSavedViewsFilterControls(filters, rerenderControls);
+    // US-109z: no global filter chips in the toolbar anymore — only current-query
+    // actions. Filter controls live per-area (renderAreaFilter) and in the Query
+    // editor / mobile sheet (which still call renderSavedViewsFilterControls for
+    // the shared base `preset.filters`).
     // DESIGN §5.0: query toolbar only carries current-query actions. Tab
     // management lives on the Tab Strip; settings is app chrome (gear there).
     this.renderSavedViewsActionControls(actions, rerenderControls, {
@@ -3977,6 +3942,9 @@ export class TaskCenterView extends ItemView {
     this.renderSummaryArea(parent, active);
     const layout: LayoutNode = active.view?.layout ?? { type: "list" };
     const root = parent.createDiv({ cls: "bt-view-root" });
+    // Reset the DFS area counter so each rendered area's index lines up with
+    // collectAreas(layout) order — setAreaWhen uses it to address the draft.
+    this.renderAreaCounter = 0;
     this.renderLayoutNode(root, layout);
   }
 
@@ -4034,12 +4002,14 @@ export class TaskCenterView extends ItemView {
     }
     const areaEl = parent.createDiv({ cls: `bt-area bt-area-${node.type}` });
     if (node.weight) areaEl.style.flexGrow = String(node.weight);
+    // DFS index aligned with collectAreas order; increment for every area node.
+    const areaIndex = this.renderAreaCounter++;
     switch (node.type) {
       case "list":
-        this.renderListArea(areaEl, node, false);
+        this.renderListArea(areaEl, node, false, areaIndex);
         break;
       case "grid":
-        this.renderListArea(areaEl, node, true);
+        this.renderListArea(areaEl, node, true, areaIndex);
         break;
       case "week":
         this.renderWeek(areaEl);
@@ -4077,7 +4047,12 @@ export class TaskCenterView extends ItemView {
     return fallback ?? "";
   }
 
-  private renderListArea(parent: HTMLElement, area: ListAreaConfig | GridAreaConfig, grid: boolean): void {
+  private renderListArea(
+    parent: HTMLElement,
+    area: ListAreaConfig | GridAreaConfig,
+    grid: boolean,
+    areaIndex: number,
+  ): void {
     const filter = this.getTextFilter();
     const filtered = recomputeTopLevelInQuery(this.getEffectiveTasks().filter(filter));
     const model = projectListArea(filtered, area, this.plugin.settings.weekStartsOn);
@@ -4090,11 +4065,17 @@ export class TaskCenterView extends ItemView {
       this.makeDropZone(parent, area.onDrop.setScheduled);
     }
 
+    // US-109w: filtering belongs to the area. drop / tray areas (onDrop) are
+    // action surfaces, not query content, so they don't get a filter entry.
+    const filterable = !area.onDrop;
     const areaTitle = this.localizeBuiltinTitle(area.id, area.title);
-    if (areaTitle) {
+    if (areaTitle || filterable) {
       parent.addClass("bt-has-head");
       const total = model.sections.reduce((s, sec) => s + sec.tasks.filter((t) => t.isTopLevelInQuery).length, 0);
-      parent.createDiv({ cls: "bt-list-area-head", text: `${areaTitle} (${total})` });
+      const head = parent.createDiv({ cls: "bt-list-area-head" });
+      if (areaTitle) head.createSpan({ cls: "bt-list-area-head-title", text: `${areaTitle} (${total})` });
+      else head.createSpan({ cls: "bt-list-area-head-title bt-list-area-head-count", text: `(${total})` });
+      if (filterable) this.renderAreaFilter(head, areaIndex, area.when ?? {});
     }
 
     if (model.grouped) {
@@ -4116,7 +4097,7 @@ export class TaskCenterView extends ItemView {
         }
       }
       if (totalVisible === 0 && !area.onDrop) {
-        if (this.tasks.length > 0) this.renderFilterEmptyState(parent);
+        if (this.tasks.length > 0) this.renderAreaEmptyState(parent, area, areaIndex);
         else parent.createDiv({ text: tr("filters.empty"), cls: "bt-empty" });
       }
       return;
@@ -4128,11 +4109,185 @@ export class TaskCenterView extends ItemView {
     if (list.length === 0) {
       // drop-only / tray 区为空时不抢占空状态。
       if (area.onDrop) return;
-      if (this.tasks.length > 0) this.renderFilterEmptyState(wrap);
+      if (this.tasks.length > 0) this.renderAreaEmptyState(wrap, area, areaIndex);
       else wrap.createDiv({ text: tr("filters.empty"), cls: "bt-empty" });
       return;
     }
     for (const task of list) this.renderCard(wrap, task);
+  }
+
+  // US-109w: per-area empty state. An area empty because of *its own* `when`
+  // is a neutral "no tasks here", not a misleading global "clear filters".
+  // Only offer "clear this area's filter" when the area actually has a `when`.
+  private renderAreaEmptyState(
+    parent: HTMLElement,
+    area: ListAreaConfig | GridAreaConfig,
+    areaIndex: number,
+  ): void {
+    const empty = parent.createDiv({ cls: "bt-area-empty" });
+    empty.dataset.emptyState = "area";
+    const icon = empty.createDiv({ cls: "bt-area-empty-icon" });
+    setIcon(icon, "search-x");
+    empty.createDiv({ text: tr("area.emptyArea"), cls: "bt-area-empty-title" });
+    if (area.when && queryFilterHasActiveConditions(area.when)) {
+      const clear = empty.createEl("button", { text: tr("area.clearAreaFilter"), cls: "bt-area-empty-clear" });
+      clear.dataset.action = "clear-area-filter";
+      clear.addEventListener("click", () => this.setAreaWhen(areaIndex, {}));
+    }
+  }
+
+  // US-109x: write a list/grid area's `when` into the current tab draft, keyed
+  // by its DFS index (collectAreas order). Same data the DSL editor edits.
+  private setAreaWhen(areaIndex: number, when: QueryPresetFilters): void {
+    const active = this.activeSavedView();
+    const snapshot = this.currentQuerySnapshot(active);
+    const layout = JSON.parse(JSON.stringify(snapshot.view.layout)) as LayoutNode;
+    const target = collectAreas(layout)[areaIndex];
+    if (target && (target.type === "list" || target.type === "grid")) {
+      (target as ListAreaConfig).when = when;
+    }
+    this.tabDrafts.set(active.id, normalizeQueryPreset({ ...snapshot, view: { layout } }));
+    this.render();
+  }
+
+  // US-109w/US-109y: per-area filter affordance. One trigger per list/grid area
+  // header opens a popover whose tag / status / scheduled / search controls edit
+  // *this area's* `when` (the same field the DSL editor edits).
+  private renderAreaFilter(head: HTMLElement, areaIndex: number, when: QueryPresetFilters): void {
+    const wrap = head.createDiv({ cls: "bt-area-filter" });
+    wrap.dataset.areaFilterWrap = String(areaIndex);
+    const open = this.filterPopoverArea === areaIndex;
+    const summary = this.areaFilterSummary(when);
+    const trigger = wrap.createEl("button", {
+      cls: "bt-area-filter-trigger" + (summary ? " active" : ""),
+    });
+    trigger.dataset.areaFilter = String(areaIndex);
+    trigger.setAttribute("aria-expanded", open ? "true" : "false");
+    setIcon(trigger.createSpan({ cls: "bt-area-filter-icon" }), "list-filter");
+    if (summary) trigger.createSpan({ text: summary, cls: "bt-area-filter-summary" });
+    trigger.addEventListener("click", () => {
+      this.filterPopoverArea = open ? null : areaIndex;
+      this.filterPopoverOpen = null;
+      this.render();
+    });
+    if (!open) return;
+
+    const pop = wrap.createDiv({ cls: "bt-area-filter-popover" });
+    const selectedTags = this.areaTags(when);
+    const status = normalizeSavedViewStatus(when.status);
+    const scheduled = when.time?.scheduled?.trim() ?? "";
+
+    // Search (applied on change to avoid losing focus on every keystroke).
+    const search = pop.createEl("input", {
+      type: "text",
+      cls: "bt-area-search",
+      placeholder: tr("toolbar.filter"),
+    });
+    search.value = when.search ?? "";
+    search.addEventListener("change", () => {
+      const val = search.value.trim();
+      this.setAreaWhen(areaIndex, { ...when, search: val || undefined });
+    });
+
+    // Status
+    const statusSec = pop.createDiv({ cls: "bt-area-filter-sec" });
+    statusSec.createDiv({ cls: "bt-area-filter-sec-label", text: tr("savedViews.statusAll") });
+    const statusRow = statusSec.createDiv({ cls: "bt-area-filter-chips" });
+    for (const opt of this.statusFilterOptions()) {
+      const checked = opt.value === "all"
+        ? status === "all"
+        : status !== "all" && status.includes(opt.value);
+      const chip = statusRow.createEl("button", {
+        text: opt.label,
+        cls: "bt-area-filter-chip" + (checked ? " active" : ""),
+      });
+      chip.dataset.areaStatus = opt.value;
+      chip.addEventListener("click", () => {
+        const next = this.toggledStatus(status, opt.value);
+        this.setAreaWhen(areaIndex, { ...when, status: next });
+      });
+    }
+
+    // Scheduled (quick tokens)
+    const schedSec = pop.createDiv({ cls: "bt-area-filter-sec" });
+    schedSec.createDiv({ cls: "bt-area-filter-sec-label", text: tr("savedViews.timeScheduled") });
+    const schedRow = schedSec.createDiv({ cls: "bt-area-filter-chips" });
+    const schedOptions: Array<readonly [string, string]> = [
+      ...this.timeFilterOptions("scheduled"),
+      ["unscheduled", tr("pool.unscheduled")],
+    ];
+    for (const [token, label] of schedOptions) {
+      const checked = scheduled === token;
+      const chip = schedRow.createEl("button", {
+        text: label,
+        cls: "bt-area-filter-chip" + (checked ? " active" : ""),
+      });
+      chip.dataset.areaScheduled = token || "all";
+      chip.addEventListener("click", () => {
+        const nextTime = { ...(when.time ?? {}) };
+        if (token) nextTime.scheduled = token;
+        else delete nextTime.scheduled;
+        this.setAreaWhen(areaIndex, { ...when, time: nextTime });
+      });
+    }
+
+    // Tags
+    const tagSec = pop.createDiv({ cls: "bt-area-filter-sec" });
+    const tagHead = tagSec.createDiv({ cls: "bt-area-filter-sec-head" });
+    tagHead.createSpan({ cls: "bt-area-filter-sec-label", text: tr("savedViews.tag") });
+    if (selectedTags.length > 0) {
+      const clearTags = tagHead.createEl("button", { text: tr("savedViews.clearTags"), cls: "bt-area-filter-clear-tags" });
+      clearTags.addEventListener("click", () => this.setAreaWhen(areaIndex, { ...when, tags: [] }));
+    }
+    const tagRow = tagSec.createDiv({ cls: "bt-area-filter-tags" });
+    const tagOptions = this.collectTagOptions(selectedTags);
+    if (tagOptions.length === 0) {
+      tagRow.createDiv({ cls: "bt-area-filter-empty", text: tr("savedViews.tagEmpty") });
+    }
+    for (const opt of tagOptions) {
+      const lc = opt.tag.toLowerCase();
+      const checked = selectedTags.some((t) => t.toLowerCase() === lc);
+      const chip = tagRow.createEl("button", {
+        cls: "bt-area-filter-chip bt-area-filter-tag" + (checked ? " active" : ""),
+      });
+      chip.dataset.areaTag = opt.tag;
+      chip.createSpan({ text: opt.tag, cls: "bt-area-filter-tag-label" });
+      if (opt.count > 0) chip.createSpan({ text: String(opt.count), cls: "bt-area-filter-tag-count" });
+      chip.addEventListener("click", () => {
+        const next = checked
+          ? selectedTags.filter((t) => t.toLowerCase() !== lc)
+          : [...selectedTags, opt.tag];
+        this.setAreaWhen(areaIndex, { ...when, tags: next });
+      });
+    }
+  }
+
+  private areaTags(when: QueryPresetFilters): string[] {
+    if (Array.isArray(when.tags)) return when.tags;
+    if (typeof when.tags === "string") return parseFilterTags(when.tags);
+    return [];
+  }
+
+  private toggledStatus(current: "all" | TaskStatus[], value: "all" | TaskStatus): SavedViewStatus {
+    if (value === "all") return "all";
+    const set = current === "all" ? [] : [...current];
+    const idx = set.indexOf(value);
+    if (idx >= 0) set.splice(idx, 1);
+    else set.push(value);
+    return set.length > 0 ? set : "all";
+  }
+
+  private areaFilterSummary(when: QueryPresetFilters): string {
+    const parts: string[] = [];
+    if (when.search?.trim()) parts.push(`🔍 ${when.search.trim()}`);
+    const tags = this.areaTags(when);
+    if (tags.length === 1) parts.push(tags[0]);
+    else if (tags.length > 1) parts.push(`${tags[0]} +${tags.length - 1}`);
+    const status = normalizeSavedViewStatus(when.status);
+    if (status !== "all") parts.push(status.map((s) => this.statusFilterLabel(s)).join("/"));
+    const scheduled = when.time?.scheduled?.trim();
+    if (scheduled) parts.push(scheduled === "unscheduled" ? tr("pool.unscheduled") : scheduled);
+    return parts.join(" · ");
   }
 
   private async refreshAfterAction(): Promise<void> {
@@ -4724,9 +4879,11 @@ export class TaskCenterView extends ItemView {
     return true;
   }
 
-  private collectTagOptions(): Array<{ tag: string; count: number }> {
+  private collectTagOptions(selectedTags?: string[]): Array<{ tag: string; count: number }> {
     const options = new Map<string, { tag: string; count: number }>();
-    const selected = new Set(parseFilterTags(this.state.savedViewTag));
+    const selected = new Set(
+      (selectedTags ?? parseFilterTags(this.state.savedViewTag)).map((t) => t.toLowerCase()),
+    );
     const add = (raw: string, count = 0) => {
       const trimmed = raw.trim();
       if (!trimmed) return;
@@ -5034,13 +5191,21 @@ export class TaskCenterView extends ItemView {
   }
 
   private handleFilterOutsidePointerDown(event: PointerEvent): void {
-    if (!shouldCloseFilterPopoverOnPointerDown({
+    const insideControls = isClickInsideFilterControls(event);
+    if (shouldCloseFilterPopoverOnPointerDown({
       isOpen: this.filterPopoverOpen !== null,
-      isInsideFilterControls: isClickInsideFilterControls(event),
-    })) return;
-    this.filterPopoverOpen = null;
-    this.pendingDateRangeStart = null;
-    this.render();
+      isInsideFilterControls: insideControls,
+    })) {
+      this.filterPopoverOpen = null;
+      this.pendingDateRangeStart = null;
+      this.render();
+      return;
+    }
+    // US-109w: close an open per-area filter popover on an outside click.
+    if (this.filterPopoverArea !== null && !insideControls) {
+      this.filterPopoverArea = null;
+      this.render();
+    }
   }
 
   // ---------- Footer / Add ----------

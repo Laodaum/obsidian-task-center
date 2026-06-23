@@ -421,6 +421,10 @@ const EN = {
   "area.unknownType": "Unknown view type: {type}",
   "area.unknownHint": "This area type is not supported. Edit the Query DSL to fix it.",
 
+  // US-109w: per-area filter + empty state
+  "area.emptyArea": "No tasks match here.",
+  "area.clearAreaFilter": "Clear this area's filter",
+
   // US-415: full-view upgrade gate (legacy SavedTaskView / old-DSL view →
   // new QueryPreset model). Shown instead of the board when legacy data is
   // detected; the board renders only after the user confirms.
@@ -809,6 +813,9 @@ const ZH: Partial<typeof EN> = {
 
   "area.unknownType": "未知视图类型：{type}",
   "area.unknownHint": "这个 area 类型不被支持。请编辑 Query DSL 修正。",
+
+  "area.emptyArea": "本区无匹配任务。",
+  "area.clearAreaFilter": "清空本区筛选",
 
   // US-415: 全屏升级闸门页
   "migration.badge": "升级",
