@@ -62,7 +62,7 @@ const EN = {
 
   // Abandon target
   "trash.title": "Abandon",
-  "trash.hint": "Drop here → [-] ❌",
+  "trash.hint": "Drop here to abandon",
   "trash.dropped": "Abandoned",
   "dnd.inheritedSchedule":
     "Schedule is inherited from parent; edit source or move out of parent first.",
@@ -484,7 +484,7 @@ const ZH: Partial<typeof EN> = {
     "长按卡片打开操作 · 左滑 = 完成 · 右滑 = 放弃",
 
   "trash.title": "放弃区",
-  "trash.hint": "拖到此处 → [-] ❌",
+  "trash.hint": "拖到此处放弃",
   "trash.dropped": "已放弃",
   "dnd.inheritedSchedule":
     "排期继承自父任务，请编辑源 Markdown 或将任务移出父级。",

@@ -28,9 +28,9 @@
   cursor: pointer;
   border: 1px solid transparent;
   border-bottom: none;
-  border-radius: 6px 6px 0 0;
+  border-radius: var(--radius-s) var(--radius-s) 0 0;
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: var(--font-ui-small);
   display: flex;
   align-items: center;
   gap: 8px;
@@ -71,7 +71,7 @@
   border-color: var(--background-modifier-border);
   border-bottom: 1px solid var(--background-primary);
   margin-bottom: -1px;
-  font-weight: 600;
+  font-weight: var(--font-semibold);
 }
 .task-center-view .bt-tab.drag-hover {
   outline: 2px dashed var(--interactive-accent);
@@ -115,23 +115,23 @@
   }
 }
 .task-center-view .bt-tab-count {
-  font-size: 10px;
-  font-weight: 600;
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-semibold);
   color: var(--text-on-accent);
   background: var(--interactive-accent);
   padding: 1px 6px;
-  border-radius: 8px;
+  border-radius: var(--radius-s);
 }
 .task-center-view .bt-tab:not(.active) .bt-tab-count {
   color: var(--text-muted);
   background: var(--background-modifier-border);
 }
 .task-center-view .bt-hotkey {
-  font-size: 10px;
+  font-size: var(--font-ui-smaller);
   color: var(--text-faint);
   padding: 1px 4px;
   background: var(--background-secondary);
-  border-radius: 3px;
+  border-radius: var(--radius-s);
 }
 
 /* Overflow "More" tab button (VAL-GUI-005) */
@@ -274,23 +274,29 @@
 .task-center-view .bt-toolbar input,
 .task-center-view .bt-toolbar select {
   border: 1px solid var(--background-modifier-border);
-  border-radius: 6px;
+  border-radius: var(--radius-m);
   background: var(--background-primary);
   color: var(--text-normal);
-  font-size: 12px;
+  font-size: var(--font-ui-small);
 }
 .task-center-view .bt-nav {
   display: flex;
   align-items: center;
   gap: 4px;
 }
+/* §3.0: range nav rendered inside the week / month component (desktop). */
+.task-center-view .bt-area-nav {
+  display: flex;
+  align-items: center;
+  margin-bottom: 8px;
+}
 .task-center-view .bt-nav button {
   padding: 2px 8px;
-  font-size: 12px;
+  font-size: var(--font-ui-small);
 }
 .task-center-view .bt-nav-label {
   margin-left: 6px;
-  font-size: 12px;
+  font-size: var(--font-ui-small);
   color: var(--text-muted);
 }
 .task-center-view .bt-search {
@@ -298,7 +304,7 @@
   min-width: 200px;
   max-width: 520px;
   padding: 4px 10px;
-  font-size: 12px;
+  font-size: var(--font-ui-small);
 }
 .task-center-view .bt-toolbar-utility {
   margin-left: auto;
@@ -520,10 +526,11 @@
   max-width: 150px;
   padding: 4px 8px;
   border: 1px solid var(--background-modifier-border);
-  border-radius: 6px;
-  background: var(--background-secondary);
+  border-radius: var(--radius-m);
+  background: var(--background-modifier-hover);
   color: var(--text-normal);
-  font-weight: 600;
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-semibold);
   cursor: pointer;
 }
 .task-center-view .bt-tag-filter {
@@ -539,10 +546,11 @@
   max-width: 136px;
   padding: 4px 8px;
   border: 1px solid var(--background-modifier-border);
-  border-radius: 6px;
-  background: var(--background-secondary);
+  border-radius: var(--radius-m);
+  background: var(--background-modifier-hover);
   color: var(--text-normal);
-  font-weight: 600;
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-semibold);
   cursor: pointer;
   white-space: nowrap;
   overflow: hidden;
@@ -764,12 +772,14 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* D7 / §5.3: filter chips share one size + radius + font rhythm. */
 .task-center-view button.bt-saved-view-filter {
   border: 1px solid var(--background-modifier-border);
-  border-radius: 6px;
-  background: var(--background-secondary);
+  border-radius: var(--radius-m);
+  background: var(--background-modifier-hover);
   color: var(--text-normal);
-  font-weight: 600;
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-semibold);
   cursor: pointer;
 }
 .task-center-view .bt-status-popover {
@@ -1382,14 +1392,16 @@
 }
 .task-center-view .bt-week-col {
   background: var(--background-secondary);
-  border-radius: 6px;
+  border-radius: var(--radius-m);
   padding: 6px;
   display: flex;
   flex-direction: column;
   min-height: 140px;
 }
+/* D6 selection baseline: soft accent mix + inset accent bar. This is the
+   canonical "selected / current" treatment promoted to month cells below. */
 .task-center-view .bt-week-col.today {
-  background: color-mix(in srgb, var(--interactive-accent) 6%, var(--background-secondary));
+  background: color-mix(in srgb, var(--interactive-accent) 8%, var(--background-secondary));
   box-shadow: inset 0 2px 0 var(--interactive-accent);
 }
 .task-center-view .bt-week-col.today .bt-week-dow,
@@ -1404,17 +1416,17 @@
   border-bottom: 1px solid var(--background-modifier-border);
 }
 .task-center-view .bt-week-dow {
-  font-weight: 700;
-  font-size: 13px;
+  font-weight: var(--font-semibold);
+  font-size: var(--font-ui-small);
 }
 .task-center-view .bt-week-date {
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--font-ui-smaller);
 }
 .task-center-view .bt-week-stats {
   margin-left: auto;
   color: var(--text-faint);
-  font-size: 10px;
+  font-size: var(--font-ui-smaller);
 }
 .task-center-view .bt-week-list {
   display: flex;
@@ -1451,14 +1463,20 @@
   background: var(--background-secondary);
   min-height: 86px;
   padding: 4px;
-  border-radius: 4px;
-  font-size: 11px;
+  border-radius: var(--radius-m);
+  font-size: var(--font-ui-smaller);
   display: flex;
   flex-direction: column;
   overflow: hidden;
 }
+/* D6: month cell "today" uses the same soft accent mix + inset accent bar as
+   the week column baseline, replacing the old solid 2px outline. */
 .task-center-view .bt-month-cell.today {
-  outline: 2px solid var(--interactive-accent);
+  background: color-mix(in srgb, var(--interactive-accent) 8%, var(--background-secondary));
+  box-shadow: inset 0 2px 0 var(--interactive-accent);
+}
+.task-center-view .bt-month-cell.today .bt-month-cell-date {
+  color: var(--interactive-accent);
 }
 .task-center-view .bt-month-cell.other-month {
   opacity: 0.4;
@@ -1470,14 +1488,14 @@
   padding-bottom: 2px;
 }
 .task-center-view .bt-month-cell-date {
-  font-weight: 600;
+  font-weight: var(--font-semibold);
 }
 .task-center-view .bt-month-cell-count {
-  font-size: 10px;
+  font-size: var(--font-ui-smaller);
   background: var(--interactive-accent);
   color: var(--text-on-accent);
   padding: 0 5px;
-  border-radius: 8px;
+  border-radius: var(--radius-s);
 }
 .task-center-view .bt-month-cell-list {
   display: flex;
@@ -1659,8 +1677,12 @@
 .task-center-view .bt-card.dragging {
   opacity: 0.4;
 }
+/* D6: selection feedback (US-168c) uses the canonical soft-mix + inset accent
+   bar rather than a hard 2px outline. The inset bar sits on the left to
+   reinforce the card spine. */
 .task-center-view .bt-card.selected {
-  outline: 2px solid var(--interactive-accent);
+  background: color-mix(in srgb, var(--interactive-accent) 8%, var(--background-primary));
+  box-shadow: inset 2px 0 0 var(--interactive-accent);
 }
 .task-center-view .bt-card.bt-overdue {
   border-left-color: var(--color-red);
@@ -1844,11 +1866,14 @@
 }
 
 /* Abandon drop zone — sticky so it stays visible while scrolling the unscheduled pool */
+/* D3/D4: token border (1px default, dashed only emphasized while dragging /
+   on drop-hover), --radius-m, --font-ui-* sizing, and danger state via
+   --text-error / --background-modifier-error instead of raw red. */
 .task-center-view .bt-trash {
   width: 100%;
   box-sizing: border-box;
-  border: 2px dashed var(--background-modifier-border);
-  border-radius: 8px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
   background: var(--background-secondary);
   padding: 18px 12px;
   display: flex;
@@ -1857,25 +1882,29 @@
   justify-content: center;
   gap: 6px;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--font-ui-smaller);
   transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease;
   min-height: 96px;
 }
 .task-center-view .bt-trash:hover,
 .task-center-view .bt-trash.drop-hover {
-  border-color: var(--color-red);
-  background: rgba(255, 0, 0, 0.08);
-  color: var(--color-red);
+  border-color: var(--text-error);
+  background: var(--background-modifier-error);
+  color: var(--text-error);
 }
-/* A drag is in progress anywhere on the board — nudge the trash border
-   so users know it's a valid target without having to hover directly. */
+/* A drag is in progress anywhere on the board — emphasize the drop-zone with
+   a dashed danger border so users know it's a valid target without hovering. */
 .task-center-view.dragging-active .bt-trash {
-  border-color: var(--color-red);
-  border-style: solid;
+  border-style: dashed;
+  border-color: var(--text-error);
 }
 .task-center-view .bt-trash-icon {
-  font-size: 28px;
+  display: inline-flex;
   line-height: 1;
+}
+.task-center-view .bt-trash-icon svg {
+  width: var(--icon-l);
+  height: var(--icon-l);
 }
 .task-center-view .bt-trash-label {
   display: flex;
@@ -1884,15 +1913,15 @@
   gap: 2px;
 }
 .task-center-view .bt-trash-title {
-  font-weight: 600;
-  font-size: 12px;
+  font-weight: var(--font-semibold);
+  font-size: var(--font-ui-small);
 }
 .task-center-view .bt-trash-hint {
-  font-size: 10px;
+  font-size: var(--font-ui-smaller);
   color: var(--text-faint);
 }
 .task-center-view .bt-trash.drop-hover .bt-trash-hint {
-  color: var(--color-red);
+  color: var(--text-error);
 }
 
 .task-center-view .bt-empty,
@@ -2368,9 +2397,11 @@
     padding: 2px;
     min-height: 36px;
   }
+  /* D6: selected day uses the canonical soft-mix + inset accent treatment,
+     matching today / week-col instead of a bespoke outline. */
   .task-center-view[data-mobile-layout="true"] .bt-month-cell.selected {
-    outline: 2px solid color-mix(in srgb, var(--interactive-accent) 75%, transparent);
-    background: color-mix(in srgb, var(--interactive-accent) 12%, var(--background-secondary));
+    background: color-mix(in srgb, var(--interactive-accent) 8%, var(--background-secondary));
+    box-shadow: inset 0 2px 0 var(--interactive-accent);
   }
   .task-center-view[data-mobile-layout="true"] .bt-month-cell-head {
     flex-direction: column;
