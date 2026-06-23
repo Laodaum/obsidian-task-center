@@ -201,6 +201,8 @@ A date grid laid out by month. Same usage as `week`, plus a density option.
 
 A drop zone with no query — it only accepts drag actions, so `onDrop` is required. The "Drop" zone is just a drop area.
 
+> 🖼️ **Figure TODO** — the drop zone's receiving state on its own: the highlight/hover feedback when a task card is dragged over the "Drop" zone. Slot: between this note and the code block below.
+
 ```jsonc
 { "type": "drop", "title": "Drop", "onDrop": { "setStatus": "dropped" } }
 ```
@@ -208,6 +210,8 @@ A drop zone with no query — it only accepts drag actions, so `onDrop` is requi
 ### 4.6 unknown — the fallback
 
 An unsupported area `type` (a typo, or a removed legacy type such as the old matrix) is **not an error**: it is normalized to `unknown`, the original JSON is preserved, and the view renders "unknown type + JSON" instead of failing to load the whole config.
+
+> 🖼️ **Figure TODO** — craft an area with a misspelled `type` and capture the "unknown type + raw JSON" fallback rendering. Slot: below this paragraph.
 
 ---
 
@@ -237,6 +241,8 @@ The write performed when a card is dropped onto an area. The three semantics are
 `summary` is an array of metrics rendered at the top of the view. The "Completed" view uses it to total actual time and the actual/estimate ratio:
 
 ![Completed view = list + summary](../assets/dsl/completed.png)
+
+> 🖼️ **Figure TODO** — the current screenshot is an empty state (the vault has no completed tasks yet, only the top summary chips). Create a few done tasks with `actual`/`estimate` and recapture to show real cards plus the sum/ratio values.
 
 ```jsonc
 "summary": [
@@ -328,7 +334,19 @@ A single ungrouped `list`:
 
 ---
 
-## 7. Design principles in brief
+## 7. Graphical editing ↔ DSL ↔ CLI (one shared schema)
+
+The graphical filter UI, editing the JSON directly via "Edit Query", and managing queries from the CLI all share the same DSL and validation: changing a filter in the UI edits some area's `when`, which is exactly equivalent to writing it by hand in this JSON.
+
+> 🖼️ **Figure TODO** — show the graphical filter popover next to the corresponding `when` JSON snippet, with the one-to-one mapping called out. Slot: below this paragraph.
+
+> **TODO (to write)**:
+> - How the CLI reads/writes the same preset (mapping the `obsidian task-center:*` query commands to this DSL).
+> - When graphical edits land in the tab draft, and how that relates to "Save / Save as".
+
+---
+
+## 8. Design principles in brief
 
 1. **Markdown is the single source of truth**; the DSL is only a derived layer.
 2. **One view = one layout tree**; no view-type enum, and the renderer never branches on names like today / completed.
