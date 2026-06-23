@@ -134,6 +134,29 @@ test("VAL-CORE-008: list area — tasks sorted by orderBy", async () => {
   assert.equal(model.sections[0].tasks[2].title, "ZZZ Task");
 });
 
+// ── US-153: just-completed exemption threads through area.when ──
+
+test("US-153: projectListArea exempts just-completed ids from area when.status", async () => {
+  if (compileErr) throw compileErr;
+
+  const { projectListArea } = await import("../test/.compiled/projection.js");
+
+  const tasks = [
+    effectiveTask({ id: "test.md:L1", title: "Active", effectiveStatus: "todo" }),
+    effectiveTask({ id: "test.md:L2", title: "Just done", effectiveStatus: "done" }),
+    effectiveTask({ id: "test.md:L3", title: "Old done", effectiveStatus: "done" }),
+  ];
+
+  const model = projectListArea(
+    tasks,
+    { type: "list", when: { status: ["todo"] } },
+    1,
+    new Set(["test.md:L2"]),
+  );
+  assert.equal(model.grouped, false);
+  assert.deepEqual(model.sections[0].tasks.map((t) => t.id), ["test.md:L1", "test.md:L2"]);
+});
+
 // ── M2: List sections from configured area.sections ──
 
 test("M2: list area — configured sections partition tasks by filter", async () => {

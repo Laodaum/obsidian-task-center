@@ -252,6 +252,20 @@ export class TaskCenterView extends ItemView {
   // confusing than helpful (UX.md §6.7). Capped at 20 entries (UndoStack.MAX).
   // see USER_STORIES.md
   private undoStack: UndoStack;
+  // US-153: ids of tasks the user just marked done via the ✔ check *in this
+  // view session*. They bypass the status filter (filter.ts exemptStatusIds),
+  // so a freshly-completed card lingers in place — rendered in its done state
+  // (US-152) but still interactive — instead of vanishing the instant it is
+  // checked off. Cleared on every genuine "re-enter view" (onOpen / tab switch
+  // / cache-driven full refresh), never by the in-place re-render that the
+  // completion toggle itself triggers.
+  private justCompletedIds = new Set<string>();
+  // US-153: our own ✔ write triggers a cache `changed` → debounced
+  // scheduleRefresh. That refresh must NOT clear `justCompletedIds` (it isn't a
+  // user re-entering the view, it's the echo of the completion we just made).
+  // toggleDone sets this so the next scheduleRefresh skips the clear exactly
+  // once; genuine external changes still clear.
+  private skipNextRefreshClear = false;
   private filterPopoverOpen: FilterPopoverKey | null = null;
   // US-109w: per-area filter popover. Holds the DFS area index whose filter
   // popover is open (aligned with collectAreas order), or null when closed.
@@ -324,6 +338,8 @@ export class TaskCenterView extends ItemView {
     // Immediate placeholder so the tab doesn't flash blank on slow-parse vaults.
     this.contentEl.empty();
     this.contentEl.createDiv({ cls: "bt-loading", text: tr("loading") });
+    // US-153: a fresh open starts a new view session — no lingering completions.
+    this.justCompletedIds.clear();
     await this.reloadTasks();
     this.bumpCacheVersion();
     this.render();
@@ -401,6 +417,15 @@ export class TaskCenterView extends ItemView {
     this.refreshTimer = window.setTimeout(() => {
       void (async () => {
         this.refreshTimer = null;
+        // US-153: a cache-driven full refresh is normally a genuine "re-enter
+        // view" moment — drop the just-completed exemption so freshly-done
+        // cards now settle out by the normal status filter. But skip the clear
+        // once if this refresh is merely the echo of our own ✔ write.
+        if (this.skipNextRefreshClear) {
+          this.skipNextRefreshClear = false;
+        } else {
+          this.justCompletedIds.clear();
+        }
         await this.reloadTasks();
         this.bumpCacheVersion();
         this.render();
@@ -496,6 +521,43 @@ export class TaskCenterView extends ItemView {
       action(),
     ]);
     await cacheReady;
+    if (this.refreshTimer !== null) {
+      window.clearTimeout(this.refreshTimer);
+      this.refreshTimer = null;
+    }
+    await this.reloadTasks();
+    this.render();
+  }
+
+  /**
+   * US-153: toggle a card's done state from the ✔ check. Unlike
+   * `runWithRemoveAnim`, the card does NOT fade out and vanish:
+   *
+   *  - todo → done: register the id in `justCompletedIds` so the status-filter
+   *    exemption keeps the card in place, then re-render in place. The card
+   *    re-renders in its done state (US-152), still interactive.
+   *  - done → todo (undone): drop the id from the exemption set; the task is a
+   *    plain todo again and stays via the normal filter.
+   *
+   * The in-place reload+render here deliberately does NOT clear
+   * `justCompletedIds` (only genuine view re-entry does — see `applySavedView`,
+   * `scheduleRefresh`, `onOpen`), otherwise the card would be filtered out the
+   * instant we re-render it.
+   */
+  private async toggleDone(t: EffectiveTask): Promise<void> {
+    const wasDone = t.effectiveStatus === "done";
+    if (wasDone) {
+      await this.api.undone(t.id);
+      this.justCompletedIds.delete(t.id);
+    } else {
+      await this.api.done(t.id);
+      this.justCompletedIds.add(t.id);
+    }
+    // The file write above echoes back as a cache `changed` → debounced
+    // scheduleRefresh. Tell that one refresh not to clear the exemption set,
+    // so the just-completed card keeps lingering. (undone also writes, but its
+    // id is already gone from the set, so the skip is harmless there.)
+    this.skipNextRefreshClear = true;
     if (this.refreshTimer !== null) {
       window.clearTimeout(this.refreshTimer);
       this.refreshTimer = null;
@@ -4097,7 +4159,7 @@ export class TaskCenterView extends ItemView {
   ): void {
     const filter = this.getTextFilter();
     const filtered = recomputeTopLevelInQuery(this.getEffectiveTasks().filter(filter));
-    const model = projectListArea(filtered, area, this.plugin.settings.weekStartsOn);
+    const model = projectListArea(filtered, area, this.plugin.settings.weekStartsOn, this.justCompletedIds);
     const cardsCls = grid ? "bt-list-grid" : "";
 
     if (area.onDrop?.clearScheduled) {
@@ -4398,16 +4460,18 @@ export class TaskCenterView extends ItemView {
     check.addEventListener("click", (e) => {
       void (async () => {
         e.stopPropagation();
-        await this.runWithRemoveAnim(t.id, async () => {
-          if (t.effectiveStatus === "done") await this.api.undone(t.id);
-          else await this.api.done(t.id);
-        });
+        await this.toggleDone(t);
       })();
     });
 
     const title = titleRow.createDiv({ cls: "bt-card-title", text: t.title });
     title.title = t.title; // tooltip for long titles
     if (t.effectiveStatus === "done") card.addClass("done");
+    // US-153: mark cards that are only still here because they were just
+    // completed in this session, so the in-place re-render keeps them and e2e
+    // can assert "it lingered". Plain done cards (e.g. in the Completed view)
+    // are not flagged.
+    if (this.justCompletedIds.has(t.id)) card.dataset.justCompleted = "true";
 
     this.renderTaskTags(card, t.tags, "bt-card-tags");
 
@@ -4894,7 +4958,10 @@ export class TaskCenterView extends ItemView {
         if (!taskHasTag(t, tag)) return false;
       }
       if (!this.taskMatchesTimeFilters(t, time)) return false;
-      if (status !== "all" && !status.includes(t.effectiveStatus)) return false;
+      // US-153: a just-completed task bypasses the status predicate only (the
+      // base preset.filters layer carries `status: todo` for built-in single-
+      // area tabs like Today / TODO). search / tags / time still apply.
+      if (status !== "all" && !this.justCompletedIds.has(t.id) && !status.includes(t.effectiveStatus)) return false;
       return true;
     };
   }
@@ -5002,6 +5069,10 @@ export class TaskCenterView extends ItemView {
   }
 
   private applySavedView(view: QueryPreset): void {
+    // US-153: switching / re-activating a saved view is a genuine "re-enter
+    // view" — drop any just-completed exemptions so completed cards from the
+    // previous browse settle out by the normal filter.
+    this.justCompletedIds.clear();
     const saved = normalizeQueryPreset(view);
     const effective = normalizeQueryPreset(this.tabDrafts.get(saved.id) ?? saved);
     const filters = applyQueryPresetFilters(effective);
@@ -5380,10 +5451,8 @@ export class TaskCenterView extends ItemView {
     const m = new Menu();
     m.addItem((i) =>
       i.setTitle(task.effectiveStatus === "done" ? tr("ctx.markTodo") : tr("ctx.markDone")).onClick(async () => {
-        await this.runWithRemoveAnim(task.id, async () => {
-          if (task.effectiveStatus === "done") await this.api.undone(task.id);
-          else await this.api.done(task.id);
-        });
+        // US-153: same linger-in-place behavior as the ✔ check.
+        await this.toggleDone(task);
       }),
     );
     m.addItem((i) =>

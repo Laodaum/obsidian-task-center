@@ -237,6 +237,57 @@ test("VAL-CORE-007: status filter — \"all\" returns all tasks", async () => {
   assert.equal(result.length, 2);
 });
 
+// ── US-153: just-completed status-filter exemption ──
+
+test("US-153: exemptStatusIds keeps a done task in a todo-status filter", async () => {
+  if (compileErr) throw compileErr;
+
+  const { applyQueryFilters } = await import("../test/.compiled/filter.js");
+
+  const tasks = [
+    effectiveTask({ id: "test.md:L1", status: "todo", effectiveStatus: "todo" }),
+    // Just completed in this session — would normally be filtered out by status: todo.
+    effectiveTask({ id: "test.md:L2", status: "done", effectiveStatus: "done" }),
+    effectiveTask({ id: "test.md:L3", status: "done", effectiveStatus: "done" }),
+  ];
+
+  const exempt = new Set(["test.md:L2"]);
+  const result = applyQueryFilters(tasks, { status: ["todo"] }, 1, undefined, exempt);
+  // L1 (todo) stays, L2 (exempt done) stays, L3 (non-exempt done) is filtered out.
+  assert.deepEqual(result.map((t) => t.id), ["test.md:L1", "test.md:L2"]);
+});
+
+test("US-153: exemptStatusIds only bypasses status, not other filters", async () => {
+  if (compileErr) throw compileErr;
+
+  const { applyQueryFilters } = await import("../test/.compiled/filter.js");
+
+  const tasks = [
+    effectiveTask({ id: "test.md:L1", title: "alpha", status: "done", effectiveStatus: "done" }),
+    effectiveTask({ id: "test.md:L2", title: "beta", status: "done", effectiveStatus: "done" }),
+  ];
+
+  // Both exempt from status, but a search filter must still apply.
+  const exempt = new Set(["test.md:L1", "test.md:L2"]);
+  const result = applyQueryFilters(tasks, { status: ["todo"], search: "alpha" }, 1, undefined, exempt);
+  assert.deepEqual(result.map((t) => t.id), ["test.md:L1"]);
+});
+
+test("US-153: omitting exemptStatusIds preserves original status filtering", async () => {
+  if (compileErr) throw compileErr;
+
+  const { applyQueryFilters } = await import("../test/.compiled/filter.js");
+
+  const tasks = [
+    effectiveTask({ id: "test.md:L1", status: "todo", effectiveStatus: "todo" }),
+    effectiveTask({ id: "test.md:L2", status: "done", effectiveStatus: "done" }),
+  ];
+
+  // No exempt set → done task is filtered out exactly as before.
+  const result = applyQueryFilters(tasks, { status: ["todo"] }, 1);
+  assert.deepEqual(result.map((t) => t.id), ["test.md:L1"]);
+});
+
 // ── VAL-CORE-007: Time filters — scheduled ──
 
 test("VAL-CORE-007: time.scheduled=today filters by effective scheduled date", async () => {

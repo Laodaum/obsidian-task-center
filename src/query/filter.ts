@@ -181,12 +181,19 @@ function taskMatchesNormalizedQueryFilters(
   normalized: NormalizedQueryFilters,
   weekStartsOn: 0 | 1,
   today: string,
+  exemptStatusIds?: ReadonlySet<string>,
 ): boolean {
   if (normalized.searchQ && !matchesSearch(task, normalized.searchQ))
     return false;
   if (normalized.tagList.length > 0 && !matchesTags(task, normalized.tagList))
     return false;
-  if (!matchesStatus(task, normalized.statusFilter)) return false;
+  // US-153: a task in `exemptStatusIds` (just completed in this view session)
+  // bypasses the status predicate only — every other filter still applies — so
+  // a freshly-done card lingers in a `status: todo` view until the next
+  // re-entry, instead of being filtered out the instant it is checked off.
+  const statusExempt = exemptStatusIds?.has(task.id) ?? false;
+  if (!statusExempt && !matchesStatus(task, normalized.statusFilter))
+    return false;
   if (
     normalized.hasTime &&
     !matchesTime(task, normalized.time, weekStartsOn, today)
@@ -205,6 +212,9 @@ function taskMatchesNormalizedQueryFilters(
  * @param filters  QueryPresetFilters from a QueryPreset
  * @param weekStartsOn  0=Sunday, 1=Monday
  * @param today  ISO date for "today" token (defaults to actual today)
+ * @param exemptStatusIds  US-153: task ids that bypass the status filter only
+ *   (just-completed cards in the current view session). Optional; GUI-only.
+ *   CLI / summary / badge counts never pass it, so they are unaffected.
  * @returns filtered EffectiveTask[]
  */
 export function applyQueryFilters(
@@ -212,11 +222,12 @@ export function applyQueryFilters(
   filters: QueryPresetFilters,
   weekStartsOn: 0 | 1,
   today: string = todayISO(),
+  exemptStatusIds?: ReadonlySet<string>,
 ): EffectiveTask[] {
   // Quick-pass: no active filters
   const normalized = normalizeQueryFilters(filters);
   if (!normalizedQueryFilterHasActiveConditions(normalized)) return tasks;
   return tasks.filter((task) =>
-    taskMatchesNormalizedQueryFilters(task, normalized, weekStartsOn, today),
+    taskMatchesNormalizedQueryFilters(task, normalized, weekStartsOn, today, exemptStatusIds),
   );
 }
