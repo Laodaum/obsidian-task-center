@@ -147,6 +147,17 @@ background: color-mix(in srgb, var(--interactive-accent) 8%, var(--background-se
 
 每个组件给出对应的 class 与对齐要点。"现状欠债"列在 §6。
 
+### 5.0 动作密度与渐进式呈现
+
+不要把一个区域里的所有操作都铺成等权重的按钮——那会变成 Word / OmniFocus 式的"按钮墙"，既挤又让用户分不清主次。规则：
+
+- **一个区域只保留一个主操作**（accent 或语义最高的那个），其余收进 **溢出菜单（`⋯`）或行级 kebab（`⋮`）**。
+- **重复结构用行 + kebab**：列表里每一项的操作不要逐个铺按钮，压成一行（名称 + 徽标 + 右侧 `⋮`），低频操作进 `⋮` 菜单。点击行 = 该项的主操作。
+- 主操作可随状态变化（如有未保存改动时主操作是"更新"，否则是"+ 新建"）。
+- 这是具体落地（哪些进主区、哪些进菜单）写在 `UX.md`；本文档只定原则与外观。
+
+> e2e 选择器契约：若某操作被 e2e 依赖（带 `data-action`），收进溢出区时仍要保留真实带 `data-action` 的 `<button>`（用自定义 popover，而非 Obsidian `Menu`，因为 Menu item 不在受控 DOM 里）。无 e2e 依赖的行级 kebab 用原生 `Menu` 即可。
+
 ### 5.1 升级闸门 / Bento（样板，已对齐）
 
 `tc-migration-card` / `tc-migration-bento` / `tc-bento-cell` / `tc-bento-art`。
