@@ -263,6 +263,9 @@ export default class TaskCenterPlugin extends Plugin {
       isLegacySavedTaskView(v) ? migrateLegacySavedTaskView(v) : v,
     );
 
+    // US-109l: permanently-deleted preset ids are skipped when re-seeding
+    // builtins, so a deleted preset stays gone across restarts.
+    const deletedBuiltinIds = Array.isArray(merged.deletedBuiltinIds) ? merged.deletedBuiltinIds : [];
     const queryPresets = ensureBuiltinQueryPresets(migratedViews as Parameters<typeof ensureBuiltinQueryPresets>[0], {
       today: tr("tab.today"),
       week: tr("tab.week"),
@@ -271,7 +274,7 @@ export default class TaskCenterPlugin extends Plugin {
       unscheduled: tr("tab.unscheduled"),
       completed: tr("tab.completed"),
       dropped: tr("tab.dropped"),
-    });
+    }, deletedBuiltinIds);
     // Resolve a friendly name + kind for every legacy view so the gate can list
     // them. Prefer the post-migration preset (matched by id) so a renamed
     // builtin shows its current label; fall back to the raw name, then a
@@ -1117,13 +1120,12 @@ export default class TaskCenterPlugin extends Plugin {
 
   private async cliQueryDelete(args: CliArgs): Promise<string> {
     const view = this.requireQueryPreset(requireArg(args.id, "id"));
-    // VAL-CLI-006: builtins cannot be permanently deleted via CLI.
-    // GUI already hides the Delete action for builtin tabs; CLI mirrors
-    // that guard.
-    if (view.builtin) {
-      throw new TaskWriterError("invalid_query", `无法删除内置 Query Tab：${view.id}`);
-    }
     this.settings.queryPresets = deleteQueryPresetById(this.settings.queryPresets, view.id);
+    // US-109l: deleting a builtin preset tombstones its id so it is not
+    // re-seeded on the next load. "恢复预设 Tabs" / 行内「恢复预设」 clears it.
+    if (view.builtin && !this.settings.deletedBuiltinIds.includes(view.id)) {
+      this.settings.deletedBuiltinIds = [...this.settings.deletedBuiltinIds, view.id];
+    }
     if (this.settings.defaultSavedViewId === view.id) this.settings.defaultSavedViewId = null;
     if (this.settings.lastSavedViewId === view.id) this.settings.lastSavedViewId = null;
     await this.saveSettings();

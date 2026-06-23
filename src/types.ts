@@ -72,6 +72,11 @@ export interface TaskCenterSettings {
   // Legacy SavedTaskView entries in data.json are detected and rejected
   // during loadSettings — no migration path exists.
   queryPresets: QueryPreset[];
+  // US-109l: builtin (preset) tabs the user permanently deleted. `ensureBuiltin
+  // QueryPresets` skips re-seeding these on load so a deleted preset stays gone
+  // across restarts. Cleared per-id by 行内「恢复预设」 and wholesale by
+  // 「恢复预设 Tabs」; an entry is removed when the delete is undone.
+  deletedBuiltinIds: string[];
   defaultSavedViewId: string | null;
   defaultView: "today" | "week" | "month" | "completed" | "unscheduled";
   openOnStartup: boolean;
@@ -310,6 +315,7 @@ export interface QueryPresetValidationResult {
 
 export const DEFAULT_SETTINGS: TaskCenterSettings = {
   queryPresets: [],
+  deletedBuiltinIds: [],
   defaultSavedViewId: null,
   defaultView: "week",
   openOnStartup: false,

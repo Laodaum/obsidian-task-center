@@ -22,6 +22,11 @@
   display: flex;
   gap: 2px;
   border-bottom: 1px solid var(--background-modifier-border);
+  /* US-109q: desktop overflow is width-driven (tabs collapse into "更多");
+     never scroll horizontally. Clipping covers the one frame between the
+     measure-all render and the collapsed render. Mobile re-enables pan below. */
+  flex-wrap: nowrap;
+  overflow: hidden;
 }
 .task-center-view .bt-tab {
   padding: 6px 12px;
@@ -1953,10 +1958,10 @@
 /* Cards */
 .task-center-view .bt-card {
   background: var(--background-primary);
+  /* No coloured left spine: a uniform 1px border reads cleaner. Risk states
+     (overdue / near-deadline) carry their colour via a soft background tint +
+     the deadline pill text instead of a left bar (UX.md §「颜色不是唯一信号」). */
   border: 1px solid var(--background-modifier-border);
-  /* Calm neutral spine by default; accent appears on hover and for risk
-     states (overdue / near-deadline) so colour carries meaning, not noise. */
-  border-left: 3px solid var(--background-modifier-border);
   border-radius: 6px;
   padding: 7px 10px;
   font-size: 12px;
@@ -1992,11 +1997,12 @@
   box-shadow: inset 2px 0 0 var(--interactive-accent);
 }
 .task-center-view .bt-card.bt-overdue {
-  border-left-color: var(--color-red);
+  border-color: color-mix(in srgb, var(--color-red) 30%, var(--background-modifier-border));
   background: color-mix(in srgb, var(--color-red) 6%, var(--background-primary));
 }
 .task-center-view .bt-card.bt-near-deadline {
-  border-left-color: var(--color-orange);
+  border-color: color-mix(in srgb, var(--color-orange) 30%, var(--background-modifier-border));
+  background: color-mix(in srgb, var(--color-orange) 5%, var(--background-primary));
 }
 /* US-152: a done card is expressed by muted text + the ✔ status icon, not a
    strike-through. Keep title / date / meta legible (the user may still want to
@@ -2105,23 +2111,12 @@
     box-shadow 0.12s ease,
     transform 0.12s ease;
 }
-.task-center-view .bt-subcard::before {
-  content: "";
-  position: absolute;
-  inset: 5px auto 5px 0;
-  width: 2px;
-  border-radius: 999px;
-  background: transparent;
-  transition: background-color 0.12s ease, opacity 0.12s ease;
-}
+/* US-168c: subtask hover reads as a soft tinted box — no left accent bar
+   (the cheap-looking left border is gone, matching the flat-bordered cards). */
 .task-center-view .bt-subcard:hover {
   background: color-mix(in srgb, var(--interactive-accent) 7%, transparent);
   border-color: color-mix(in srgb, var(--interactive-accent) 22%, var(--background-modifier-border));
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--interactive-accent) 12%, transparent) inset;
-  transform: translateX(1px);
-}
-.task-center-view .bt-subcard:hover::before {
-  background: var(--interactive-accent);
 }
 .task-center-view .bt-subcard.dragging {
   opacity: 0.72;
@@ -3742,7 +3737,6 @@
 
 .task-center-view[data-mobile-layout="true"] .bt-card {
   padding: 8px 9px;
-  border-left-width: 3px;
   border-radius: 7px;
   cursor: pointer;
 }

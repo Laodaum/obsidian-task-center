@@ -275,6 +275,13 @@ export class TaskCenterView extends ItemView {
   // per-area filter popover model — open/close is a render-time flag closed by
   // outside pointerdown / Esc / row select / button toggle (mobile uses a sheet).
   private overflowTabsMenuOpen = false;
+  // US-109q: width-driven desktop tab overflow. `fittedVisibleTabCount` is how
+  // many leading tabs fit on the bar before "更多" collapses the rest; null means
+  // "render all and measure". The desktop tab bar never scrolls horizontally —
+  // tabs that don't fit go into "更多". `lastTabbarMeasureWidth` lets the resize
+  // observer re-measure only when the bar width actually changed (avoids loops).
+  private fittedVisibleTabCount: number | null = null;
+  private lastTabbarMeasureWidth = 0;
   // Render-time DFS area counter, reset at the start of renderViewLayout so each
   // rendered area's index matches collectAreas(layout) order (for setAreaWhen).
   private renderAreaCounter = 0;
@@ -386,8 +393,12 @@ export class TaskCenterView extends ItemView {
     this.registerDomEvent(window, "resize", () => {
       this.applyMobileLayoutAttr();
       this.updateViewLayoutMetrics();
+      this.handleTabbarOverflowResize();
     });
-    this.viewResizeObserver = new ResizeObserver(() => this.updateViewLayoutMetrics());
+    this.viewResizeObserver = new ResizeObserver(() => {
+      this.updateViewLayoutMetrics();
+      this.handleTabbarOverflowResize();
+    });
     this.viewResizeObserver.observe(this.contentEl);
     this.updateViewLayoutMetrics();
 
@@ -908,16 +919,23 @@ export class TaskCenterView extends ItemView {
     const bar = parent.createDiv({ cls: "bt-tabbar" });
     const tabs = this.visibleQueryTabs();
     const mobileLayout = this.contentEl.dataset.mobileLayout === "true";
-    // VAL-GUI-005: when there are more than MAX_VISIBLE_TABS, overflow
-    // tabs go into a "更多" button. Overflow tabs retain order, badges,
-    // default behavior, and keyboard shortcuts.
-    // Keyboard shortcuts ⌃1–⌃9 map to the first 9 visible tabs.
-    //
-    // US-117b / US-510: mobile may pan the tab strip horizontally, but it
-    // must not expose desktop shortcut affordances.
+    // VAL-GUI-005 / US-109q: overflow tabs go into a "更多" button while keeping
+    // order, badges, default behavior, and keyboard shortcuts. Two regimes:
+    //  - Mobile: the strip pans horizontally, capped at MAX_VISIBLE_TABS before
+    //    the "更多" bottom sheet (US-117b / US-510 — no desktop affordances).
+    //  - Desktop: width-driven. `fittedVisibleTabCount` (measured after layout,
+    //    see scheduleTabOverflowMeasure) caps how many leading tabs fit so the
+    //    bar never scrolls horizontally; null means "render all then measure".
+    // Desktop has no fixed tab ceiling: width decides how many show, the rest
+    // go into "更多" (tabs 10+ simply have no ⌃1–9 shortcut). Mobile pans the
+    // strip horizontally, still capped at MAX_VISIBLE_TABS before the sheet.
+    // ⌃1–⌃9 map to the first 9 of `visibleQueryTabs()` regardless of the split.
     const MAX_VISIBLE_TABS = 9;
-    const visibleTabs = tabs.slice(0, MAX_VISIBLE_TABS);
-    const overflowTabs = tabs.slice(MAX_VISIBLE_TABS);
+    const visibleCount = mobileLayout
+      ? Math.min(tabs.length, MAX_VISIBLE_TABS)
+      : (this.fittedVisibleTabCount ?? tabs.length);
+    const visibleTabs = tabs.slice(0, visibleCount);
+    const overflowTabs = tabs.slice(visibleCount);
 
     for (const [index, view] of visibleTabs.entries()) {
       this.renderTabButton(bar, view, index, mobileLayout);
@@ -941,11 +959,9 @@ export class TaskCenterView extends ItemView {
       if (overflowTabs.some((v) => this.isSavedViewDirty(v))) {
         label.createSpan({ text: "•", cls: "bt-tab-dirty-dot" });
       }
-      // Show total count of overflow tabs plus their badges
-      const overflowCount = overflowTabs.reduce((sum, v) => sum + this.countForSavedView(v), 0);
-      if (overflowCount > 0) {
-        moreBtn.createSpan({ text: String(overflowCount), cls: "bt-tab-count" });
-      }
+      // US-109q: the badge counts collapsed tabs ("还有 N 个 tab"), not the sum
+      // of their task counts — per-tab task counts already show on each row.
+      moreBtn.createSpan({ text: String(overflowTabs.length), cls: "bt-tab-count" });
       moreBtn.title = overflowTabs.map((v) => v.name).join(", ");
 
       // US-109q: desktop opens an in-place dropdown anchored under the "更多"
@@ -998,6 +1014,76 @@ export class TaskCenterView extends ItemView {
     setIcon(gearBtn, "settings");
     gearBtn.setAttr("aria-label", tr("toolbar.settings"));
     gearBtn.addEventListener("click", () => this.openPluginSettings());
+
+    // US-109q: desktop width-driven overflow runs after layout — measure which
+    // tabs actually fit and collapse the rest into "更多". Mobile pans instead.
+    if (!mobileLayout) {
+      this.scheduleTabOverflowMeasure(bar);
+    }
+  }
+
+  /**
+   * US-109q: after the desktop tab bar renders, measure how many leading tabs
+   * fit on one row and collapse the overflow into "更多" so the bar never scrolls
+   * horizontally. Only recomputes when the bar was rendered in full
+   * (`fittedVisibleTabCount === null`); the collapsed render is stable. Width
+   * changes (panel drag) reset the cap via handleTabbarOverflowResize.
+   */
+  private scheduleTabOverflowMeasure(bar: HTMLElement): void {
+    window.requestAnimationFrame(() => {
+      if (!bar.isConnected) return;
+      // A collapsed render only has the surviving tabs in the DOM, so it can't
+      // be re-measured for growth here — that path is driven by resize resets.
+      if (this.fittedVisibleTabCount !== null) return;
+      this.lastTabbarMeasureWidth = bar.clientWidth;
+      const tabEls = Array.from(
+        bar.querySelectorAll<HTMLElement>(".bt-tab:not(.bt-tab-more)"),
+      );
+      const total = tabEls.length;
+      const fit = this.computeFittedTabCount(bar, tabEls);
+      // fit >= total → everything fits, keep "show all" (null) to avoid a churn
+      // render; otherwise collapse to the measured cap.
+      const desired = fit >= total ? null : fit;
+      if (desired !== this.fittedVisibleTabCount) {
+        this.fittedVisibleTabCount = desired;
+        this.render();
+      }
+    });
+  }
+
+  /** Largest number of leading tabs that fit, reserving room for "更多". */
+  private computeFittedTabCount(bar: HTMLElement, tabEls: HTMLElement[]): number {
+    const GAP = 2; // .bt-tabbar gap
+    const MORE_RESERVE = 96; // approx width of the "更多 N" chip
+    const tail = bar.querySelector<HTMLElement>(".bt-tabbar-tail");
+    const avail = bar.clientWidth - (tail ? tail.offsetWidth + GAP : 0);
+    let used = 0;
+    let fitWithoutMore = 0;
+    for (let i = 0; i < tabEls.length; i++) {
+      used += tabEls[i].offsetWidth + (i > 0 ? GAP : 0);
+      if (used <= avail) fitWithoutMore = i + 1;
+      else break;
+    }
+    if (fitWithoutMore === tabEls.length) return tabEls.length;
+    // Need "更多": find the largest prefix that fits alongside its chip.
+    let used2 = 0;
+    let fit = 0;
+    for (let i = 0; i < tabEls.length; i++) {
+      used2 += tabEls[i].offsetWidth + (i > 0 ? GAP : 0);
+      if (used2 + GAP + MORE_RESERVE <= avail) fit = i + 1;
+      else break;
+    }
+    return fit;
+  }
+
+  /** Re-measure the desktop tab overflow when the bar width actually changes. */
+  private handleTabbarOverflowResize(): void {
+    if (this.contentEl.dataset.mobileLayout === "true") return;
+    const bar = this.contentEl.querySelector<HTMLElement>(".bt-tabbar");
+    if (!bar) return;
+    if (Math.abs(bar.clientWidth - this.lastTabbarMeasureWidth) < 1) return;
+    this.fittedVisibleTabCount = null;
+    this.render();
   }
 
   private renderTabButton(bar: HTMLElement, view: QueryPreset, index: number, mobileLayout: boolean): void {
@@ -1186,9 +1272,12 @@ export class TaskCenterView extends ItemView {
           () => this.toggleSavedViewHidden(view, !view.hidden),
         );
 
-        if (!view.builtin) {
-          addBtn(tr("savedViews.delete"), () => this.deleteSavedViewWithConfirm(view));
+        // US-109l: delete is available for builtin presets too (they re-appear
+        // via 「恢复预设 Tabs」). Builtins additionally offer 「恢复预设」 to reset.
+        if (view.builtin) {
+          addBtn(tr("savedViews.restore"), () => this.restoreBuiltinSavedView(view));
         }
+        addBtn(tr("savedViews.delete"), () => this.deleteSavedViewWithConfirm(view));
       },
     });
     sheet.open();
@@ -1738,13 +1827,20 @@ export class TaskCenterView extends ItemView {
         void this.toggleSavedViewHidden(normalized, !normalized.hidden);
       }),
     );
-    if (!normalized.builtin) {
+    // US-109l: builtins keep 「恢复预设」 (reset to factory) and are now also
+    // deletable; custom tabs just delete.
+    if (normalized.builtin) {
       menu.addItem((item) =>
-        item.setTitle(tr("savedViews.delete")).onClick(() => {
-          void this.deleteSavedViewWithConfirm(normalized);
+        item.setTitle(tr("savedViews.restore")).setIcon("rotate-ccw").onClick(() => {
+          void this.restoreBuiltinSavedView(normalized);
         }),
       );
     }
+    menu.addItem((item) =>
+      item.setTitle(tr("savedViews.delete")).onClick(() => {
+        void this.deleteSavedViewWithConfirm(normalized);
+      }),
+    );
     menu.showAtMouseEvent(event);
   }
 
@@ -1923,10 +2019,10 @@ export class TaskCenterView extends ItemView {
       menu.addItem((i) => i.setTitle(tr("savedViews.restore")).setIcon("rotate-ccw")
         .onClick(() => run(() => this.restoreBuiltinSavedView(view))));
     }
-    if (!view.builtin) {
-      menu.addItem((i) => i.setTitle(tr("savedViews.delete")).setIcon("trash-2")
-        .onClick(() => run(() => this.deleteSavedViewWithConfirm(view))));
-    }
+    // US-109l: delete is available for builtin presets too (tombstoned so they
+    // stay gone; recoverable via 「恢复预设」 / 「恢复预设 Tabs」).
+    menu.addItem((i) => i.setTitle(tr("savedViews.delete")).setIcon("trash-2")
+      .onClick(() => run(() => this.deleteSavedViewWithConfirm(view))));
     menu.showAtMouseEvent(event);
   }
 
@@ -2101,6 +2197,10 @@ export class TaskCenterView extends ItemView {
     // Apply the deletion to plugin state
     this.plugin.settings.queryPresets = deleteState.presetsAfter;
     this.tabDrafts.delete(view.id);
+    // US-109l: tombstone a deleted builtin so it is not re-seeded on next load.
+    if (view.builtin && !this.plugin.settings.deletedBuiltinIds.includes(view.id)) {
+      this.plugin.settings.deletedBuiltinIds = [...this.plugin.settings.deletedBuiltinIds, view.id];
+    }
 
     if (deleteState.newDefaultId !== null) {
       this.plugin.settings.defaultSavedViewId = deleteState.newDefaultId;
@@ -2126,6 +2226,11 @@ export class TaskCenterView extends ItemView {
 
       this.plugin.settings.queryPresets = undoState.presetsRestored;
       this.tabDrafts.delete(result.undoPlan!.snapshot.id);
+      // US-109l: undoing a builtin delete lifts its tombstone.
+      if (view.builtin) {
+        this.plugin.settings.deletedBuiltinIds =
+          this.plugin.settings.deletedBuiltinIds.filter((id) => id !== view.id);
+      }
 
       if (undoState.restoredDefaultId !== null) {
         this.plugin.settings.defaultSavedViewId = undoState.restoredDefaultId;
@@ -2145,7 +2250,12 @@ export class TaskCenterView extends ItemView {
       this.plugin.settings.queryPresets,
       view.id,
       this.savedViewLabels(),
+      this.plugin.settings.deletedBuiltinIds,
     );
+    // US-109l: restoring a builtin (incl. a previously-deleted one) lifts its
+    // tombstone so it survives the next load.
+    this.plugin.settings.deletedBuiltinIds =
+      this.plugin.settings.deletedBuiltinIds.filter((id) => id !== view.id);
     this.tabDrafts.delete(view.id);
     const restored = this.plugin.settings.queryPresets.find((item) => item.id === view.id);
     if (restored && this.state.savedViewId === view.id) {

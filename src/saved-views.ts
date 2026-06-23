@@ -724,26 +724,31 @@ export function createBuiltinQueryPresets(
 export function ensureBuiltinQueryPresets(
   presets: readonly QueryPreset[],
   labels: Partial<Record<BuiltinQueryTab, string>> = {},
+  deletedBuiltinIds: readonly string[] = [],
 ): QueryPreset[] {
   // 内置 view 的布局是出厂规范（含本地化所需的稳定 id），不作为用户就地
   // 编辑面（自定义路径是「复制后修改」）。因此 builtin 的 view 始终用最新
   // 出厂布局刷新，保证升级后布局结构、area id、本地化保持一致；用户对
   // 名称 / 隐藏 / 排序 / filters / summary 的改动仍然保留。
+  const tombstoned = new Set(deletedBuiltinIds);
   const existingRaw = new Map(presets.map((p) => [p.id, p]));
   const out: QueryPreset[] = [];
   for (const tab of BUILTIN_QUERY_TABS) {
     const seeded = seededBuiltinQueryPreset(tab, labels[tab] ?? DEFAULT_BUILTIN_LABELS[tab]);
     const current = existingRaw.get(seeded.id);
+    existingRaw.delete(seeded.id);
     if (current) {
       out.push(normalizeQueryPreset({
         ...current,
         builtin: true,
         view: seeded.view,
       }));
+    } else if (tombstoned.has(seeded.id)) {
+      // US-109l: the user permanently deleted this preset — don't re-seed it.
+      continue;
     } else {
       out.push(normalizeQueryPreset(seeded));
     }
-    existingRaw.delete(seeded.id);
   }
   for (const preset of presets) {
     if (isBuiltinSavedViewId(preset.id)) continue;
@@ -756,13 +761,17 @@ export function restoreBuiltinQueryPresetById(
   presets: readonly QueryPreset[],
   id: string,
   labels: Partial<Record<BuiltinQueryTab, string>> = {},
+  deletedBuiltinIds: readonly string[] = [],
 ): QueryPreset[] {
   const kind = builtinSavedViewKind(id);
   if (!kind) return [...presets];
   const seeded = seededBuiltinQueryPreset(kind, labels[kind] ?? DEFAULT_BUILTIN_LABELS[kind]);
   const index = presets.findIndex((p) => p.id === id);
   if (index === -1) {
-    return ensureBuiltinQueryPresets([...presets, seeded], labels);
+    // US-109l: re-seed only this preset — keep any OTHER deleted presets gone by
+    // passing the tombstone minus the id being restored.
+    const remaining = deletedBuiltinIds.filter((x) => x !== id);
+    return ensureBuiltinQueryPresets([...presets, seeded], labels, remaining);
   }
   return presets.map((p, i) => (i === index ? seeded : normalizeQueryPreset(p)));
 }

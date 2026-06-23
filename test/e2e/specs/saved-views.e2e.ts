@@ -351,13 +351,15 @@ describe("US-724 saved views / custom filters", function () {
   // under the button (not a bottom sheet / modal). Clicking a row switches to
   // that tab and closes; outside click and Esc close it; the toggle re-opens.
   it("US-109q: 更多 opens an in-place dropdown that switches tab and closes", async function () {
-    // Seed 12 custom presets so the tab bar overflows (MAX_VISIBLE_TABS = 9).
+    // Seed 12 custom presets with long names so the desktop tab bar overflows
+    // by WIDTH (US-109q is width-driven, no fixed count cap) regardless of the
+    // CI window size — no realistic panel fits 12 long-named tabs on one row.
     await browser.executeObsidian(async ({ app }) => {
       // @ts-expect-error — runtime plugin
       const plugin = (app as any).plugins.plugins["task-center"];
       const mk = (n: number) => ({
         id: `ovf-${n}`,
-        name: `溢出${n}`,
+        name: `这是一个比较长的溢出测试视图名称${n}`,
         builtin: false,
         hidden: false,
         filters: {},

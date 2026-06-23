@@ -53,7 +53,45 @@ const {
   isLegacySavedTaskView,
   isLegacyQueryPresetShape,
   ensureBuiltinQueryPresets,
+  restoreBuiltinQueryPresetById,
+  restoreBuiltinQueryPresets,
 } = await import("../test/.compiled/saved-views.js");
+
+// ── US-109l: builtin presets are deletable; deletion is persisted via a
+// `deletedBuiltinIds` tombstone that ensureBuiltinQueryPresets honors. ──
+
+test("US-109l: ensureBuiltinQueryPresets skips re-seeding tombstoned builtins", () => {
+  // Start from a full builtin set, delete one, then re-ensure with its id
+  // tombstoned — it must stay gone (the other 6 builtins remain).
+  const full = ensureBuiltinQueryPresets([]);
+  assert.ok(full.some((p) => p.id === "preset-today"));
+  const afterDelete = deleteQueryPresetById(full, "preset-today");
+  const reEnsured = ensureBuiltinQueryPresets(afterDelete, {}, ["preset-today"]);
+  assert.equal(reEnsured.find((p) => p.id === "preset-today"), undefined);
+  assert.ok(reEnsured.some((p) => p.id === "preset-week"));
+});
+
+test("US-109l: restoreBuiltinQueryPresetById brings back one preset but keeps OTHER tombstones gone", () => {
+  const full = ensureBuiltinQueryPresets([]);
+  // Two builtins deleted + tombstoned.
+  let presets = deleteQueryPresetById(full, "preset-today");
+  presets = deleteQueryPresetById(presets, "preset-week");
+  const tombstone = ["preset-today", "preset-week"];
+  // Restore only today; week must stay deleted.
+  const restored = restoreBuiltinQueryPresetById(presets, "preset-today", {}, tombstone);
+  assert.ok(restored.some((p) => p.id === "preset-today"));
+  assert.equal(restored.find((p) => p.id === "preset-week"), undefined);
+});
+
+test("US-109l: restoreBuiltinQueryPresets resurrects all tombstoned builtins", () => {
+  const full = ensureBuiltinQueryPresets([]);
+  let presets = deleteQueryPresetById(full, "preset-today");
+  presets = deleteQueryPresetById(presets, "preset-month");
+  // restore-all ignores the tombstone (caller clears it) and re-seeds everything.
+  const restored = restoreBuiltinQueryPresets(presets);
+  assert.ok(restored.some((p) => p.id === "preset-today"));
+  assert.ok(restored.some((p) => p.id === "preset-month"));
+});
 
 test("US-109h: status filters normalize legacy single-select and new multi-select values", () => {
   assert.equal(normalizeSavedViewStatus("all"), "all");

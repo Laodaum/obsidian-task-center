@@ -182,6 +182,7 @@ async function createPluginForQueryCli(overrides = {}) {
   const calls = { save: 0, refresh: 0 };
   plugin.settings = {
     queryPresets: [],
+    deletedBuiltinIds: [],
     defaultSavedViewId: null,
     lastSavedViewId: null,
     groupingTags: [],
@@ -1247,7 +1248,9 @@ test("task-center root CLI handler prints help with AI skill install command", a
 });
 
 // VAL-CLI-006: builtins cannot be permanently deleted via CLI
-test("query-delete rejects builtin query preset with invalid_query", async () => {
+// US-109l: builtins are now deletable; deleting one tombstones its id so it is
+// not re-seeded on next load (recoverable via 「恢复预设 Tabs」).
+test("query-delete 删除内置 preset 并把 id 记入 deletedBuiltinIds 墓碑", async () => {
   const { plugin, calls } = await createPluginForQueryCli({
     queryPresets: [
       {
@@ -1271,16 +1274,16 @@ test("query-delete rejects builtin query preset with invalid_query", async () =>
     ],
   });
 
-  await assert.rejects(
-    () => plugin.cliQueryDelete({ id: "preset-today" }),
-    (err) => err.code === "invalid_query" && /无法删除内置/.test(err.message),
-  );
+  const result = await plugin.cliQueryDelete({ id: "preset-today" });
+  assert.match(result, /^ok  preset-today  今日/);
+  assert.match(result, /deleted query preset/);
 
-  // Builtin preset still present, no save/refresh side effects
-  assert.equal(plugin.settings.queryPresets.length, 2);
-  assert.equal(plugin.settings.queryPresets.find((v) => v.id === "preset-today")?.id, "preset-today");
-  assert.equal(calls.save, 0);
-  assert.equal(calls.refresh, 0);
+  // Builtin preset removed and tombstoned; custom preset untouched.
+  assert.equal(plugin.settings.queryPresets.length, 1);
+  assert.equal(plugin.settings.queryPresets.find((v) => v.id === "preset-today"), undefined);
+  assert.deepEqual(plugin.settings.deletedBuiltinIds, ["preset-today"]);
+  assert.equal(calls.save, 1);
+  assert.equal(calls.refresh, 1);
 });
 
 test("query-delete 允许删除非内置的自定义 preset", async () => {

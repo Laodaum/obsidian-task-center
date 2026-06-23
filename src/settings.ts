@@ -54,6 +54,8 @@ export class TaskCenterSettingTab extends PluginSettingTab {
               dropped: tr("tab.dropped"),
               unscheduled: tr("tab.unscheduled"),
             });
+            // US-109l: 恢复预设 Tabs 清空墓碑，把所有被永久删除的内建一次找回。
+            this.plugin.settings.deletedBuiltinIds = [];
             const visible = visibleQueryPresets(this.plugin.settings.queryPresets);
             if (
               this.plugin.settings.defaultSavedViewId
