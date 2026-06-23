@@ -181,6 +181,9 @@ const EN = {
     "Read supports Tasks emoji and Dataview inline fields. New task metadata writes use this flavor.",
   "settings.taskFormatFlavor.tasks": "Tasks emoji: ⏳ 📅 ➕ ✅",
   "settings.taskFormatFlavor.dataview": "Dataview inline fields: [scheduled::] [due::]",
+  "settings.groupTabs": "Query tabs",
+  "settings.groupGeneral": "General",
+  "settings.groupWriting": "Task writing",
   "settings.mobileHeader": "Mobile",
   "settings.mobileLongPress.name": "Long-press duration (ms)",
   "settings.mobileLongPress.desc":
@@ -624,6 +627,9 @@ const ZH: Partial<typeof EN> = {
     "读取同时兼容 Tasks emoji 与 Dataview inline fields；新的任务元数据写入使用这里选择的风味。",
   "settings.taskFormatFlavor.tasks": "Tasks emoji：⏳ 📅 ➕ ✅",
   "settings.taskFormatFlavor.dataview": "Dataview inline fields：[scheduled::] [due::]",
+  "settings.groupTabs": "Query 标签页",
+  "settings.groupGeneral": "通用",
+  "settings.groupWriting": "任务写入",
   "settings.mobileHeader": "移动端",
   "settings.mobileLongPress.name": "长按时长 (ms)",
   "settings.mobileLongPress.desc":
