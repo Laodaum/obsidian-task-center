@@ -58,8 +58,15 @@ export class QueryEditorView {
     const rerender: Rerender = () => {
       this.v.render();
       if (!body) return;
+      // Preserve scroll across the in-place rerender. Without this, toggling the
+      // tag select (or any filter change) rebuilds the body and snaps the sheet
+      // back to the top, so a popover opened near the bottom looked like nothing
+      // happened ("can't click").
+      const scroller = body.closest<HTMLElement>(".modal-content, .bt-editor-page-body");
+      const top = scroller?.scrollTop ?? 0;
       body.empty();
       this.renderSheet(body, rerender);
+      if (scroller) scroller.scrollTop = top;
     };
     const sheet = new BottomSheet(this.v.app, {
       title: tr(scope === "area" ? "savedViews.editAreaTitle" : "savedViews.editViewTitle"),
