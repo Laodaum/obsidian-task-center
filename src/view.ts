@@ -45,7 +45,6 @@ import { formatDateFilterLabel } from "./date-filter";
 import { taskMatchesTimeToken, timeTokenAppliesToField } from "./time-filter";
 import { deriveEffectiveTasks, countTopLevel, recomputeTopLevelInQuery } from "./task-tree";
 import type { EffectiveTask } from "./task-tree";
-import { queryFilterHasActiveConditions } from "./query/filter";
 import { projectListArea } from "./query/projection";
 import {
   applyQueryPresetFilters,
@@ -100,11 +99,11 @@ import { isStackNode } from "./types";
 import {
   setAreaType as layoutSetAreaType,
   appendArea as layoutAppendArea,
+  insertNode as layoutInsertNode,
   removeNode as layoutRemoveNode,
   wrapInStack as layoutWrapInStack,
   setStackDir as layoutSetStackDir,
   reorderChild as layoutReorderChild,
-  pathToAreaIndex,
   type LayoutPath,
 } from "./layout-ops";
 import type { SavedViewTimeField, SavedViewTimeFilters } from "./types";
@@ -808,10 +807,22 @@ export class TaskCenterView extends ItemView {
     // small CSS-drawn illustration so the change is easy to grasp at a glance.
     card.createEl("h3", { cls: "tc-migration-subhead", text: tr("migration.whatsNewTitle") });
     const bento = card.createDiv({ cls: "tc-migration-bento" });
-    this.renderBentoCell(bento, "layout", "migration.feature1Title", "migration.feature1Desc");
-    this.renderBentoCell(bento, "model", "migration.feature2Title", "migration.feature2Desc");
-    this.renderBentoCell(bento, "preset", "migration.feature3Title", "migration.feature3Desc");
-    this.renderBentoCell(bento, "ui", "migration.feature4Title", "migration.feature4Desc");
+    // Varied bento tiles: some span the full width (wide), some are square — so
+    // the grid reads as a real bento, not a uniform 2×N table.
+    const cells: Array<{
+      art: "layout" | "model" | "preset" | "ui" | "toolbar" | "done";
+      size: "wide" | "square";
+      title: Parameters<typeof tr>[0];
+      desc: Parameters<typeof tr>[0];
+    }> = [
+      { art: "layout", size: "wide", title: "migration.feature1Title", desc: "migration.feature1Desc" },
+      { art: "model", size: "square", title: "migration.feature2Title", desc: "migration.feature2Desc" },
+      { art: "preset", size: "square", title: "migration.feature3Title", desc: "migration.feature3Desc" },
+      { art: "toolbar", size: "wide", title: "migration.feature5Title", desc: "migration.feature5Desc" },
+      { art: "ui", size: "square", title: "migration.feature4Title", desc: "migration.feature4Desc" },
+      { art: "done", size: "square", title: "migration.feature6Title", desc: "migration.feature6Desc" },
+    ];
+    for (const c of cells) this.renderBentoCell(bento, c.art, c.size, c.title, c.desc);
 
     // Primary action sits right under What's New so it's visible without
     // scrolling past the (potentially long) migrated-views list below.
@@ -842,6 +853,22 @@ export class TaskCenterView extends ItemView {
 
     card.createEl("p", { cls: "tc-migration-note", text: tr("migration.note") });
 
+    // Roadmap — what's intentionally not here yet and what replaces it, so the
+    // upgrade doesn't read as "features were just removed".
+    const roadmap = card.createDiv({ cls: "tc-migration-roadmap" });
+    roadmap.createEl("h3", { cls: "tc-migration-subhead", text: tr("migration.roadmapTitle") });
+    const roadmapItems: Array<{ title: Parameters<typeof tr>[0]; desc: Parameters<typeof tr>[0] }> = [
+      { title: "migration.roadmap1Title", desc: "migration.roadmap1Desc" },
+      { title: "migration.roadmap2Title", desc: "migration.roadmap2Desc" },
+    ];
+    for (const r of roadmapItems) {
+      const item = roadmap.createDiv({ cls: "tc-roadmap-item" });
+      const head = item.createDiv({ cls: "tc-roadmap-head" });
+      head.createSpan({ cls: "tc-roadmap-title", text: tr(r.title) });
+      head.createSpan({ cls: "tc-roadmap-tag", text: tr("migration.roadmapTag") });
+      item.createEl("p", { cls: "tc-roadmap-desc", text: tr(r.desc) });
+    }
+
     window.setTimeout(() => cta.focus(), 10);
   }
 
@@ -852,11 +879,12 @@ export class TaskCenterView extends ItemView {
    */
   private renderBentoCell(
     grid: HTMLElement,
-    art: "layout" | "model" | "preset" | "ui",
+    art: "layout" | "model" | "preset" | "ui" | "toolbar" | "done",
+    size: "wide" | "square",
     titleKey: Parameters<typeof tr>[0],
     descKey: Parameters<typeof tr>[0],
   ): void {
-    const cell = grid.createDiv({ cls: `tc-bento-cell tc-bento-cell--${art}` });
+    const cell = grid.createDiv({ cls: `tc-bento-cell tc-bento-cell--${art} tc-bento-cell--${size}` });
     const figure = cell.createDiv({ cls: "tc-bento-art" });
     figure.dataset.art = art;
     if (art === "layout") {
@@ -865,6 +893,20 @@ export class TaskCenterView extends ItemView {
       const row = figure.createDiv({ cls: "tc-art-row" });
       row.createDiv({ cls: "tc-art-block" });
       row.createDiv({ cls: "tc-art-block" });
+    } else if (art === "toolbar") {
+      // One shared edit entry per area: a header row with a title + edit button.
+      const head = figure.createDiv({ cls: "tc-art-head" });
+      head.createSpan({ cls: "tc-art-headtitle" });
+      const editBtn = head.createSpan({ cls: "tc-art-editbtn" });
+      setIcon(editBtn, "sliders-horizontal");
+      figure.createDiv({ cls: "tc-art-headline" });
+      figure.createDiv({ cls: "tc-art-headline is-short" });
+    } else if (art === "done") {
+      // A done card: stays in place, recolored with a check instead of vanishing.
+      const doneCard = figure.createDiv({ cls: "tc-art-donecard" });
+      const check = doneCard.createSpan({ cls: "tc-art-check" });
+      setIcon(check, "check");
+      doneCard.createSpan({ cls: "tc-art-donetext" });
     } else if (art === "model") {
       // One shared model bridging GUI and CLI through a JSON DSL.
       figure.createSpan({ cls: "tc-art-chip", text: "GUI" });
@@ -1685,14 +1727,15 @@ export class TaskCenterView extends ItemView {
     if (options.includeSaveAs && !options.contextualSaveAs) makeSaveAs();
 
     if (options.includeDsl) {
-      // The current-query editor entry. Labelled "编辑 Query" (not "…DSL"); the
-      // modal it opens is where DSL / save-as / rename live (§3.2).
+      // US-109p10: single editor entry. Opens the unified 编辑视图 (Tab) panel,
+      // where DSL is a section alongside layout / save-as / manage — no separate
+      // DSL modal anymore.
       const dsl = parent.createEl("button", {
         text: tr("savedViews.editQuery"),
         cls: "bt-saved-view-save",
       });
       dsl.dataset.action = "edit-current-view-dsl";
-      dsl.addEventListener("click", () => this.openQueryDslModal(rerenderControls));
+      dsl.addEventListener("click", () => this.openQueryControlsSheet({ scope: "tab" }));
     }
 
     if (options.includeManage) {
@@ -1867,7 +1910,7 @@ export class TaskCenterView extends ItemView {
     menu.addItem((item) =>
       item.setTitle(tr("savedViews.editDsl")).onClick(() => {
         this.activateSavedView(normalized);
-        this.openQueryDslModal();
+        this.openQueryControlsSheet({ scope: "tab" });
       }),
     );
     menu.addItem((item) =>
@@ -2063,7 +2106,7 @@ export class TaskCenterView extends ItemView {
     menu.addItem((i) => i.setTitle(tr("savedViews.open")).setIcon("folder-open")
       .onClick(() => run(() => this.activateSavedView(view))));
     menu.addItem((i) => i.setTitle(tr("savedViews.editDsl")).setIcon("code")
-      .onClick(() => run(() => { this.activateSavedView(view); this.openQueryDslModal(); })));
+      .onClick(() => run(() => { this.activateSavedView(view); this.openQueryControlsSheet({ scope: "tab" }); })));
     menu.addItem((i) => i.setTitle(tr("savedViews.rename")).setIcon("pencil")
       .onClick(() => run(() => this.renameSavedView(view))));
     menu.addItem((i) => i.setTitle(tr("savedViews.copy")).setIcon("copy")
@@ -2133,6 +2176,20 @@ export class TaskCenterView extends ItemView {
     const renamed = this.plugin.settings.queryPresets.find((item) => item.id === view.id);
     if (renamed) this.applySavedView(renamed);
     await this.plugin.saveSettings();
+    this.render();
+  }
+
+  // US-109n1: inline rename from the Tab panel's name input — renames the active
+  // tab directly (no modal), keeping any draft's name in sync so the snapshot
+  // doesn't revert it.
+  private setActiveTabName(name: string): void {
+    const trimmed = name.trim();
+    const active = this.activeSavedView();
+    if (!trimmed || trimmed === active.name) return;
+    this.plugin.settings.queryPresets = renameQueryPresetById(this.plugin.settings.queryPresets, active.id, trimmed);
+    const draft = this.tabDrafts.get(active.id);
+    if (draft) this.tabDrafts.set(active.id, normalizeQueryPreset({ ...draft, name: trimmed }));
+    void this.plugin.saveSettings();
     this.render();
   }
 
@@ -2805,7 +2862,7 @@ export class TaskCenterView extends ItemView {
       this.renderQueryControlsSheet(body, rerenderControls);
     };
     const sheet = new BottomSheet(this.app, {
-      title: tr("savedViews.queryEditorTitle"),
+      title: tr(scope === "area" ? "savedViews.editAreaTitle" : "savedViews.editViewTitle"),
       sheetClass: mobileLayout ? "task-center-query-sheet" : undefined,
       populate: (el) => {
         body = el.createDiv({ cls: bodyClass });
@@ -2821,6 +2878,12 @@ export class TaskCenterView extends ItemView {
     parent.dataset.savedViews = "true";
     parent.dataset.queryEditor = "true";
     parent.dataset.queryEditorScope = this.queryEditorScope;
+    // Keep the sheet header title in sync with the scope across in-place
+    // navigation (back-to-tab / drill-into-area reuse the same sheet).
+    const titleEl = parent.closest(".bt-sheet-content")?.querySelector<HTMLElement>(".bt-sheet-title");
+    if (titleEl) {
+      titleEl.setText(tr(this.queryEditorScope === "area" ? "savedViews.editAreaTitle" : "savedViews.editViewTitle"));
+    }
     if (this.queryEditorScope === "area" && this.queryEditorAreaIndex !== null) {
       this.renderAreaEditor(parent, this.queryEditorAreaIndex, rerenderControls);
     } else {
@@ -2832,13 +2895,20 @@ export class TaskCenterView extends ItemView {
   // save/manage, DSL. No single area's when / title / type (those are the Area
   // panel). Sections stack vertically inside the scrollable sheet.
   private renderTabEditor(parent: HTMLElement, rerenderControls?: FilterControlsRerender): void {
-    const intro = parent.createDiv({ cls: "bt-query-editor-intro" });
-    intro.createDiv({ cls: "bt-query-editor-current", text: this.activeSavedView().name });
+    // ── View name (editable inline; US-109n1) ─────────────
+    const nameSection = parent.createDiv({ cls: "bt-query-editor-section" });
+    nameSection.dataset.areaTitleSection = "true";
+    nameSection.createDiv({ cls: "bt-query-editor-section-title", text: tr("savedViews.viewName") });
+    const nameInput = nameSection.createEl("input", { type: "text", cls: "tc-full-width-input" });
+    nameInput.dataset.viewNameInput = "true";
+    nameInput.value = this.activeSavedView().name;
+    nameInput.addEventListener("change", () => this.setActiveTabName(nameInput.value));
 
     // ── Base set (applies to every area) ──────────────────
     const baseSection = parent.createDiv({ cls: "bt-query-editor-section" });
     baseSection.dataset.filterSection = "base";
     baseSection.createDiv({ cls: "bt-query-editor-section-title", text: tr("savedViews.queryEditorBaseFilters") });
+    baseSection.createDiv({ cls: "bt-query-editor-section-note", text: tr("savedViews.queryEditorBaseFiltersNote") });
     const filters = baseSection.createDiv({ cls: "bt-saved-view-filters" });
     this.renderSavedViewsFilterControls(filters, rerenderControls);
 
@@ -2855,7 +2925,7 @@ export class TaskCenterView extends ItemView {
       text: `${tr("savedViews.layout")} · ${tr("savedViews.layoutSummary", { count: areaCount, dir: rootDir })}`,
     });
     const tree = layoutSection.createDiv({ cls: "bt-layout-tree" });
-    this.renderLayoutNode(tree, layout, [], { n: 0 }, rerenderControls);
+    this.renderLayoutTreeNode(tree, layout, [], { n: 0 }, rerenderControls);
 
     // ── Save & manage ─────────────────────────────────────
     const actionsSection = parent.createDiv({ cls: "bt-query-editor-section" });
@@ -2868,9 +2938,8 @@ export class TaskCenterView extends ItemView {
       includeManage: true,
     });
 
-    // ── DSL (whole preset) ────────────────────────────────
-    const dslSection = parent.createDiv({ cls: "bt-query-editor-section" });
-    this.renderDslTab(dslSection, rerenderControls);
+    // ── DSL (whole preset) — renderDslTab makes its own section card ──
+    this.renderDslTab(parent, rerenderControls);
   }
 
   // US-109p10: Area panel — one area's own objects only. Breadcrumb back to the
@@ -3014,33 +3083,163 @@ export class TaskCenterView extends ItemView {
     }
   }
 
-  // US-109p7/US-109p8: Filters tab — two sections editing two filter layers:
-  //  1. "本视图过滤" (data-filter-section="area"): the summary-bar area's `when`
-  //     (the controls that used to live in that area's funnel popover). Only
-  //     shown when this render pass placed the summary bar on a filterable area.
-  //  2. "基础集" (data-filter-section="base"): the tab-level shared base set
-  //     `preset.filters`, applied to every area in the tab.
-  private renderFiltersTab(parent: HTMLElement, rerenderControls?: FilterControlsRerender): void {
-    // ── Section 1: this area's `when` (the area whose 编辑 entry opened us) ──
-    const areaIndex = this.queryEditorAreaIndex;
-    const areaWhen = areaIndex !== null ? this.areaWhenByIndex(areaIndex) : null;
-    if (areaIndex !== null && areaWhen !== null) {
-      const areaSection = parent.createDiv({ cls: "bt-query-editor-section" });
-      areaSection.dataset.filterSection = "area";
-      areaSection.createDiv({
-        cls: "bt-query-editor-section-title",
-        text: tr("savedViews.queryEditorAreaFilters"),
+  // US-109p11: recursively render the layout tree. `path` addresses containers;
+  // `counter` is a shared DFS counter that gives each area leaf its index (same
+  // order as collectAreas), used to open the Area panel and look up `when`.
+  private renderLayoutTreeNode(
+    host: HTMLElement,
+    node: LayoutNode,
+    path: LayoutPath,
+    counter: { n: number },
+    rerenderControls?: FilterControlsRerender,
+  ): void {
+    if (isStackNode(node)) {
+      const frame = host.createDiv({ cls: `bt-layout-stack bt-layout-stack-${node.dir}` });
+      frame.dataset.layoutStack = path.join(".") || "root";
+      const head = frame.createDiv({ cls: "bt-layout-stack-head" });
+      head.createSpan({
+        cls: "bt-layout-stack-label",
+        text: tr(node.dir === "row" ? "savedViews.layoutRow" : "savedViews.layoutCol"),
       });
-      const areaControls = areaSection.createDiv({ cls: "bt-area-filter-popover bt-query-editor-area-filters" });
-      this.renderAreaFilterControls(areaControls, areaIndex, areaWhen, rerenderControls);
+      const dirBtn = head.createEl("button", { cls: "bt-layout-stack-dir" });
+      dirBtn.setAttr("aria-label", tr("savedViews.layoutToggleDir"));
+      setIcon(dirBtn.createSpan(), node.dir === "row" ? "rows-3" : "columns-3");
+      dirBtn.addEventListener("click", () =>
+        this.commitDraftLayout(layoutSetStackDir(this.draftLayout(), path, node.dir === "row" ? "col" : "row"), rerenderControls));
+      const children = frame.createDiv({ cls: "bt-layout-stack-children" });
+      node.children.forEach((child, i) =>
+        this.renderLayoutTreeNode(children, child, [...path, i], counter, rerenderControls));
+      const addBtn = frame.createEl("button", { cls: "bt-layout-add", text: `＋ ${tr("savedViews.layoutAddArea")}` });
+      addBtn.addEventListener("click", (e) => this.openAddAreaMenu(e, path, rerenderControls));
+      return;
     }
+    // Area leaf row.
+    const areaIndex = counter.n++;
+    const row = host.createDiv({ cls: "bt-layout-area" });
+    row.dataset.layoutArea = String(areaIndex);
+    setIcon(row.createSpan({ cls: "bt-layout-area-icon" }), this.areaTypeIcon(node.type as AreaType));
+    const main = row.createDiv({ cls: "bt-layout-area-main" });
+    main.createSpan({
+      cls: "bt-layout-area-title",
+      text: this.localizeBuiltinTitle(node.id, node.title) || this.areaTypeLabel(node.type as AreaType),
+    });
+    const when = this.areaWhenByIndex(areaIndex);
+    const summary = when ? this.areaFilterSummary(when) : "";
+    if (summary) main.createSpan({ cls: "bt-layout-area-when", text: summary });
+    const actions = row.createDiv({ cls: "bt-layout-area-actions" });
+    const edit = actions.createEl("button", { cls: "bt-layout-area-edit" });
+    edit.setAttr("aria-label", tr("savedViews.editArea"));
+    setIcon(edit.createSpan(), "sliders-horizontal");
+    edit.addEventListener("click", () => {
+      const parentEl = host.closest<HTMLElement>("[data-query-editor]");
+      if (parentEl) {
+        this.openInPlace(parentEl, rerenderControls, () => {
+          this.queryEditorScope = "area";
+          this.queryEditorAreaIndex = areaIndex;
+          this.queryEditorAreaTab = "filter";
+        });
+      } else {
+        this.openQueryControlsSheet({ scope: "area", areaIndex });
+      }
+    });
+    const more = actions.createEl("button", { cls: "bt-layout-area-more" });
+    more.setAttr("aria-label", tr("savedViews.layoutDelete"));
+    setIcon(more.createSpan(), "more-vertical");
+    more.addEventListener("click", (e) => this.openLayoutAreaMenu(e, path, areaIndex, rerenderControls));
+  }
 
-    // ── Section 2: shared base set `preset.filters` ────────────────────────
-    const filtersSection = parent.createDiv({ cls: "bt-query-editor-section" });
-    filtersSection.dataset.filterSection = "base";
-    filtersSection.createDiv({ cls: "bt-query-editor-section-title", text: tr("savedViews.queryEditorBaseFilters") });
-    const filters = filtersSection.createDiv({ cls: "bt-saved-view-filters" });
-    this.renderSavedViewsFilterControls(filters, rerenderControls);
+  // ⋮ menu for a layout area row: wrap / delete (move handled by the same ops).
+  private openLayoutAreaMenu(
+    e: MouseEvent,
+    path: LayoutPath,
+    areaIndex: number,
+    rerenderControls?: FilterControlsRerender,
+  ): void {
+    const menu = new Menu();
+    menu.addItem((i) => i.setTitle(tr("savedViews.layoutWrapRow")).setIcon("rows-3").onClick(() =>
+      this.commitDraftLayout(layoutWrapInStack(this.draftLayout(), path, "row"), rerenderControls)));
+    menu.addItem((i) => i.setTitle(tr("savedViews.layoutWrapCol")).setIcon("columns-3").onClick(() =>
+      this.commitDraftLayout(layoutWrapInStack(this.draftLayout(), path, "col"), rerenderControls)));
+    menu.addSeparator();
+    menu.addItem((i) => i.setTitle(tr("savedViews.layoutMoveUp")).setIcon("arrow-up").onClick(() =>
+      this.moveLayoutSibling(path, -1, rerenderControls)));
+    menu.addItem((i) => i.setTitle(tr("savedViews.layoutMoveDown")).setIcon("arrow-down").onClick(() =>
+      this.moveLayoutSibling(path, 1, rerenderControls)));
+    menu.addSeparator();
+    menu.addItem((i) => i.setTitle(tr("savedViews.layoutDelete")).setIcon("trash-2").onClick(() =>
+      this.commitDraftLayout(layoutRemoveNode(this.draftLayout(), path), rerenderControls)));
+    menu.showAtMouseEvent(e);
+  }
+
+  // Move a node up/down within its own container (reorderChild on the parent).
+  private moveLayoutSibling(path: LayoutPath, delta: -1 | 1, rerenderControls?: FilterControlsRerender): void {
+    if (path.length === 0) return;
+    const parentPath = path.slice(0, -1);
+    const idx = path[path.length - 1];
+    this.commitDraftLayout(layoutReorderChild(this.draftLayout(), parentPath, idx, idx + delta), rerenderControls);
+  }
+
+  // US-109p11: "＋ 添加区域" dropdown — choose which area type to append to the
+  // container at `path` (list / grid / week / month / drop), instead of always
+  // appending a list.
+  private openAddAreaMenu(e: MouseEvent, path: LayoutPath, rerenderControls?: FilterControlsRerender): void {
+    const menu = new Menu();
+    const types: AreaType[] = ["list", "grid", "week", "month", "drop"];
+    for (const type of types) {
+      menu.addItem((i) => i.setTitle(this.areaTypeLabel(type)).setIcon(this.areaTypeIcon(type)).onClick(() =>
+        this.commitDraftLayout(this.insertAreaInto(this.draftLayout(), path, type), rerenderControls)));
+    }
+    menu.showAtMouseEvent(e);
+  }
+
+  // Insert an area of `type` at the end of the container at `path` (root
+  // included). layoutInsertNode clamps the index to the child count.
+  private insertAreaInto(layout: LayoutNode, path: LayoutPath, type: AreaType = "list"): LayoutNode {
+    const node = this.newAreaOfType(type);
+    if (path.length === 0) return layoutAppendArea(layout, node);
+    return layoutInsertNode(layout, path, Number.MAX_SAFE_INTEGER, node);
+  }
+
+  private newAreaOfType(type: AreaType): LayoutNode {
+    if (type === "drop") return { type: "drop", onDrop: { setStatus: "dropped" } };
+    return { type } as LayoutNode;
+  }
+
+  // The current draft's layout (deep enough to hand to immutable layout-ops).
+  private draftLayout(): LayoutNode {
+    return this.currentQueryPresetViewConfig().layout;
+  }
+
+  // US-109p11: write a new layout into the tab draft and re-derive view state
+  // (so a list↔week type change updates date nav). Mirrors setAreaWhen's draft
+  // write but additionally re-applies the saved view because structure changed.
+  private commitDraftLayout(layout: LayoutNode, rerenderControls?: FilterControlsRerender): void {
+    const active = this.activeSavedView();
+    const snapshot = this.currentQuerySnapshot(active);
+    const next = normalizeQueryPreset({ ...snapshot, view: { layout } });
+    this.tabDrafts.set(active.id, next);
+    this.applySavedView(active);
+    this.refreshFilterControls(rerenderControls);
+  }
+
+  private areaTypeLabel(type: AreaType): string {
+    switch (type) {
+      case "grid": return tr("savedViews.viewGrid");
+      case "week": return tr("savedViews.viewWeek");
+      case "month": return tr("savedViews.viewMonth");
+      case "drop": return tr("savedViews.areaTypeDrop");
+      default: return tr("savedViews.viewList");
+    }
+  }
+
+  private areaTypeIcon(type: AreaType): string {
+    switch (type) {
+      case "grid": return "layout-grid";
+      case "week": return "calendar-range";
+      case "month": return "calendar";
+      case "drop": return "trash-2";
+      default: return "list";
+    }
   }
 
   // US-109p8: resolve the current `when` of the summary-bar area (by DFS index)
@@ -3059,48 +3258,25 @@ export class TaskCenterView extends ItemView {
     return null;
   }
 
-  // US-109p6 / US-109p9: View tab — area title + view type + (future) layout.
-  private renderViewTab(parent: HTMLElement, rerenderControls?: FilterControlsRerender): void {
-    // ── Area title (the area whose 编辑 entry opened us) ───────────────────
-    const areaIndex = this.queryEditorAreaIndex;
-    if (areaIndex !== null) {
-      const titleSection = parent.createDiv({ cls: "bt-query-editor-section" });
-      titleSection.dataset.areaTitleSection = "true";
-      titleSection.createDiv({ cls: "bt-query-editor-section-title", text: tr("savedViews.queryEditorAreaTitle") });
-      const input = titleSection.createEl("input", { type: "text", cls: "tc-full-width-input" });
-      input.dataset.areaTitleInput = "true";
-      input.placeholder = this.effectiveSavedView().name;
-      input.value = this.areaTitleByIndex(areaIndex);
-      input.addEventListener("change", () => this.setAreaTitle(areaIndex, input.value, rerenderControls));
-    }
+  // US-109p11: change one area's type without rebuilding the tree (the old
+  // buildLayoutForAreaType bug). Only the addressed leaf changes; siblings and
+  // structure are preserved by layout-ops.setAreaType.
+  private setAreaTypeForIndex(
+    areaIndex: number,
+    type: AreaType,
+    rerenderControls?: FilterControlsRerender,
+  ): void {
+    this.commitDraftLayout(layoutSetAreaType(this.draftLayout(), areaIndex, type), rerenderControls);
+  }
 
-    const viewSection = parent.createDiv({ cls: "bt-query-editor-section" });
-    viewSection.createDiv({ cls: "bt-query-editor-section-title", text: tr("savedViews.queryEditorView") });
-    const viewCfg = this.currentQueryPresetViewConfig();
-    const currentType = this.primaryAreaType(viewCfg);
-    const viewRow = viewSection.createDiv({ cls: "bt-query-editor-view-row" });
-    viewRow.createSpan({ text: tr("savedViews.queryEditorViewType") + ":", cls: "bt-query-editor-view-label" });
-    const viewTypes: Array<{ value: AreaType; label: string }> = [
-      { value: "list", label: tr("savedViews.viewList") },
-      { value: "week", label: tr("savedViews.viewWeek") },
-      { value: "month", label: tr("savedViews.viewMonth") },
-    ];
-    for (const vt of viewTypes) {
-      const btn = viewRow.createEl("button", {
-        text: vt.label,
-        cls: "bt-query-editor-view-btn" + (currentType === vt.value ? " active" : ""),
-      });
-      btn.addEventListener("click", () => {
-        const next: QueryPresetViewConfig = { layout: this.buildLayoutForAreaType(vt.value) };
-        // Update the draft
-        const active = this.activeSavedView();
-        const draft = this.currentQuerySnapshot(active);
-        draft.view = next;
-        this.tabDrafts.set(active.id, draft);
-        this.applySavedView(draft);
-        this.render();
-      });
-    }
+  // User-facing Query DSL reference, one page per language. Mirrors the link the
+  // standalone DSL modal used (kept in sync with view/query-dsl-modal.ts).
+  private dslDocsUrl(): string {
+    const byLocale: Record<string, string> = {
+      zh: "https://github.com/CorrectRoadH/obsidian-task-center/blob/main/docs/dsl/zh.md",
+      en: "https://github.com/CorrectRoadH/obsidian-task-center/blob/main/docs/dsl/en.md",
+    };
+    return byLocale[getLocale()] ?? byLocale.en;
   }
 
   // US-109p6: DSL tab — full Query DSL direct editing. Validation errors keep
@@ -3108,7 +3284,17 @@ export class TaskCenterView extends ItemView {
   // saved query (US-109p3).
   private renderDslTab(parent: HTMLElement, rerenderControls?: FilterControlsRerender): void {
     const dslSection = parent.createDiv({ cls: "bt-query-editor-section" });
-    dslSection.createDiv({ cls: "bt-query-editor-section-title", text: tr("savedViews.dslTitle") });
+    // Header: title + external GitHub docs link (per-locale), mirroring the
+    // old standalone DSL modal so the unified panel is the single DSL home.
+    const dslHead = dslSection.createDiv({ cls: "bt-query-editor-dsl-head" });
+    dslHead.createSpan({ cls: "bt-query-editor-section-title", text: tr("savedViews.dslTitle") });
+    const docs = dslHead.createEl("a", {
+      text: tr("savedViews.dslDocs"),
+      cls: "bt-query-editor-dsl-docs",
+      href: this.dslDocsUrl(),
+    });
+    docs.setAttr("target", "_blank");
+    docs.setAttr("rel", "noopener");
     const active = this.activeSavedView();
     const snapshot = this.currentQuerySnapshot(active);
     const dslText = stringifyQueryPreset(snapshot);
@@ -4371,22 +4557,24 @@ export class TaskCenterView extends ItemView {
 
   // US-109w: per-area empty state. An area empty because of *its own* `when`
   // is a neutral "no tasks here", not a misleading global "clear filters".
-  // Only offer "clear this area's filter" when the area actually has a `when`.
+  // User feedback: don't offer "clear this area's filter" — in a four-quadrant
+  // an empty quadrant is a normal partition, not a filter mistake. Instead the
+  // action mirrors the area head's 编辑区域 entry: open this area's settings
+  // (Area panel), where the user can decide whether the `when` is wrong.
   private renderAreaEmptyState(
     parent: HTMLElement,
     area: ListAreaConfig | GridAreaConfig,
     areaIndex: number,
   ): void {
+    void area;
     const empty = parent.createDiv({ cls: "bt-area-empty" });
     empty.dataset.emptyState = "area";
     const icon = empty.createDiv({ cls: "bt-area-empty-icon" });
     setIcon(icon, "search-x");
     empty.createDiv({ text: tr("area.emptyArea"), cls: "bt-area-empty-title" });
-    if (area.when && queryFilterHasActiveConditions(area.when)) {
-      const clear = empty.createEl("button", { text: tr("area.clearAreaFilter"), cls: "bt-area-empty-clear" });
-      clear.dataset.action = "clear-area-filter";
-      clear.addEventListener("click", () => this.setAreaWhen(areaIndex, {}));
-    }
+    const edit = empty.createEl("button", { text: tr("savedViews.editArea"), cls: "bt-area-empty-clear" });
+    edit.dataset.action = "edit-area";
+    edit.addEventListener("click", () => this.openQueryControlsSheet({ scope: "area", areaIndex, areaTab: "filter" }));
   }
 
   // US-109x: write a list/grid area's `when` into the current tab draft, keyed
@@ -4455,17 +4643,14 @@ export class TaskCenterView extends ItemView {
     const edit = right.createEl("button", { cls: "bt-area-edit" });
     edit.dataset.areaEdit = String(areaIndex);
     edit.dataset.action = "edit-area";
-    edit.setAttr("aria-label", tr("savedViews.editQuery"));
+    edit.setAttr("aria-label", tr("savedViews.editArea"));
     setIcon(edit.createSpan({ cls: "bt-area-edit-icon" }), "sliders-horizontal");
-    // Surface the area's active `when` (list/grid) as a chip on the button, so
-    // the user sees the current narrowing without opening the sheet.
-    const areaWhen = this.areaWhenByIndex(areaIndex);
-    const whenSummary = areaWhen ? this.areaFilterSummary(areaWhen) : "";
-    if (whenSummary) {
-      edit.addClass("active");
-      edit.createSpan({ text: whenSummary, cls: "bt-area-filter-summary" });
-    }
-    edit.addEventListener("click", () => this.openQueryControlsSheet({ areaIndex, initialTab: "filter" }));
+    // User feedback: the area-head edit button must stay quiet — a four-quadrant
+    // gives EVERY area a `when` (that IS the quadrant), so an active/highlighted
+    // chip on each head was loud noise. Render it like the no-filter state: just
+    // the icon, no `active` accent, no `when` summary chip. The full `when`
+    // overview lives in the Tab panel's layout tree instead.
+    edit.addEventListener("click", () => this.openQueryControlsSheet({ scope: "area", areaIndex, areaTab: "filter" }));
   }
 
   // US-109p9: pure area-`when` filter controls (search / status / scheduled /
@@ -5468,11 +5653,6 @@ export class TaskCenterView extends ItemView {
     const content = areas.find((a) => a.type !== "drop");
     const type = (content ?? areas[0])?.type ?? "list";
     return type === "unknown" ? "list" : type;
-  }
-
-  // GUI view-type 切换：把布局换成「单个该类型 area」。
-  private buildLayoutForAreaType(type: AreaType): LayoutNode {
-    return { type } as AreaConfig;
   }
 
   private refreshFilterControls(rerenderControls?: FilterControlsRerender): void {
