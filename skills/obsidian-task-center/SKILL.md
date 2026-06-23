@@ -141,12 +141,48 @@ obsidian task-center:query-run id=preset-week view=month anchor=2026-05-01 forma
 - `anchor=YYYY-MM-DD`: week/month cursor date. Week output shows all 7 days with counts; month text output shows dated cells that contain tasks, while JSON contains all month cells.
 - all task rows keep stable ids like `Tasks/Inbox.md:L42` so you can pipe into `show`, `schedule`, `done`, or `abandon`.
 
+#### Preset DSL shape (1.0+ — a layout tree, not a flat filter)
+
+A preset is `{ name, view: { layout: <node> } }`. There is **no tab-level `filters`** and **no `summary`** — both were removed in 1.0. All filtering lives on each area's own `when`. A `<node>` is either a **stack** or an **area leaf**:
+
+> ⚠️ The old flat shape (`{filters, view:{type}, summary}`) is **not** rejected — it is accepted but its `filters` / `summary` / `view.type` are silently dropped, so the preset runs **unfiltered**. There is no error to catch; you must emit `view.layout` with per-area `when`.
+
+- **stack** — `{ "dir": "row" | "col", "children": [<node>, …], "weight"?: number }`. `col` ≈ VStack, `row` ≈ HStack; nest them for 2-D layouts (e.g. a four-quadrant grid).
+- **area leaf** — one of:
+  - `{ "type": "list",  "when"?: Filters, "sections"?: [Section], "orderBy"?: [string], "limit"?: number, "emptyText"?: string, "title"?: string }`
+  - `{ "type": "grid",  …same fields as list… }` — same config and projection as `list`, but cards lay out in a responsive multi-column grid (used for the unscheduled tray)
+  - `{ "type": "week"  | "month", "when"?: Filters, "firstDayOfWeek"?: "monday" | "sunday" }` — month also takes `"density": "compact" | "cards"`
+  - `{ "type": "drop", "onDrop": DropEffect, "title"?: string }` — a pure action drop zone, no query
+
+Filters (`when`) shape — same vocabulary as `task-center:list`:
+
+```jsonc
+{
+  "search": "示例",                 // free text
+  "tags": ["#work", "#2象限"],      // string or string[]
+  "status": ["todo"],               // ("todo"|"done"|"dropped")[]  (or "all")
+  "time": { "scheduled": "today", "deadline": "overdue" }
+  // time fields: scheduled | deadline | completed | created | dropped
+  // tokens: today | tomorrow | yesterday | week | next-week | month |
+  //         next-month | unscheduled | overdue (deadline) | YYYY-MM-DD | FROM..TO
+}
+```
+
+`Section` (list/grid only — named groups inside one area): `{ "id", "title", "when": Filters, "orderBy"?, "limit"?, "emptyText"? }`.
+
+`onDrop` (drop area required; tray optional) — exactly one of: `{ "setStatus": "dropped" }` · `{ "setScheduled": "<token>" }` · `{ "clearScheduled": true }`.
+
 Create or update DSL:
 
+```bash
+# simplest: a single list area filtered to todo
+obsidian task-center:query-create dsl='{"name":"工作","view":{"layout":{"type":"list","when":{"tags":["#work"],"status":["todo"]}}}}'
+
+# a week area stacked over an "unscheduled" grid tray + a drop area
+obsidian task-center:query-update id=sv-alpha dsl='{"name":"工作周","view":{"layout":{"dir":"col","children":[{"type":"week","when":{"tags":["#work"],"status":["todo"]}},{"dir":"row","children":[{"type":"grid","id":"unscheduled-tray","title":"未排期","when":{"time":{"scheduled":"unscheduled"},"status":["todo"]},"onDrop":{"clearScheduled":true}},{"type":"drop","title":"放弃","onDrop":{"setStatus":"dropped"}}]}]}}}'
 ```
-obsidian task-center:query-create dsl='{"name":"工作","filters":{"tags":["#work"],"status":["todo"]},"view":{"type":"list"},"summary":[{"type":"count"}]}'
-obsidian task-center:query-update id=sv-alpha dsl='{"name":"工作周","filters":{"tags":["#work"],"time":{"scheduled":"week"},"status":["todo"]},"view":{"type":"week"},"summary":[{"type":"count"}]}'
-```
+
+To learn the exact current shape, read a builtin first: `obsidian task-center:query-show id=preset-today` (a sectioned list) or `id=preset-week` (week + tray + drop). Mirror what it returns rather than guessing.
 
 `query-save` is kept as an alias for `query-create`. Create always allocates a new id, even if the DSL contains one. Update preserves the target id and builtin/custom identity.
 
