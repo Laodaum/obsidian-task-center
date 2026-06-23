@@ -3656,6 +3656,68 @@
   white-space: normal;
 }
 
+/* US-109p6: Query 编辑器 Tab 条。窄屏横向滚动，不溢出。 */
+.task-center-bottom-sheet .bt-query-editor-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 8px 2px;
+  overflow-x: auto;
+  flex-wrap: nowrap;
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.task-center-bottom-sheet .bt-query-editor-tab {
+  flex: 0 0 auto;
+  padding: 6px 14px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 999px;
+  background: var(--background-secondary);
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.task-center-bottom-sheet .bt-query-editor-tab:hover {
+  color: var(--text-normal);
+}
+
+.task-center-bottom-sheet .bt-query-editor-tab.active {
+  background: var(--interactive-accent);
+  border-color: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.task-center-bottom-sheet .bt-query-editor-panel {
+  padding-top: 4px;
+}
+
+/* US-109p6: per-area 过滤 popover 底部进入「编辑基础集」的链接。 */
+.task-center-bottom-sheet .bt-area-filter-footer,
+.bt-area-filter-popover .bt-area-filter-footer {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.bt-area-filter-base-link {
+  width: 100%;
+  padding: 4px 8px;
+  background: transparent;
+  border: none;
+  color: var(--text-accent);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.bt-area-filter-base-link:hover {
+  text-decoration: underline;
+}
+
 .task-center-bottom-sheet .bt-mobile-query-sheet .bt-saved-view-filters {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

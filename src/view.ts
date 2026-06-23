@@ -107,6 +107,8 @@ import type TaskCenterPlugin from "./main";
 const PRIMARY_TIME_FIELD: SavedViewTimeField = "scheduled";
 const SECONDARY_TIME_FIELDS: SavedViewTimeField[] = ["deadline", "completed", "created"];
 type FilterControlsRerender = () => void;
+// US-109p6: the four Tabs of the unified Query editor panel.
+type QueryEditorTab = "filter" | "summary" | "view" | "dsl";
 type TagEditResult = {
   add: string[];
   remove: string[];
@@ -262,6 +264,10 @@ export class TaskCenterView extends ItemView {
   // Whether the query summary has been placed in an area header this render
   // pass (it shows once, on the first content area's title row).
   private summaryPlaced = false;
+  // US-109p6: which Tab the Query editor panel is showing. Persisted across
+  // re-renders of the open sheet so switching tabs / editing controls does not
+  // reset back to the first tab.
+  private queryEditorTab: QueryEditorTab = "filter";
   private dateCalendarAnchorISO = startOfMonth(todayISO());
   private pendingDateRangeStart: string | null = null;
   private viewResizeObserver: ResizeObserver | null = null;
@@ -2552,7 +2558,12 @@ export class TaskCenterView extends ItemView {
     this.refreshFilterControls(rerenderControls);
   }
 
-  private openQueryControlsSheet(): void {
+  // US-109p6: open the unified Query editor sheet. `initialTab` decides which
+  // Tab is shown on open ("filter" for 编辑 Query / 过滤漏斗, "summary" for the
+  // summary pencil). The choice is stored on `queryEditorTab` so it survives
+  // re-renders of the open sheet.
+  private openQueryControlsSheet(initialTab: QueryEditorTab = "filter"): void {
+    this.queryEditorTab = initialTab;
     let body: HTMLElement;
     const mobileLayout = this.contentEl.dataset.mobileLayout === "true";
     const bodyClass = mobileLayout ? "bt-mobile-query-sheet" : "bt-query-controls-sheet";
@@ -2573,6 +2584,11 @@ export class TaskCenterView extends ItemView {
     sheet.open();
   }
 
+  // US-109p6: render the Query editor as a Tab panel — an intro + a tab strip +
+  // the body of the currently selected tab. The four tab bodies reuse the
+  // original per-section render logic (renderFiltersTab / renderSummaryTab /
+  // renderViewTab / renderDslTab). Switching tabs only swaps the body; the tab
+  // draft, summary edits and DSL error position are unaffected.
   private renderQueryControlsSheet(parent: HTMLElement, rerenderControls?: FilterControlsRerender): void {
     parent.dataset.savedViews = "true";
     parent.dataset.queryEditor = "true";
@@ -2581,13 +2597,75 @@ export class TaskCenterView extends ItemView {
     intro.createDiv({ cls: "bt-query-editor-current", text: this.activeSavedView().name });
     this.renderFilterSummary(intro);
 
-    // ── Filters ──────────────────────────────────────────
+    // ── Tab strip ────────────────────────────────────────
+    const tabs: Array<{ key: QueryEditorTab; label: string }> = [
+      { key: "filter", label: tr("savedViews.queryEditorFilters") },
+      { key: "summary", label: tr("savedViews.queryEditorSummary") },
+      { key: "view", label: tr("savedViews.queryEditorView") },
+      { key: "dsl", label: tr("savedViews.queryEditorDsl") },
+    ];
+    const tabStrip = parent.createDiv({ cls: "bt-query-editor-tabs" });
+    tabStrip.dataset.queryEditorTabs = "true";
+    tabStrip.setAttr("role", "tablist");
+    for (const t of tabs) {
+      const active = this.queryEditorTab === t.key;
+      const btn = tabStrip.createEl("button", {
+        text: t.label,
+        cls: "bt-query-editor-tab" + (active ? " active" : ""),
+      });
+      btn.dataset.queryTab = t.key;
+      btn.setAttr("role", "tab");
+      btn.setAttr("aria-selected", active ? "true" : "false");
+      btn.addEventListener("click", () => {
+        if (this.queryEditorTab === t.key) return;
+        this.queryEditorTab = t.key;
+        // Re-render the sheet body in place (cheap; preserves tab draft).
+        const host = parent;
+        host.empty();
+        this.renderQueryControlsSheet(host, rerenderControls);
+      });
+    }
+
+    // ── Active tab body ──────────────────────────────────
+    const panel = parent.createDiv({ cls: "bt-query-editor-panel" });
+    panel.dataset.queryTabPanel = this.queryEditorTab;
+    switch (this.queryEditorTab) {
+      case "filter":
+        this.renderFiltersTab(panel, rerenderControls);
+        break;
+      case "summary":
+        this.renderSummaryTab(panel, rerenderControls);
+        break;
+      case "view":
+        this.renderViewTab(panel, rerenderControls);
+        break;
+      case "dsl":
+        this.renderDslTab(panel, rerenderControls);
+        break;
+    }
+
+    // ── Actions (common to all tabs) ─────────────────────
+    const actionsSection = parent.createDiv({ cls: "bt-query-editor-section" });
+    actionsSection.createDiv({ cls: "bt-query-editor-section-title", text: tr("savedViews.queryEditorActions") });
+    actionsSection.createDiv({ cls: "bt-query-editor-section-note", text: tr("savedViews.queryEditorActionsNote") });
+    const actions = actionsSection.createDiv({ cls: "bt-saved-view-actions" });
+    this.renderSavedViewsActionControls(actions, rerenderControls, {
+      includeSaveAs: true,
+      includeDsl: false, // DSL is its own tab
+      includeManage: true,
+    });
+  }
+
+  // US-109p6: Filters tab — edits the shared base filter set `preset.filters`.
+  private renderFiltersTab(parent: HTMLElement, rerenderControls?: FilterControlsRerender): void {
     const filtersSection = parent.createDiv({ cls: "bt-query-editor-section" });
     filtersSection.createDiv({ cls: "bt-query-editor-section-title", text: tr("savedViews.queryEditorFilters") });
     const filters = filtersSection.createDiv({ cls: "bt-saved-view-filters" });
     this.renderSavedViewsFilterControls(filters, rerenderControls);
+  }
 
-    // ── View ─────────────────────────────────────────────
+  // US-109p6: View tab — view type + (future) layout editing.
+  private renderViewTab(parent: HTMLElement, _rerenderControls?: FilterControlsRerender): void {
     const viewSection = parent.createDiv({ cls: "bt-query-editor-section" });
     viewSection.createDiv({ cls: "bt-query-editor-section-title", text: tr("savedViews.queryEditorView") });
     const viewCfg = this.currentQueryPresetViewConfig();
@@ -2615,8 +2693,10 @@ export class TaskCenterView extends ItemView {
         this.render();
       });
     }
+  }
 
-    // ── Summary ──────────────────────────────────────────
+  // US-109p6: Summary tab — count / sum / ratio / top-N / group-by metrics.
+  private renderSummaryTab(parent: HTMLElement, _rerenderControls?: FilterControlsRerender): void {
     const summarySection = parent.createDiv({ cls: "bt-query-editor-section" });
     summarySection.createDiv({ cls: "bt-query-editor-section-title", text: tr("savedViews.queryEditorSummary") });
     summarySection.createDiv({ cls: "bt-query-editor-section-note", text: tr("savedViews.queryEditorSummaryHelp") });
@@ -2838,8 +2918,12 @@ export class TaskCenterView extends ItemView {
         el.value = "";
       });
     });
+  }
 
-    // ── DSL ──────────────────────────────────────────────
+  // US-109p6: DSL tab — full Query DSL direct editing. Validation errors keep
+  // their section attribution (filters / view / summary) and don't clobber the
+  // saved query (US-109p3).
+  private renderDslTab(parent: HTMLElement, rerenderControls?: FilterControlsRerender): void {
     const dslSection = parent.createDiv({ cls: "bt-query-editor-section" });
     dslSection.createDiv({ cls: "bt-query-editor-section-title", text: tr("savedViews.dslTitle") });
     const active = this.activeSavedView();
@@ -2870,17 +2954,6 @@ export class TaskCenterView extends ItemView {
         dslError.show();
         // Keep the invalid DSL visible for editing
       }
-    });
-
-    // ── Actions ──────────────────────────────────────────
-    const actionsSection = parent.createDiv({ cls: "bt-query-editor-section" });
-    actionsSection.createDiv({ cls: "bt-query-editor-section-title", text: tr("savedViews.queryEditorActions") });
-    actionsSection.createDiv({ cls: "bt-query-editor-section-note", text: tr("savedViews.queryEditorActionsNote") });
-    const actions = actionsSection.createDiv({ cls: "bt-saved-view-actions" });
-    this.renderSavedViewsActionControls(actions, rerenderControls, {
-      includeSaveAs: true,
-      includeDsl: false, // DSL is inline above
-      includeManage: true,
     });
   }
 
@@ -4006,7 +4079,8 @@ export class TaskCenterView extends ItemView {
       setIcon(edit.createSpan({ cls: "bt-summary-edit-icon" }), "plus");
       edit.createSpan({ text: tr("savedViews.summaryAdd") });
     }
-    edit.addEventListener("click", () => this.openQueryControlsSheet());
+    // Summary pencil / "+ add metric" lands on the Summary tab (US-109p6).
+    edit.addEventListener("click", () => this.openQueryControlsSheet("summary"));
   }
 
   private summaryChipLabel(item: SummaryResultItem): string {
@@ -4310,6 +4384,18 @@ export class TaskCenterView extends ItemView {
         this.setAreaWhen(areaIndex, { ...when, tags: next });
       });
     }
+
+    // US-109p6: the per-area popover edits this area's `when`. A footer link
+    // opens the unified Query editor on the Filter tab, which edits the shared
+    // base set `preset.filters` (a different object, US-109z). Both paths
+    // coexist; this does not replace per-area `when`.
+    const footer = pop.createDiv({ cls: "bt-area-filter-footer" });
+    const baseLink = footer.createEl("button", {
+      text: tr("savedViews.editBaseFilters"),
+      cls: "bt-area-filter-base-link",
+    });
+    baseLink.dataset.queryTabEntry = "filter";
+    baseLink.addEventListener("click", () => this.openQueryControlsSheet("filter"));
   }
 
   private areaTags(when: QueryPresetFilters): string[] {

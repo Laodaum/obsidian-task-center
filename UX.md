@@ -165,19 +165,30 @@ Toolbar 摘要解释当前 Query 的 **tab 级**配置（共享基础集 `preset
 
 空状态按 area 归因（§4.0 / US-109b1）：不在全局 Toolbar 弹"清空筛选"。某个 area 空时由该 area 自己解释「本区无匹配任务」并提供「清空本区筛选」；整 tab 因基础集天然为空（如未排期 + 周 view）才在 view 层解释。（US-109b / US-104）
 
-### 3.2 编辑 Query 面板
+### 3.2 编辑 Query 面板（带 Tab）
 
-入口统一叫“编辑 Query”或“编辑当前 Tab”。面板包含三块：
+入口统一叫“编辑 Query”或“编辑当前 Tab”。面板顶部是一排 **Tab**，下面只渲染当前 Tab 的内容，不再把四块从上往下铺成一长条（US-109p6）。四个固定 Tab：
 
-1. **Filters**：搜索、标签、状态、排期、更多时间字段。
-2. **View**：类型、section、排序、未排期 tray、布局嵌套。
-3. **Summary**：count、sum、ratio、top-N、group-by。
+1. **筛选（Filter）**：搜索、标签、状态、排期、更多时间字段。
+2. **统计（Summary）**：count、sum、ratio、top-N、group-by。
+3. **视图（View）**：类型、section、排序、未排期 tray、布局嵌套。
+4. **DSL**：完整 Query DSL 直编（高级模式）。
 
-面板内必须能完成当前 tab 的更新、另存为、重命名、复制、隐藏 / 删除、设默认等相关动作，避免跳到设置页完成 CRUD。（US-109n1 / US-109n3）
+**筛选 Tab 的对象语义（产品决策）**：面板里的「筛选」Tab 编辑的是 tab 级的**共享基础集 `preset.filters`**（对该 tab 所有 area 生效，让今日 / TODO 等内置单 area tab 不破），不是某个 area 的 `when`。per-area 的 `when` 收窄过滤仍由各 area header 上的过滤漏斗 popover 就地编辑（§4.0 / US-109w/x/y），两者是不同对象，互不取代。这样既给了基础集一个明确的图形入口，又不丢失 per-area 收窄能力。
 
-移动端 Query 编辑使用接近全屏的 bottom sheet，而不是居中弹窗。顶部只放标题、当前 Query 摘要和关闭 affordance；内容按 Filters、View、Summary、DSL、保存与管理分段。Filters 控件在移动端采用两列或单列自适应布局，不能把“标签 / 排期 / 更多时间 / 状态”渲染成占满半屏的四个巨型按钮。View 类型显示为本地化标签：列表、周、月。（US-117 / US-117e）
+**面板入口与默认 Tab**：
 
-DSL 直编是高级区块，移动端要给它稳定高度和独立滚动空间；用户必须能应用 DSL、看到校验错误，并继续回到同一个 Query draft。（US-109p2 / US-109p3 / US-117e）
+- 工具栏「编辑 Query」、tab 菜单「编辑 Query」、工具栏当前 Query 摘要：打开面板，默认落在筛选 Tab。
+- summary 上的铅笔 / 「+ 添加指标」：打开同一面板，默认落在统计 Tab。
+- area header 的过滤漏斗：主路径仍是 header 上就地展开的 popover（编辑该 area `when`），不被取代；面板筛选 Tab 是基础集 `preset.filters` 的图形入口，二者并存。
+
+面板内必须能完成当前 tab 的更新、另存为、重命名、复制、隐藏 / 删除、设默认等相关动作，避免跳到设置页完成 CRUD（“保存与管理”动作区在所有 Tab 下方常驻，不属于任何单个 Tab）。（US-109n1 / US-109n3）
+
+移动端 Query 编辑使用接近全屏的 bottom sheet，而不是居中弹窗。顶部放标题、当前 Query 摘要、Tab 条和关闭 affordance；Tab 条在窄屏可横向滚动或换行，不溢出。Filters 控件在移动端采用两列或单列自适应布局，不能把“标签 / 排期 / 更多时间 / 状态”渲染成占满半屏的四个巨型按钮。View 类型显示为本地化标签：列表、周、月。（US-117 / US-117e）
+
+DSL 直编是独立 Tab，移动端要给它稳定高度和独立滚动空间；用户必须能应用 DSL、看到校验错误，并继续回到同一个 Query draft。（US-109p2 / US-109p3 / US-117e）
+
+**稳定选择器契约**：面板根保留 `data-saved-views` / `data-query-editor`；Tab 条为 `data-query-editor-tabs`，每个 Tab 按钮带 `data-query-tab="filter|summary|view|dsl"`；DSL 输入框保留 `data-query-dsl-input`，统计字段保留 `data-summary-field`，summary 行保留 `data-summary-metric`。切换 Tab 不改变这些钩子的取值。
 
 ### 3.3 可视化编辑与 DSL 直编
 
