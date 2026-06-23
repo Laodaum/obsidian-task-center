@@ -20,9 +20,24 @@ test("US-602 quality gate rejects deprecated source dependencies", async () => {
   );
 });
 
+// pnpm 10 no longer reads `pnpm.overrides` from package.json; overrides live in
+// pnpm-workspace.yaml. Parse that flat block instead of adding a YAML dep.
+function parseWorkspaceOverrides(text) {
+  const overrides = {};
+  let inOverrides = false;
+  for (const line of text.split(/\r?\n/)) {
+    if (/^overrides:\s*$/.test(line)) { inOverrides = true; continue; }
+    if (!inOverrides) continue;
+    if (/^\S/.test(line)) break; // dedent → left the overrides block
+    const m = line.match(/^\s+(.+?):\s*(.+?)\s*$/);
+    if (m) overrides[m[1].trim()] = m[2].replace(/^['"]|['"]$/g, "");
+  }
+  return overrides;
+}
+
 test("US-602 quality gate pins reviewed dev-tool dependency advisories to patched ranges", async () => {
   const pkg = JSON.parse(await read("package.json"));
-  const overrides = pkg.pnpm?.overrides ?? {};
+  const overrides = parseWorkspaceOverrides(await read("pnpm-workspace.yaml"));
 
   assert.equal(overrides.diff, "^8.0.4");
   assert.equal(overrides["serialize-javascript"], "^7.0.5");
