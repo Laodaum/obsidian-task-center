@@ -338,6 +338,9 @@ export class TaskCenterView extends ItemView {
   // progressively added in the area filter this session (scheduled is always
   // shown). Transient UI state — fields with a value show regardless.
   private readonly areaFilterExtraFields = new Set<SavedViewTimeField>();
+  // US-109z2: whether the area filter's tag select popover is open. A click-to-
+  // open dropdown keeps the panel short when there are many tags.
+  private areaTagPopoverOpen = false;
   private dateCalendarAnchorISO = startOfMonth(todayISO());
   private pendingDateRangeStart: string | null = null;
   private viewResizeObserver: ResizeObserver | null = null;
@@ -4083,23 +4086,24 @@ export class TaskCenterView extends ItemView {
     for (const field of shownSecondary) {
       this.renderAreaTimeField(parent, areaIndex, when, field, rerenderControls);
     }
+    // Show the addable date fields directly as inline chips (not a dropdown) so
+    // the user can see what's available at a glance.
     const addable = SECONDARY_TIME_FIELDS.filter((f) => !shownSecondary.includes(f));
     if (addable.length > 0) {
-      const addField = parent.createEl("button", {
-        cls: "bt-area-add-field",
-        text: `＋ ${tr("savedViews.addTimeField")}`,
-      });
-      addField.dataset.action = "add-time-field";
-      addField.addEventListener("click", (e) => {
-        const menu = new Menu();
-        for (const f of addable) {
-          menu.addItem((i) => i.setTitle(this.timeFieldLabel(f)).onClick(() => {
-            this.areaFilterExtraFields.add(f);
-            this.refreshFilterControls(rerenderControls);
-          }));
-        }
-        menu.showAtMouseEvent(e);
-      });
+      const addRow = parent.createDiv({ cls: "bt-area-add-field-row" });
+      addRow.createSpan({ cls: "bt-area-add-field-label", text: tr("savedViews.addTimeField") });
+      for (const f of addable) {
+        const chip = addRow.createEl("button", {
+          cls: "bt-area-add-field",
+          text: `＋ ${this.timeFieldLabel(f)}`,
+        });
+        chip.dataset.action = "add-time-field";
+        chip.dataset.timeField = f;
+        chip.addEventListener("click", () => {
+          this.areaFilterExtraFields.add(f);
+          this.refreshFilterControls(rerenderControls);
+        });
+      }
     }
 
     // Tags — a searchable, scrollable list (scales to thousands of tags).
@@ -4177,8 +4181,27 @@ export class TaskCenterView extends ItemView {
       const clearTags = head.createEl("button", { text: tr("savedViews.clearTags"), cls: "bt-area-filter-clear-tags" });
       clearTags.addEventListener("click", () => this.setAreaWhen(areaIndex, { ...when, tags: [] }, rerenderControls));
     }
-    const searchInput = sec.createEl("input", { type: "text", cls: "bt-area-tag-search", placeholder: tr("savedViews.tagSearch") });
-    const list = sec.createDiv({ cls: "bt-area-tag-list" });
+
+    // Click-to-open select: a trigger showing the selection summary; the
+    // searchable list only renders when open, so many tags don't lengthen the
+    // panel. Open state persists across rerenders so multi-select keeps it open.
+    const trigger = sec.createEl("button", { cls: "bt-area-tag-trigger" });
+    trigger.dataset.action = "tag-select";
+    const summary = trigger.createSpan({
+      cls: "bt-area-tag-trigger-summary" + (selectedTags.length ? "" : " is-empty"),
+      text: selectedTags.length ? this.tagFilterSummary(selectedTags) : tr("savedViews.tagSearch"),
+    });
+    void summary;
+    setIcon(trigger.createSpan({ cls: "bt-area-tag-caret" }), this.areaTagPopoverOpen ? "chevron-up" : "chevron-down");
+    trigger.addEventListener("click", () => {
+      this.areaTagPopoverOpen = !this.areaTagPopoverOpen;
+      this.refreshFilterControls(rerenderControls);
+    });
+    if (!this.areaTagPopoverOpen) return;
+
+    const popover = sec.createDiv({ cls: "bt-area-tag-popover" });
+    const searchInput = popover.createEl("input", { type: "text", cls: "bt-area-tag-search", placeholder: tr("savedViews.tagSearch") });
+    const list = popover.createDiv({ cls: "bt-area-tag-list" });
     const options = this.collectTagOptions(selectedTags);
     const CAP = 100;
     const renderRows = (query: string) => {

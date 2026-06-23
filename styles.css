@@ -4848,11 +4848,22 @@
   font-size: 11px;
 }
 
-/* US-109z2: "add date filter" — progressive disclosure of secondary time fields. */
+/* US-109z2: "add date filter" — addable secondary time fields shown inline as
+   chips (not a dropdown), so the user sees what's available. */
+.task-center-bottom-sheet .bt-area-add-field-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+.task-center-bottom-sheet .bt-area-add-field-label {
+  color: var(--text-faint);
+  font-size: 12px;
+  margin-right: 2px;
+}
 .task-center-bottom-sheet .bt-area-add-field {
-  align-self: flex-start;
-  margin-top: 2px;
-  padding: 5px 12px;
+  padding: 4px 10px;
   border: 1px dashed var(--background-modifier-border);
   border-radius: var(--radius-s);
   background: transparent;
@@ -4863,4 +4874,40 @@
 .task-center-bottom-sheet .bt-area-add-field:hover {
   color: var(--text-normal);
   border-color: var(--interactive-accent);
+}
+
+/* US-109z2: tag filter — a click-to-open select, so a big tag set doesn't make
+   the panel endless. Trigger shows the selection summary; popover holds the
+   searchable list. */
+.task-center-bottom-sheet .bt-area-tag-trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  background: var(--background-primary);
+  color: var(--text-normal);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.task-center-bottom-sheet .bt-area-tag-trigger:hover { background: var(--background-modifier-hover); }
+.task-center-bottom-sheet .bt-area-tag-trigger-summary {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.task-center-bottom-sheet .bt-area-tag-trigger-summary.is-empty { color: var(--text-muted); }
+.task-center-bottom-sheet .bt-area-tag-caret { flex: 0 0 auto; display: inline-flex; color: var(--text-muted); }
+.task-center-bottom-sheet .bt-area-tag-caret svg { width: 14px; height: 14px; }
+.task-center-bottom-sheet .bt-area-tag-popover {
+  margin-top: 6px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  padding: 6px;
+  background: var(--background-primary);
 }
