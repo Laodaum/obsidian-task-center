@@ -12,7 +12,6 @@ import {
 import { ParsedTask, VIEW_TYPE_TASK_CENTER } from "./types";
 import { formatMinutes } from "./parser";
 import { TaskCenterApi } from "./api";
-import { computeSummary, type SummaryResultItem } from "./query/summary";
 import {
   todayISO,
   fromISO,
@@ -78,13 +77,9 @@ import {
   updateQueryPresetById,
   visibleQueryPresets,
   queryPresetTagString,
-  handleQueryEditorSummaryEdit,
-  handleQueryEditorSummaryAdd,
-  handleQueryEditorSummaryRemove,
 } from "./saved-views";
 import type {
   QueryPresetDeleteFlowCallbacks,
-  QueryEditorSummaryDraftParams,
 } from "./saved-views";
 import type {
   AreaConfig,
@@ -99,7 +94,6 @@ import type {
   QueryPresetFilters,
   QueryPresetViewConfig,
   SavedViewStatus,
-  QueryPresetSummaryMetric,
   TaskStatus,
 } from "./types";
 import { isStackNode } from "./types";
@@ -110,7 +104,7 @@ const PRIMARY_TIME_FIELD: SavedViewTimeField = "scheduled";
 const SECONDARY_TIME_FIELDS: SavedViewTimeField[] = ["deadline", "completed", "created"];
 type FilterControlsRerender = () => void;
 // US-109p6: the four Tabs of the unified Query editor panel.
-type QueryEditorTab = "filter" | "summary" | "view" | "dsl";
+type QueryEditorTab = "filter" | "view" | "dsl";
 type TagEditResult = {
   add: string[];
   remove: string[];
@@ -317,14 +311,9 @@ export class TaskCenterView extends ItemView {
   // Render-time DFS area counter, reset at the start of renderViewLayout so each
   // rendered area's index matches collectAreas(layout) order (for setAreaWhen).
   private renderAreaCounter = 0;
-  // Whether the query summary has been placed in an area header this render
-  // pass (it shows once, on the first content area's title row).
-  private summaryPlaced = false;
-  // US-109p7: DFS index of the area that carries the summary bar + pencil this
-  // render pass (the `isFirstContent` area), or null if none. That area no
-  // longer renders its own filter funnel; its `when` is edited in the Query
-  // editor's Filters tab "本视图过滤" section instead.
-  private summaryAreaIndex: number | null = null;
+  // Whether the first content area has been seen this render pass — used to
+  // give that area a title fallback (the tab name) so its header is labeled.
+  private firstContentPlaced = false;
   // US-109p9: DFS index of the area whose "编辑" entry opened the Query editor.
   // The Filters tab edits this area's `when` (list/grid) and the View tab edits
   // its title. null = opened without area context (toolbar 编辑 Query).
@@ -2687,7 +2676,6 @@ export class TaskCenterView extends ItemView {
         status: this.state.savedViewStatus,
       },
       view: { layout: { type: "list" } },
-      summary: [],
     });
   }
 
@@ -2796,7 +2784,6 @@ export class TaskCenterView extends ItemView {
     // ── Tab strip ────────────────────────────────────────
     const tabs: Array<{ key: QueryEditorTab; label: string }> = [
       { key: "filter", label: tr("savedViews.queryEditorFilters") },
-      { key: "summary", label: tr("savedViews.queryEditorSummary") },
       { key: "view", label: tr("savedViews.queryEditorView") },
       { key: "dsl", label: tr("savedViews.queryEditorDsl") },
     ];
@@ -2828,9 +2815,6 @@ export class TaskCenterView extends ItemView {
     switch (this.queryEditorTab) {
       case "filter":
         this.renderFiltersTab(panel, rerenderControls);
-        break;
-      case "summary":
-        this.renderSummaryTab(panel, rerenderControls);
         break;
       case "view":
         this.renderViewTab(panel, rerenderControls);
@@ -2941,231 +2925,6 @@ export class TaskCenterView extends ItemView {
     }
   }
 
-  // US-109p6: Summary tab — count / sum / ratio / top-N / group-by metrics.
-  private renderSummaryTab(parent: HTMLElement, _rerenderControls?: FilterControlsRerender): void {
-    const summarySection = parent.createDiv({ cls: "bt-query-editor-section" });
-    summarySection.createDiv({ cls: "bt-query-editor-section-title", text: tr("savedViews.queryEditorSummary") });
-    summarySection.createDiv({ cls: "bt-query-editor-section-note", text: tr("savedViews.queryEditorSummaryHelp") });
-
-    const summaryList = summarySection.createDiv({ cls: "bt-query-editor-summary-list" });
-
-    // Build the shared handler params once (they are stable per render).
-    const buildSummaryDraftParams = (): QueryEditorSummaryDraftParams => {
-      const active = this.activeSavedView();
-      return {
-        tabDrafts: this.tabDrafts,
-        activePresetId: active.id,
-        savedPreset: this.selectedSavedView(),
-        getSnapshot: (existing) => this.currentQuerySnapshot(existing),
-      };
-    };
-
-    // Helper: update a metric at index i within the draft and re-render.
-    // Delegates to the testable production-path helper.
-    const updateMetricInDraft = (i: number, patch: Partial<QueryPresetSummaryMetric>) => {
-      const params = buildSummaryDraftParams();
-      const draft = handleQueryEditorSummaryEdit(params, i, patch);
-      this.applySavedView(draft);
-      renderSummaryMetrics();
-    };
-
-    const renderSummaryMetrics = () => {
-      summaryList.empty();
-      const metrics = this.currentSavedViewSummary();
-      for (let i = 0; i < metrics.length; i++) {
-        const metric = metrics[i];
-        const row = summaryList.createDiv({ cls: "bt-query-editor-summary-row" });
-        row.dataset.summaryMetric = metric.type;
-
-        // Metric type label (read-only — type is set on creation)
-        const typeLabel = row.createSpan({ cls: "bt-query-editor-summary-type" });
-        switch (metric.type) {
-          case "count":
-            typeLabel.setText(tr("savedViews.summaryMetricCount"));
-            break;
-          case "sum":
-            typeLabel.setText(tr("savedViews.summaryMetricSum"));
-            break;
-          case "ratio":
-            typeLabel.setText(tr("savedViews.summaryMetricRatio"));
-            break;
-          case "top_n":
-            typeLabel.setText(tr("savedViews.summaryMetricTopN"));
-            break;
-          case "group_by":
-            typeLabel.setText(tr("savedViews.summaryMetricGroupBy"));
-            break;
-        }
-
-        // Editable fields per metric type
-        if (metric.type === "sum") {
-          const fieldInput = row.createEl("input", {
-            type: "text",
-            placeholder: "planned",
-            cls: "bt-query-editor-summary-field-input",
-          });
-          fieldInput.value = metric.field ?? "";
-          fieldInput.addEventListener("input", () => {
-            updateMetricInDraft(i, { field: fieldInput.value.trim() || undefined });
-          });
-        }
-        if (metric.type === "ratio") {
-          const numInput = row.createEl("input", {
-            type: "text",
-            placeholder: "actual",
-            cls: "bt-query-editor-summary-field-input",
-          });
-          numInput.value = metric.numerator ?? "";
-          numInput.addEventListener("input", () => {
-            updateMetricInDraft(i, { numerator: numInput.value.trim() || undefined });
-          });
-          const denInput = row.createEl("input", {
-            type: "text",
-            placeholder: "estimate",
-            cls: "bt-query-editor-summary-field-input",
-          });
-          denInput.value = metric.denominator ?? "";
-          denInput.addEventListener("input", () => {
-            updateMetricInDraft(i, { denominator: denInput.value.trim() || undefined });
-          });
-        }
-        if (metric.type === "top_n") {
-          const byInput = row.createEl("input", {
-            type: "text",
-            placeholder: "tags",
-            cls: "bt-query-editor-summary-field-input",
-          });
-          byInput.value = metric.by ?? "";
-          byInput.addEventListener("input", () => {
-            updateMetricInDraft(i, { by: byInput.value.trim() || undefined });
-          });
-          const limitInput = row.createEl("input", {
-            type: "number",
-            placeholder: "5",
-            cls: "bt-query-editor-summary-field-input",
-          });
-          limitInput.value = metric.limit != null ? String(metric.limit) : "";
-          limitInput.addEventListener("input", () => {
-            const v = Number(limitInput.value);
-            updateMetricInDraft(i, { limit: Number.isFinite(v) ? v : undefined });
-          });
-        }
-        if (metric.type === "group_by") {
-          const byInput = row.createEl("input", {
-            type: "text",
-            placeholder: "tags",
-            cls: "bt-query-editor-summary-field-input",
-          });
-          byInput.value = metric.by ?? "";
-          byInput.addEventListener("input", () => {
-            updateMetricInDraft(i, { by: byInput.value.trim() || undefined });
-          });
-        }
-
-        // Remove button
-        const removeBtn = row.createEl("button", {
-          text: tr("savedViews.summaryRemove"),
-          cls: "bt-query-editor-summary-remove",
-        });
-        removeBtn.addEventListener("click", () => {
-          const params = buildSummaryDraftParams();
-          const draft = handleQueryEditorSummaryRemove(params, i);
-          this.applySavedView(draft);
-          renderSummaryMetrics();
-        });
-      }
-    };
-    renderSummaryMetrics();
-
-    // Add metric controls
-    const addRow = summarySection.createDiv({ cls: "bt-query-editor-summary-add-row" });
-    const metricTypes: Array<{ value: QueryPresetSummaryMetric["type"]; label: string }> = [
-      { value: "count", label: tr("savedViews.summaryMetricCount") },
-      { value: "sum", label: tr("savedViews.summaryMetricSum") },
-      { value: "ratio", label: tr("savedViews.summaryMetricRatio") },
-      { value: "top_n", label: tr("savedViews.summaryMetricTopN") },
-      { value: "group_by", label: tr("savedViews.summaryMetricGroupBy") },
-    ];
-    const typeSelect = addRow.createEl("select", { cls: "bt-query-editor-summary-type-select" });
-    for (const mt of metricTypes) {
-      const option = typeSelect.createEl("option", { text: mt.label });
-      option.value = mt.value;
-    }
-
-    // Dynamic fields based on selected type
-    const fieldsRow = addRow.createDiv({ cls: "bt-query-editor-summary-fields" });
-    const updateMetricFields = () => {
-      fieldsRow.empty();
-      const selType = typeSelect.value as QueryPresetSummaryMetric["type"];
-      if (selType === "sum" || selType === "top_n") {
-        fieldsRow.createSpan({ text: tr("savedViews.summaryField") + ":", cls: "bt-query-editor-summary-field-label" });
-        const fieldInput = fieldsRow.createEl("input", { type: "text", placeholder: "planned", cls: "bt-query-editor-summary-field-input" });
-        fieldInput.dataset.summaryField = "field";
-        if (selType === "top_n") {
-          fieldsRow.createSpan({ text: tr("savedViews.summaryLimit") + ":", cls: "bt-query-editor-summary-field-label" });
-          const limitInput = fieldsRow.createEl("input", { type: "number", placeholder: "5", cls: "bt-query-editor-summary-field-input" });
-          limitInput.dataset.summaryField = "limit";
-        }
-      }
-      if (selType === "ratio") {
-        fieldsRow.createSpan({ text: tr("savedViews.summaryNumerator") + ":", cls: "bt-query-editor-summary-field-label" });
-        const numInput = fieldsRow.createEl("input", { type: "text", placeholder: "actual", cls: "bt-query-editor-summary-field-input" });
-        numInput.dataset.summaryField = "numerator";
-        fieldsRow.createSpan({ text: tr("savedViews.summaryDenominator") + ":", cls: "bt-query-editor-summary-field-label" });
-        const denInput = fieldsRow.createEl("input", { type: "text", placeholder: "estimate", cls: "bt-query-editor-summary-field-input" });
-        denInput.dataset.summaryField = "denominator";
-      }
-      if (selType === "group_by") {
-        fieldsRow.createSpan({ text: tr("savedViews.summaryBy") + ":", cls: "bt-query-editor-summary-field-label" });
-        const byInput = fieldsRow.createEl("input", { type: "text", placeholder: "tags", cls: "bt-query-editor-summary-field-input" });
-        byInput.dataset.summaryField = "by";
-      }
-    };
-    typeSelect.addEventListener("change", updateMetricFields);
-    updateMetricFields();
-
-    const addBtn = addRow.createEl("button", {
-      text: tr("savedViews.summaryAdd"),
-      cls: "bt-query-editor-summary-add-btn",
-    });
-    addBtn.addEventListener("click", () => {
-      const selType = typeSelect.value as QueryPresetSummaryMetric["type"];
-      const newMetric: QueryPresetSummaryMetric = { type: selType };
-      // Read field values
-      const fieldEl = fieldsRow.querySelector<HTMLInputElement>('[data-summary-field="field"]');
-      const limitEl = fieldsRow.querySelector<HTMLInputElement>('[data-summary-field="limit"]');
-      const numEl = fieldsRow.querySelector<HTMLInputElement>('[data-summary-field="numerator"]');
-      const denEl = fieldsRow.querySelector<HTMLInputElement>('[data-summary-field="denominator"]');
-      const byEl = fieldsRow.querySelector<HTMLInputElement>('[data-summary-field="by"]');
-
-      if (selType === "sum") {
-        if (fieldEl?.value.trim()) newMetric.field = fieldEl.value.trim();
-      }
-      if (selType === "ratio") {
-        if (numEl?.value.trim()) newMetric.numerator = numEl.value.trim();
-        if (denEl?.value.trim()) newMetric.denominator = denEl.value.trim();
-      }
-      if (selType === "top_n") {
-        if (fieldEl?.value.trim()) newMetric.by = fieldEl.value.trim();
-        if (limitEl?.value && Number.isFinite(Number(limitEl.value))) {
-          newMetric.limit = Number(limitEl.value);
-        }
-      }
-      if (selType === "group_by") {
-        if (byEl?.value.trim()) newMetric.by = byEl.value.trim();
-      }
-
-      const params = buildSummaryDraftParams();
-      const draft = handleQueryEditorSummaryAdd(params, newMetric);
-      this.applySavedView(draft);
-      renderSummaryMetrics();
-      // Clear inputs
-      fieldsRow.querySelectorAll("input").forEach((el) => {
-        el.value = "";
-      });
-    });
-  }
-
   // US-109p6: DSL tab — full Query DSL direct editing. Validation errors keep
   // their section attribution (filters / view / summary) and don't clobber the
   // saved query (US-109p3).
@@ -3232,7 +2991,6 @@ export class TaskCenterView extends ItemView {
     const desktop = this.contentEl.dataset.mobileLayout !== "true";
     this.renderAreaHead(parent, areaIndex, area, {
       title: rawTitle,
-      isSummaryArea: false,
       renderNav: desktop ? (host) => this.renderRangeNav(host) : undefined,
     });
     const today = todayISO();
@@ -3407,7 +3165,6 @@ export class TaskCenterView extends ItemView {
     const desktop = this.contentEl.dataset.mobileLayout !== "true";
     this.renderAreaHead(parent, areaIndex, area, {
       title: rawTitle,
-      isSummaryArea: false,
       renderNav: desktop ? (host) => this.renderRangeNav(host) : undefined,
     });
     const today = todayISO();
@@ -4298,26 +4055,9 @@ export class TaskCenterView extends ItemView {
     // Reset the DFS area counter so each rendered area's index lines up with
     // collectAreas(layout) order — setAreaWhen uses it to address the draft.
     this.renderAreaCounter = 0;
-    // Summary is shown inline on the first content area's title row (not a
-    // separate bar). Reset the per-pass guard before walking the layout.
-    this.summaryPlaced = false;
-    this.summaryAreaIndex = null;
+    // Reset the per-pass "first content area" guard before walking the layout.
+    this.firstContentPlaced = false;
     this.renderLayoutNode(root, layout);
-  }
-
-  private summaryChipLabel(item: SummaryResultItem): string {
-    switch (item.type) {
-      case "count":
-        return `${tr("savedViews.summaryMetricCount")} ${item.value}`;
-      case "sum":
-        return `${item.field} ${item.formatted ?? `${item.value}m`}`;
-      case "ratio":
-        return `${item.numerator}/${item.denominator} ${item.formatted ?? `${item.value}%`}`;
-      case "top_n":
-        return `${item.by}: ${item.items.map((row) => `${row.key} ${row.count}`).join(" · ") || "—"}`;
-      case "group_by":
-        return `${item.by}: ${item.groups.map((row) => `${row.key} ${row.count}`).join(" · ") || "—"}`;
-    }
   }
 
   private renderLayoutNode(parent: HTMLElement, node: LayoutNode): void {
@@ -4405,15 +4145,13 @@ export class TaskCenterView extends ItemView {
 
     // US-109p9: every list/grid area (including the unscheduled tray) gets the
     // one shared area head — title + a single 编辑 entry → unified Query editor.
-    // The first non-tray content area also carries the summary chips.
-    const isFirstContent = !area.onDrop && !this.summaryPlaced;
+    const isFirstContent = !area.onDrop && !this.firstContentPlaced;
     const rawTitle = this.localizeBuiltinTitle(area.id, area.title);
     const areaTitle = rawTitle || (isFirstContent ? this.effectiveSavedView().name : "");
     if (isFirstContent) {
-      this.summaryPlaced = true;
-      this.summaryAreaIndex = areaIndex;
+      this.firstContentPlaced = true;
     }
-    this.renderAreaHead(parent, areaIndex, area, { title: areaTitle, isSummaryArea: isFirstContent });
+    this.renderAreaHead(parent, areaIndex, area, { title: areaTitle });
 
     if (model.grouped) {
       let totalVisible = 0;
@@ -4517,14 +4255,13 @@ export class TaskCenterView extends ItemView {
   // US-109p9: one shared head for every queryable area (list / grid / week /
   // month / tray). Renders the area title + a single 编辑 entry that opens the
   // unified Query editor scoped to this area (Filters tab edits its `when`, View
-  // tab its title). The summary-bar area also shows its summary chips here. This
-  // replaces the three old paths (in-place funnel popover, week/month nav filter
-  // chip, summary pencil).
+  // tab its title). This replaces the old in-place funnel popover and the
+  // week/month nav filter chip.
   private renderAreaHead(
     parent: HTMLElement,
     areaIndex: number,
     area: AreaConfig,
-    opts: { title: string; isSummaryArea: boolean; renderNav?: (host: HTMLElement) => void },
+    opts: { title: string; renderNav?: (host: HTMLElement) => void },
   ): void {
     parent.addClass("bt-has-head");
     const head = parent.createDiv({ cls: "bt-area-head" });
@@ -4536,7 +4273,6 @@ export class TaskCenterView extends ItemView {
       opts.renderNav(nav);
     }
     const right = head.createDiv({ cls: "bt-area-head-right" });
-    if (opts.isSummaryArea) this.renderSummaryChips(right, this.effectiveSavedView());
 
     const edit = right.createEl("button", { cls: "bt-area-edit" });
     edit.dataset.areaEdit = String(areaIndex);
@@ -4552,21 +4288,6 @@ export class TaskCenterView extends ItemView {
       edit.createSpan({ text: whenSummary, cls: "bt-area-filter-summary" });
     }
     edit.addEventListener("click", () => this.openQueryControlsSheet({ areaIndex, initialTab: "filter" }));
-  }
-
-  // US-303: render the tab's summary metric chips (display only). The edit
-  // affordance now lives on the area head's 编辑 button (US-109p9), not inline.
-  private renderSummaryChips(host: HTMLElement, active: QueryPreset): void {
-    const metrics = active.summary ?? [];
-    if (metrics.length === 0) return;
-    const group = host.createDiv({ cls: "bt-area-summary" });
-    group.dataset.summary = "true";
-    const filtered = recomputeTopLevelInQuery(this.getEffectiveTasks().filter(this.getTextFilter()))
-      .filter((t) => t.isTopLevelInQuery);
-    for (const item of computeSummary(filtered, metrics)) {
-      const chip = group.createDiv({ cls: `bt-summary-chip bt-summary-${item.type}` });
-      chip.createSpan({ text: this.summaryChipLabel(item), cls: "bt-summary-chip-text" });
-    }
   }
 
   // US-109p9: pure area-`when` filter controls (search / status / scheduled /
@@ -5433,7 +5154,6 @@ export class TaskCenterView extends ItemView {
         time: this.state.savedViewTime,
         status: this.state.savedViewStatus,
         view: this.currentQueryPresetViewConfig(),
-        summary: this.currentSavedViewSummary(),
       },
       () => existing.id,
     );
@@ -5493,7 +5213,6 @@ export class TaskCenterView extends ItemView {
       hidden: false,
       filters: { status: ["todo"] },
       view: { layout: { type: "list" } },
-      summary: [],
     });
   }
 
@@ -5506,7 +5225,6 @@ export class TaskCenterView extends ItemView {
       filterTime: this.state.savedViewTime,
       filterStatus: this.state.savedViewStatus,
       fallbackView: () => this.currentQueryPresetViewConfig(),
-      fallbackSummary: () => this.currentSavedViewSummary(),
       name: name ?? (existing ? undefined : this.suggestSavedViewName()),
     });
   }
@@ -5551,37 +5269,6 @@ export class TaskCenterView extends ItemView {
       default:
         return { layout: { type: "list" } };
     }
-  }
-
-  private currentSavedViewSummary(): QueryPresetSummaryMetric[] {
-    // Read from the active saved QueryPreset's summary (draft or saved).
-    // Draft always wins (even if empty); saved summary is used as-is.
-    // Only fall through to legacy tab defaults when there's no saved view.
-    const saved = this.selectedSavedView();
-    if (saved) {
-      const draft = this.tabDrafts.get(saved.id);
-      if (draft) {
-        return draft.summary ?? [];
-      }
-      // Use saved summary as-is — an empty array means "no summary"
-      // was explicitly configured (or the builtin preset ships without one).
-      return saved.summary ?? [];
-    }
-    return this.defaultSummaryForLegacyTab();
-  }
-
-  private defaultSummaryForLegacyTab(): QueryPresetSummaryMetric[] {
-    if (this.state.tab === "completed") {
-      return [
-        { type: "count" },
-        { type: "sum", field: "actual", format: "duration" },
-        { type: "ratio", numerator: "actual", denominator: "estimate", format: "percent" },
-      ];
-    }
-    if (this.state.tab === "unscheduled") {
-      return [{ type: "count" }];
-    }
-    return [];
   }
 
   // state.tab 现在只是「主内容 area 类型」的粗标签，用于日期导航与

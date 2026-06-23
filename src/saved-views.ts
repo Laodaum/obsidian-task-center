@@ -7,7 +7,6 @@ import type {
   ListAreaConfig,
   QueryPreset,
   QueryPresetFilters,
-  QueryPresetSummaryMetric,
   QueryPresetValidationError,
   QueryPresetValidationResult,
   QueryPresetViewConfig,
@@ -15,7 +14,6 @@ import type {
   QueryTray,
   QueryViewType,
   SavedViewStatus,
-  SavedViewSummaryMetric,
   SavedViewTimeFilters,
   StackConfig,
   TaskStatus,
@@ -52,7 +50,6 @@ export interface SavedViewFilters {
   time: SavedViewTimeFilters;
   status: SavedViewStatus;
   view?: QueryPresetViewConfig;
-  summary?: SavedViewSummaryMetric[];
 }
 
 export interface AppliedSavedViewFilters extends SavedViewFilters {
@@ -174,12 +171,11 @@ function booleanOrFallback(value: unknown, fallback: boolean): boolean {
 
 /**
  * Normalize a QueryPreset: ensure required fields, trim strings,
- * normalize status/tags/time, coerce view type, deduplicate summary.
+ * normalize status/tags/time, coerce view type.
  */
 export function normalizeQueryPreset(raw: QueryPreset): QueryPreset {
   const filters = normalizeQueryPresetFilters(raw.filters);
   const view = normalizeQueryPresetView(raw.view);
-  const summary = normalizeQueryPresetSummary(raw.summary);
   return {
     id: (typeof raw.id === "string" ? raw.id.trim() : "") || defaultSavedViewId(),
     name: (typeof raw.name === "string" ? raw.name.trim() : "") || "Query",
@@ -187,7 +183,6 @@ export function normalizeQueryPreset(raw: QueryPreset): QueryPreset {
     hidden: !!raw.hidden,
     filters,
     view,
-    summary,
   };
 }
 
@@ -417,28 +412,9 @@ export function findAreaByType<T extends AreaConfig["type"]>(
   return null;
 }
 
-function normalizeQueryPresetSummary(
-  summary: QueryPreset["summary"] | null | undefined,
-): QueryPreset["summary"] {
-  if (!Array.isArray(summary)) return [];
-  const out: QueryPreset["summary"] = [];
-  for (const metric of summary) {
-    if (!metric || typeof metric.type !== "string") continue;
-    const normalized: QueryPreset["summary"][number] = { type: metric.type };
-    if (metric.field?.trim()) normalized.field = metric.field.trim();
-    if (metric.numerator?.trim()) normalized.numerator = metric.numerator.trim();
-    if (metric.denominator?.trim()) normalized.denominator = metric.denominator.trim();
-    if (metric.by?.trim()) normalized.by = metric.by.trim();
-    if (typeof metric.limit === "number" && Number.isFinite(metric.limit)) normalized.limit = metric.limit;
-    if (metric.format?.trim()) normalized.format = metric.format.trim();
-    out.push(normalized);
-  }
-  return out;
-}
-
 /**
  * Validate a QueryPreset and return section-specific errors.
- * VAL-CORE-006: Errors point to `filters`, `view`, or `summary`.
+ * VAL-CORE-006: Errors point to `filters` or `view`.
  */
 export function validateQueryPreset(raw: unknown): QueryPresetValidationResult {
   const errors: QueryPresetValidationError[] = [];
@@ -539,36 +515,6 @@ export function validateQueryPreset(raw: unknown): QueryPresetValidationResult {
     }
   }
 
-  // Summary section
-  const summary = raw.summary;
-  if (summary !== undefined && !Array.isArray(summary)) {
-    errors.push({
-      section: "summary",
-      code: "invalid_summary",
-      message: "summary 必须是数组。",
-    });
-  } else if (Array.isArray(summary)) {
-    for (let index = 0; index < summary.length; index++) {
-      const metric: unknown = summary[index];
-      if (!isRecord(metric)) {
-        errors.push({
-          section: "summary",
-          code: "invalid_metric",
-          message: `summary[${index}] 必须是对象。`,
-        });
-        continue;
-      }
-      const metricType = metric.type;
-      if (typeof metricType !== "string" || !["count", "sum", "ratio", "top_n", "group_by"].includes(metricType)) {
-        errors.push({
-          section: "summary",
-          code: "invalid_metric_type",
-          message: `summary[${index}].type 无效 "${String(metricType)}"，允许: count, sum, ratio, top_n, group_by。`,
-        });
-      }
-    }
-  }
-
   return { valid: errors.length === 0, errors };
 }
 
@@ -645,7 +591,6 @@ export function migrateLegacySavedTaskView(raw: unknown): QueryPreset {
     // Old `view` is the legacy {type, preset, sections, tray, matrix} shape;
     // normalizeQueryPresetView migrates it to a layout tree.
     view: isRecord(obj.view) ? obj.view : {},
-    summary: Array.isArray(obj.summary) ? obj.summary : [],
   } as unknown as QueryPreset);
 }
 
@@ -697,7 +642,6 @@ export function parseQueryDsl(
     hidden: booleanOrFallback(base.hidden, existing.hidden ?? false),
     filters: isRecord(base.filters) ? base.filters : {},
     view: isRecord(base.view) ? base.view : { layout: { type: "list" } },
-    summary: Array.isArray(base.summary) ? base.summary : [],
   } as unknown as QueryPreset);
 }
 
@@ -729,7 +673,7 @@ export function ensureBuiltinQueryPresets(
   // 内置 view 的布局是出厂规范（含本地化所需的稳定 id），不作为用户就地
   // 编辑面（自定义路径是「复制后修改」）。因此 builtin 的 view 始终用最新
   // 出厂布局刷新，保证升级后布局结构、area id、本地化保持一致；用户对
-  // 名称 / 隐藏 / 排序 / filters / summary 的改动仍然保留。
+  // 名称 / 隐藏 / 排序 / filters 的改动仍然保留。
   const tombstoned = new Set(deletedBuiltinIds);
   const existingRaw = new Map(presets.map((p) => [p.id, p]));
   const out: QueryPreset[] = [];
@@ -792,7 +736,6 @@ export function createQueryPreset(
     time?: SavedViewTimeFilters;
     status?: SavedViewStatus;
     view?: QueryPresetViewConfig;
-    summary?: QueryPresetSummaryMetric[];
   },
   makeId: () => string = defaultSavedViewId,
 ): QueryPreset {
@@ -808,7 +751,6 @@ export function createQueryPreset(
       ...(filters.time && Object.keys(filters.time).length > 0 ? { time: normalizeTimeFilters(filters.time) } : {}),
     },
     view: filters.view ?? { layout: { type: "list" } },
-    summary: filters.summary ?? [],
   });
 }
 
@@ -839,7 +781,6 @@ export function applyQueryPresetFilters(preset: QueryPreset): AppliedSavedViewFi
     time: normalized.filters.time ?? {},
     status: normalized.filters.status ?? "all",
     view: normalized.view,
-    summary: normalized.summary,
   };
 }
 
@@ -851,7 +792,6 @@ export function clearQueryPresetFilters(): AppliedSavedViewFilters {
     time: {},
     status: "all",
     view: { layout: { type: "list" } },
-    summary: [],
   };
 }
 
@@ -969,13 +909,11 @@ export function sameQueryPresetContent(a: QueryPreset, b: QueryPreset): boolean 
     hidden: left.hidden,
     filters: left.filters,
     view: left.view,
-    summary: left.summary,
   }) === JSON.stringify({
     builtin: right.builtin,
     hidden: right.hidden,
     filters: right.filters,
     view: right.view,
-    summary: right.summary,
   });
 }
 
@@ -1263,21 +1201,18 @@ export interface ComputeQueryPresetSnapshotParams {
   filterStatus: SavedViewStatus;
   /** Fallback view config when neither draft nor saved provides one. */
   fallbackView: () => QueryPresetViewConfig;
-  /** Fallback summary when neither draft nor saved provides one. */
-  fallbackSummary: () => QueryPresetSummaryMetric[];
   /** Optional override for the snapshot name. */
   name?: string;
 }
 
 /**
  * Pure computation of a QueryPreset snapshot that merges tabDrafts
- * view/summary into the saved preset identity.  This is the testable
+ * view into the saved preset identity.  This is the testable
  * counterpart of `TaskCenterView.currentQuerySnapshot`.
  *
- * Draft view/summary win over saved view/summary.  Explicit empty draft
- * arrays ([]) win over saved arrays — they are not falsy.  All other
- * fields come from the explicit state parameters plus the saved preset
- * identity (id, name, builtin, hidden).
+ * Draft view wins over saved view.  All other fields come from the
+ * explicit state parameters plus the saved preset identity
+ * (id, name, builtin, hidden).
  */
 export function computeQueryPresetSnapshot(params: ComputeQueryPresetSnapshotParams): QueryPreset {
   const {
@@ -1288,7 +1223,6 @@ export function computeQueryPresetSnapshot(params: ComputeQueryPresetSnapshotPar
     filterTime,
     filterStatus,
     fallbackView,
-    fallbackSummary,
     name,
   } = params;
 
@@ -1307,119 +1241,7 @@ export function computeQueryPresetSnapshot(params: ComputeQueryPresetSnapshotPar
       status: filterStatus,
     },
     view: tabDraft?.view ?? existing?.view ?? fallbackView(),
-    summary: tabDraft?.summary ?? existing?.summary ?? fallbackSummary(),
   });
-}
-
-/**
- * Applies a partial edit to the summary metric at index `i`, returning a
- * new summary array.  Used by the Query Editor visual controls "edit"
- * path (changing field/by/limit etc. on an existing metric).
- */
-export function applySummaryMetricEdit(
-  summary: readonly QueryPresetSummaryMetric[],
-  i: number,
-  patch: Partial<QueryPresetSummaryMetric>,
-): QueryPresetSummaryMetric[] {
-  const next = [...summary];
-  if (i >= 0 && i < next.length) {
-    next[i] = { ...next[i], ...patch };
-  }
-  return next;
-}
-
-/**
- * Removes the summary metric at index `i`, returning a new summary array.
- * Used by the Query Editor "remove" button path.
- */
-export function applySummaryMetricRemove(
-  summary: readonly QueryPresetSummaryMetric[],
-  i: number,
-): QueryPresetSummaryMetric[] {
-  return summary.filter((_, idx) => idx !== i);
-}
-
-/**
- * Appends a new summary metric to the end of the array, returning a new
- * summary array.  Used by the Query Editor "add" button path.
- */
-export function applySummaryMetricAdd(
-  summary: readonly QueryPresetSummaryMetric[],
-  metric: QueryPresetSummaryMetric,
-): QueryPresetSummaryMetric[] {
-  return [...summary, metric];
-}
-
-// ── Query Editor Summary production-path helpers ──
-// These functions encapsulate the handler pattern used by TaskCenterView's
-// Query Editor summary visual controls.  They make the production handlers
-// testable without requiring a full Obsidian DOM environment.
-
-/**
- * Parameters shared by all Query Editor summary draft handlers.
- * Mirrors the closure environment of the rendering code in view.ts.
- */
-export interface QueryEditorSummaryDraftParams {
-  /** The tabDrafts Map — shared mutable draft store. */
-  tabDrafts: Map<string, QueryPreset>;
-  /** The active QueryPreset id (what tab is currently selected). */
-  activePresetId: string;
-  /** The saved (non-draft) preset for the active tab. */
-  savedPreset: QueryPreset | null;
-  /** Returns a snapshot merging saved preset identity with draft content + view state. */
-  getSnapshot: (existing: QueryPreset | null) => QueryPreset;
-}
-
-/**
- * Production-path handler for editing a summary metric in a draft.
- * This is the testable counterpart of the `updateMetricInDraft` closure
- * inside TaskCenterView's Query Editor rendering code.
- *
- * Reads the draft from tabDrafts (via getSnapshot), applies the edit,
- * writes back into tabDrafts, and returns the updated draft.
- */
-export function handleQueryEditorSummaryEdit(
-  params: QueryEditorSummaryDraftParams,
-  metricIndex: number,
-  patch: Partial<QueryPresetSummaryMetric>,
-): QueryPreset {
-  const { tabDrafts, activePresetId, getSnapshot, savedPreset } = params;
-  const draft = getSnapshot(savedPreset);
-  draft.summary = applySummaryMetricEdit(draft.summary ?? [], metricIndex, patch);
-  tabDrafts.set(activePresetId, draft);
-  return draft;
-}
-
-/**
- * Production-path handler for adding a new summary metric to a draft.
- * This is the testable counterpart of the "add" button click handler
- * inside TaskCenterView's Query Editor rendering code.
- */
-export function handleQueryEditorSummaryAdd(
-  params: QueryEditorSummaryDraftParams,
-  newMetric: QueryPresetSummaryMetric,
-): QueryPreset {
-  const { tabDrafts, activePresetId, getSnapshot, savedPreset } = params;
-  const draft = getSnapshot(savedPreset);
-  draft.summary = applySummaryMetricAdd(draft.summary ?? [], newMetric);
-  tabDrafts.set(activePresetId, draft);
-  return draft;
-}
-
-/**
- * Production-path handler for removing a summary metric from a draft.
- * This is the testable counterpart of the "remove" button click handler
- * inside TaskCenterView's Query Editor rendering code.
- */
-export function handleQueryEditorSummaryRemove(
-  params: QueryEditorSummaryDraftParams,
-  metricIndex: number,
-): QueryPreset {
-  const { tabDrafts, activePresetId, getSnapshot, savedPreset } = params;
-  const draft = getSnapshot(savedPreset);
-  draft.summary = applySummaryMetricRemove(draft.summary ?? [], metricIndex);
-  tabDrafts.set(activePresetId, draft);
-  return draft;
 }
 
 /**
@@ -1453,22 +1275,19 @@ export function computeSaveAsFromSnapshot(params: {
  * draft state.  This is the testable counterpart of TaskCenterView's
  * `updateCurrentSavedView` method.
  *
- * Reads view/summary from the draft (via currentQueryPresetViewConfig /
- * currentSavedViewSummary equivalents) and returns the normalized preset
- * that would be saved via updateQueryPresetById.
+ * Reads view from the draft (via currentQueryPresetViewConfig equivalent)
+ * and returns the normalized preset that would be saved via
+ * updateQueryPresetById.
  */
 export function computeUpdateFromDraftComponents(params: {
   /** The saved preset being updated in-place. */
   existing: QueryPreset;
   /** Draft view config (from currentQueryPresetViewConfig). */
   draftView: QueryPresetViewConfig;
-  /** Draft summary (from currentSavedViewSummary). */
-  draftSummary: QueryPresetSummaryMetric[];
 }): QueryPreset {
-  const { existing, draftView, draftSummary } = params;
+  const { existing, draftView } = params;
   return normalizeQueryPreset({
     ...existing,
     view: draftView,
-    summary: draftSummary,
   });
 }

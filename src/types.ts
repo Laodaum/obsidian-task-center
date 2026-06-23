@@ -126,16 +126,6 @@ export interface SavedViewConfig {
   tray?: QueryTray;
 }
 
-export interface SavedViewSummaryMetric {
-  type: "count" | "sum" | "ratio" | "top_n" | "group_by";
-  field?: string;
-  numerator?: string;
-  denominator?: string;
-  by?: string;
-  limit?: number;
-  format?: string;
-}
-
 export interface SavedTaskView {
   id: string;
   name: string;
@@ -146,12 +136,11 @@ export interface SavedTaskView {
   time: SavedViewTimeFilters;
   status: SavedViewStatus;
   view?: SavedViewConfig;
-  summary?: SavedViewSummaryMetric[];
 }
 
 // ── QueryPreset DSL — the canonical query model (ARCHITECTURE.md §1.3) ──
 // Legacy SavedTaskView is the flat predecessor; QueryPreset nests
-// filters/view/summary into a single DSL object shared by GUI, CLI,
+// filters/view into a single DSL object shared by GUI, CLI,
 // and settings storage. No migration path exists for old SavedTaskView
 // data.json entries (VAL-CORE-005 / VAL-CROSS-002).
 
@@ -280,16 +269,6 @@ export interface QueryPresetViewConfig {
   layout: LayoutNode; // 根节点：可以是 Stack，也可以直接是单个 area
 }
 
-export interface QueryPresetSummaryMetric {
-  type: "count" | "sum" | "ratio" | "top_n" | "group_by";
-  field?: string;
-  numerator?: string;
-  denominator?: string;
-  by?: string;
-  limit?: number;
-  format?: string;
-}
-
 export interface QueryPreset {
   id: string;
   name: string;
@@ -297,10 +276,9 @@ export interface QueryPreset {
   hidden: boolean;
   filters: QueryPresetFilters;
   view: QueryPresetViewConfig;
-  summary: QueryPresetSummaryMetric[];
 }
 
-export type QueryPresetSection = "filters" | "view" | "summary";
+export type QueryPresetSection = "filters" | "view";
 
 export interface QueryPresetValidationError {
   section: QueryPresetSection;

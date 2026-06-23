@@ -30,7 +30,6 @@ import { deriveEffectiveTasks, type EffectiveTask } from "./task-tree";
 import { collectAreas, normalizeQueryPreset } from "./saved-views";
 import { applyQueryFilters } from "./query/filter";
 import { projectArea, type ViewModel } from "./query/projection";
-import { computeSummary, type SummaryResultItem } from "./query/summary";
 import { formatMinutes } from "./parser";
 
 // REMINDER: this module must NOT scan vault files directly. All parse work
@@ -89,7 +88,6 @@ export interface QueryRunResult {
   view: QueryPresetViewConfig;
   anchorISO: string;
   filteredTasks: EffectiveTask[];
-  summary: SummaryResultItem[];
   viewModel: ViewModel;
 }
 
@@ -237,7 +235,6 @@ export class TaskCenterApi {
       view,
       anchorISO: opts.anchorISO ?? todayISO(),
       filteredTasks: filtered,
-      summary: computeSummary(filtered, normalized.summary),
       viewModel,
     };
   }

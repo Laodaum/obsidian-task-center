@@ -10,8 +10,5 @@
     "layout": {
       "type": "list"
     }
-  },
-  "summary": [
-    { "type": "count" }
-  ]
+  }
 }

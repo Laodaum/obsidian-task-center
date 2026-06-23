@@ -19,7 +19,6 @@ import {
   type ReviewTask,
   type StatsResult,
 } from "./api";
-import type { SummaryResultItem } from "./query/summary";
 
 export {
   buildAgentBrief,
@@ -96,9 +95,6 @@ export function formatQueryRun(result: QueryRunResult, opts: CliFormatOptions = 
   const lines: string[] = [];
   lines.push(`Query ${result.preset.id} · ${result.preset.name}`);
   lines.push(`view ${result.viewModel.type} · ${result.filteredTasks.length} tasks · anchor ${result.anchorISO}`);
-  if (result.summary.length > 0) {
-    lines.push(`summary ${formatSummaryItems(result.summary)}`);
-  }
   lines.push("");
 
   switch (result.viewModel.type) {
@@ -113,16 +109,6 @@ export function formatQueryRun(result: QueryRunResult, opts: CliFormatOptions = 
       break;
   }
   return lines.join("\n");
-}
-
-function formatSummaryItems(items: SummaryResultItem[]): string {
-  return items.map((item) => {
-    if (item.type === "count") return `count=${item.value}`;
-    if (item.type === "sum") return `sum(${item.field})=${item.formatted ?? `${item.value}m`}`;
-    if (item.type === "ratio") return `ratio(${item.numerator}/${item.denominator})=${item.formatted ?? `${item.value}%`}`;
-    if (item.type === "top_n") return `top_n(${item.by})=${item.items.map((row) => `${row.key}:${row.count}`).join(",") || "—"}`;
-    return `group_by(${item.by})=${item.groups.map((row) => `${row.key}:${row.count}`).join(",") || "—"}`;
-  }).join("  ");
 }
 
 function renderQueryList(lines: string[], sections: Array<{ title: string; tasks: EffectiveTask[] }>, opts: CliFormatOptions): void {

@@ -254,7 +254,7 @@ export default class TaskCenterPlugin extends Plugin {
     // QueryPresets instead of being discarded. Flat shapes need their flat
     // fields collapsed into `filters` first; old-DSL views are migrated by
     // `ensureBuiltinQueryPresets` → `normalizeQueryPreset` downstream. Builtin
-    // entries keep their user edits (name/hidden/order/filters/summary) while
+    // entries keep their user edits (name/hidden/order/filters) while
     // their layout is refreshed to the latest factory JSON.
     const rawViews: unknown[] = merged.queryPresets ?? [];
     const legacyRaw = rawViews.filter((v) => isLegacyQueryPresetShape(v));
@@ -1179,7 +1179,6 @@ function toQueryRunJson(result: QueryRunResult): unknown {
     view: result.view,
     anchor: result.anchorISO,
     total: result.filteredTasks.length,
-    summary: result.summary,
     model: mapViewModel(result.viewModel),
   };
 }
