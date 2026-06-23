@@ -8,7 +8,6 @@
 //     no sections → one default (ungrouped) section.
 //   - Week/Month: date columns/cells from effectiveScheduled. Trays are
 //     separate list areas in the layout, not embedded here.
-//   - Matrix: 2D cells (X buckets × Y buckets) with unmatched handling.
 // Pure functions, no DOM, no Obsidian dependency.
 
 import type { EffectiveTask } from "../task-tree";
@@ -16,9 +15,7 @@ import type {
   AreaConfig,
   GridAreaConfig,
   ListAreaConfig,
-  MatrixAreaConfig,
   MonthAreaConfig,
-  QueryPresetMatrixBucket,
   WeekAreaConfig,
 } from "../types";
 import { applyQueryFilters, queryFilterHasActiveConditions } from "./filter";
@@ -43,17 +40,6 @@ export interface MonthCellModel {
   tasks: EffectiveTask[];
 }
 
-/**
- * A single cell in a 2D matrix: the intersection of one X bucket and one Y bucket.
- */
-export interface MatrixCellModel {
-  rowId: string;
-  colId: string;
-  rowTitle: string;
-  colTitle: string;
-  tasks: EffectiveTask[];
-}
-
 export interface ListViewModel {
   type: "list";
   // grouped=false → a single implicit section, render flat with no header.
@@ -71,17 +57,7 @@ export interface MonthViewModel {
   cells: MonthCellModel[];
 }
 
-export interface MatrixViewModel {
-  type: "matrix";
-  /** 2D cells: row (y-axis bucket) × col (x-axis bucket). */
-  cells: MatrixCellModel[];
-  /** Axis metadata for rendering headers. */
-  xAxis: { id: string; title: string; buckets: { id: string; title: string }[] };
-  yAxis: { id: string; title: string; buckets: { id: string; title: string }[] };
-  unmatched: EffectiveTask[];
-}
-
-export type ViewModel = ListViewModel | WeekViewModel | MonthViewModel | MatrixViewModel;
+export type ViewModel = ListViewModel | WeekViewModel | MonthViewModel;
 
 /**
  * Project a single area into its ViewModel. Used by the CLI / API query-run,
@@ -99,9 +75,8 @@ export function projectArea(
       return projectWeekArea(tasks, area, weekStartsOn, anchorISO);
     case "month":
       return projectMonthArea(tasks, area, anchorISO);
-    case "matrix":
-      return projectMatrixArea(tasks, area, weekStartsOn);
     case "drop":
+    case "unknown":
       return { type: "list", grouped: false, sections: [{ title: "", tasks: [] }] };
     case "grid":
     case "list":
@@ -273,97 +248,4 @@ export function projectMonthArea(
     }
   }
   return { type: "month", cells };
-}
-
-/**
- * Matrix area projection: a 2D matrix where each cell is the intersection of
- * one X-axis bucket and one Y-axis bucket. The matrix config is inlined on the
- * area (x / y / unmatched / multiMatch / showEmptyBuckets).
- */
-export function projectMatrixArea(
-  tasks: EffectiveTask[],
-  area: MatrixAreaConfig,
-  weekStartsOn: 0 | 1,
-): MatrixViewModel {
-  const xBuckets = area.x?.buckets ?? [];
-  const yBuckets = area.y?.buckets ?? [];
-
-  const cells: MatrixCellModel[] = [];
-  const xMatches = new Map<string, Set<string>>();
-  const yMatches = new Map<string, Set<string>>();
-
-  for (const bucket of xBuckets) {
-    xMatches.set(bucket.id, matchingTaskIds(tasks, bucket.when, weekStartsOn));
-  }
-  for (const bucket of yBuckets) {
-    yMatches.set(bucket.id, matchingTaskIds(tasks, bucket.when, weekStartsOn));
-  }
-
-  for (const yBucket of yBuckets) {
-    for (const xBucket of xBuckets) {
-      const xSet = xMatches.get(xBucket.id)!;
-      const ySet = yMatches.get(yBucket.id)!;
-      const cellTasks = tasks.filter((task) => xSet.has(task.id) && ySet.has(task.id));
-      cells.push({
-        rowId: yBucket.id,
-        colId: xBucket.id,
-        rowTitle: yBucket.title,
-        colTitle: xBucket.title,
-        tasks: cellTasks,
-      });
-    }
-  }
-
-  if (area.multiMatch !== "duplicate") {
-    const firstSeen = new Set<string>();
-    for (const cell of cells) {
-      cell.tasks = cell.tasks.filter((t) => {
-        if (firstSeen.has(t.id)) return false;
-        firstSeen.add(t.id);
-        return true;
-      });
-    }
-  }
-
-  const allCellTaskIds = new Set<string>();
-  for (const cell of cells) {
-    for (const t of cell.tasks) allCellTaskIds.add(t.id);
-  }
-
-  const unmatched = area.unmatched === "hide"
-    ? []
-    : tasks.filter((t) => !allCellTaskIds.has(t.id));
-
-  const showEmpty = area.showEmptyBuckets !== false;
-  const visibleCells = showEmpty ? cells : cells.filter((c) => c.tasks.length > 0);
-
-  const visibleColIds = new Set(visibleCells.map((c) => c.colId));
-  const visibleRowIds = new Set(visibleCells.map((c) => c.rowId));
-  const xAxisBuckets = xBuckets
-    .filter((b) => showEmpty || visibleColIds.has(b.id))
-    .map((b) => ({ id: b.id, title: b.title }));
-  const yAxisBuckets = yBuckets
-    .filter((b) => showEmpty || visibleRowIds.has(b.id))
-    .map((b) => ({ id: b.id, title: b.title }));
-
-  return {
-    type: "matrix",
-    cells: visibleCells,
-    xAxis: { id: area.x.id, title: area.x.title, buckets: xAxisBuckets },
-    yAxis: { id: area.y.id, title: area.y.title, buckets: yAxisBuckets },
-    unmatched,
-  };
-}
-
-function matchingTaskIds(
-  tasks: EffectiveTask[],
-  filters: QueryPresetMatrixBucket["when"],
-  weekStartsOn: 0 | 1,
-): Set<string> {
-  if (!queryFilterHasActiveConditions(filters)) {
-    return new Set(tasks.map((task) => task.id));
-  }
-  return new Set(
-    applyQueryFilters(tasks, filters, weekStartsOn).map((task) => task.id),
-  );
 }

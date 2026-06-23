@@ -402,9 +402,8 @@ export class TaskCenterApi {
   }
 }
 
-// CLI `view=` override replaces the layout with a single area of that type.
-// Matrix needs config we can't synthesize, so a matrix override falls back to
-// the preset's own layout.
+// CLI `view=` override replaces the layout with a single area of that type
+// (list / week / month). Any other value falls back to the preset's own layout.
 function normalizeViewOverride(view: QueryPresetViewConfig, override?: QueryViewType): QueryPresetViewConfig {
   if (!override) return view;
   if (override === "week") return { layout: { type: "week" } };

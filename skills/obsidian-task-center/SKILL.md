@@ -137,7 +137,7 @@ obsidian task-center:query-run id=preset-week view=month anchor=2026-05-01 forma
 `query-run` executes the preset DSL against current vault tasks and renders the result by view:
 
 - default: uses the preset's saved `view`.
-- `view=list|week|month|matrix`: temporary display override; it does not save back to the preset.
+- `view=list|week|month`: temporary display override; it does not save back to the preset.
 - `anchor=YYYY-MM-DD`: week/month cursor date. Week output shows all 7 days with counts; month text output shows dated cells that contain tasks, while JSON contains all month cells.
 - all task rows keep stable ids like `Tasks/Inbox.md:L42` so you can pipe into `show`, `schedule`, `done`, or `abandon`.
 

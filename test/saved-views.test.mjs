@@ -525,7 +525,7 @@ test("VAL-GUI-004: delete+undo restores default state correctly through producti
 
 test("VAL-GUI-004: delete+undo preserves full QueryPreset detail through production snapshot", () => {
   // Verify that the snapshot captured by computeQueryPresetDeleteUndoPlan
-  // preserves all QueryPreset fields including matrix config, tray, sections, summary
+  // preserves all QueryPreset fields including nested layout, tray, sections, summary
 
   const rich = normalizeQueryPreset({
     id: "sv-rich",
@@ -543,26 +543,10 @@ test("VAL-GUI-004: delete+undo preserves full QueryPreset detail through product
         dir: "col",
         children: [
           {
-            type: "matrix",
-            x: {
-              id: "pri",
-              title: "Priority",
-              buckets: [
-                { id: "high", title: "High", when: { tags: ["#high"] } },
-                { id: "low", title: "Low", when: { tags: ["#low"] } },
-              ],
-            },
-            y: {
-              id: "stat",
-              title: "Status",
-              buckets: [
-                { id: "open", title: "Open", when: { status: ["todo"] } },
-                { id: "done", title: "Done", when: { status: ["done"] } },
-              ],
-            },
-            unmatched: "hide",
-            multiMatch: "duplicate",
-            showEmptyBuckets: false,
+            type: "grid",
+            title: "Priority",
+            when: { tags: ["#high"], status: ["todo"] },
+            orderBy: ["deadline_asc"],
           },
           {
             type: "list",
@@ -598,16 +582,14 @@ test("VAL-GUI-004: delete+undo preserves full QueryPreset detail through product
     scheduled: "week", deadline: "overdue", completed: "month",
   });
 
-  // View — area layout tree (col[ matrix, list-tray ])
+  // View — area layout tree (col[ grid, list-tray ])
   const richLayout = snapshot.view.layout;
   assert.equal(richLayout.dir, "col");
   assert.equal(richLayout.children.length, 2);
-  assert.equal(richLayout.children[0].type, "matrix");
-  assert.equal(richLayout.children[0].x.id, "pri");
-  assert.equal(richLayout.children[0].y.id, "stat");
-  assert.equal(richLayout.children[0].unmatched, "hide");
-  assert.equal(richLayout.children[0].multiMatch, "duplicate");
-  assert.equal(richLayout.children[0].showEmptyBuckets, false);
+  assert.equal(richLayout.children[0].type, "grid");
+  assert.equal(richLayout.children[0].title, "Priority");
+  assert.deepEqual(richLayout.children[0].when.tags, ["#high"]);
+  assert.deepEqual(richLayout.children[0].orderBy, ["deadline_asc"]);
   assert.equal(richLayout.children[1].type, "list");
   assert.equal(richLayout.children[1].title, "Backlog");
 
@@ -721,50 +703,33 @@ test("roundtrip: normalizeQueryPresetView preserves tray config", () => {
   assert.equal(tray.onDrop.clearScheduled, true);
 });
 
-test("roundtrip: normalizeQueryPresetView preserves matrix config", () => {
+test("roundtrip: unsupported area type in a layout → unknown area keeps raw JSON", () => {
+  // matrix was removed. A new-shape layout with an unsupported area type
+  // normalizes to an `unknown` area that preserves the original JSON, so the
+  // view renders "未知类型 + JSON" instead of dropping it.
   const preset = normalizeQueryPreset({
-    id: "sv-matrix",
-    name: "With matrix",
+    id: "sv-unknown",
+    name: "With unknown area",
     builtin: false,
     hidden: false,
     filters: { status: "todo" },
     view: {
-      type: "matrix",
-      matrix: {
-        x: {
-          id: "priority",
-          title: "Priority",
-          buckets: [
-            { id: "high", title: "High", when: { tags: ["#high"] } },
-            { id: "low", title: "Low", when: { tags: ["#low"] } },
-          ],
-        },
-        y: {
-          id: "status",
-          title: "Status",
-          buckets: [
-            { id: "active", title: "Active", when: { status: ["todo"] } },
-            { id: "done", title: "Done", when: { status: ["done"] } },
-          ],
-        },
-        unmatched: "hide",
-        multiMatch: "duplicate",
-        showEmptyBuckets: false,
+      layout: {
+        type: "matrix",
+        title: "Legacy Matrix",
+        x: { id: "priority" },
+        y: { id: "status" },
       },
     },
     summary: [],
   });
 
-  // Legacy {type:matrix, matrix:{...}} migrates to a matrix area with inline x/y.
   const layout = preset.view.layout;
-  assert.equal(layout.type, "matrix");
-  assert.equal(layout.x.id, "priority");
-  assert.equal(layout.x.buckets.length, 2);
-  assert.equal(layout.y.id, "status");
-  assert.equal(layout.y.buckets.length, 2);
-  assert.equal(layout.unmatched, "hide");
-  assert.equal(layout.multiMatch, "duplicate");
-  assert.equal(layout.showEmptyBuckets, false);
+  assert.equal(layout.type, "unknown");
+  assert.equal(layout.rawType, "matrix");
+  assert.equal(layout.title, "Legacy Matrix");
+  assert.equal(layout.raw.x.id, "priority");
+  assert.equal(layout.raw.y.id, "status");
 });
 
 test("roundtrip: normalizeQueryPresetView preserves orderBy", () => {
@@ -835,12 +800,10 @@ test("roundtrip: parseQueryDsl → stringifyQueryPreset full roundtrip", () => {
         dir: "col",
         children: [
           {
-            type: "matrix",
-            x: { id: "pri", title: "Pri", buckets: [{ id: "high", title: "High", when: { tags: ["#high"] } }] },
-            y: { id: "stat", title: "Stat", buckets: [{ id: "open", title: "Open", when: { status: ["todo"] } }] },
-            unmatched: "hide",
-            multiMatch: "duplicate",
-            showEmptyBuckets: false,
+            type: "grid",
+            title: "Priority",
+            when: { tags: ["#high"], status: ["todo"] },
+            orderBy: ["deadline_asc"],
           },
           {
             type: "list",
@@ -869,16 +832,14 @@ test("roundtrip: parseQueryDsl → stringifyQueryPreset full roundtrip", () => {
   assert.deepEqual(parsed.filters.status, ["todo", "in_progress"]);
   assert.deepEqual(parsed.filters.time, { scheduled: "week", deadline: "overdue" });
 
-  // View — area layout tree (col[ matrix, list-tray ])
+  // View — area layout tree (col[ grid, list-tray ])
   const layout = parsed.view.layout;
   assert.equal(layout.dir, "col");
   assert.equal(layout.children.length, 2);
-  assert.equal(layout.children[0].type, "matrix");
-  assert.equal(layout.children[0].x.id, "pri");
-  assert.equal(layout.children[0].y.id, "stat");
-  assert.equal(layout.children[0].unmatched, "hide");
-  assert.equal(layout.children[0].multiMatch, "duplicate");
-  assert.equal(layout.children[0].showEmptyBuckets, false);
+  assert.equal(layout.children[0].type, "grid");
+  assert.equal(layout.children[0].title, "Priority");
+  assert.deepEqual(layout.children[0].when.tags, ["#high"]);
+  assert.deepEqual(layout.children[0].orderBy, ["deadline_asc"]);
   assert.equal(layout.children[1].type, "list");
   assert.equal(layout.children[1].title, "Backlog");
 
@@ -1486,7 +1447,7 @@ test("VAL-GUI-004 production: undo restores default state when deleted tab was d
 });
 
 test("VAL-GUI-004 production: confirm-delete-undo roundtrip preserves all QueryPreset fields", async () => {
-  // Full matrix+section+tray+summary preset — verify complete roundtrip
+  // Full grid+section+tray+summary preset — verify complete roundtrip
   const rich = normalizeQueryPreset({
     id: "sv-full",
     name: "Full View",
@@ -1503,26 +1464,10 @@ test("VAL-GUI-004 production: confirm-delete-undo roundtrip preserves all QueryP
         dir: "col",
         children: [
           {
-            type: "matrix",
-            x: {
-              id: "pri",
-              title: "Priority",
-              buckets: [
-                { id: "high", title: "High", when: { tags: ["#high"] } },
-                { id: "low", title: "Low", when: { tags: ["#low"] } },
-              ],
-            },
-            y: {
-              id: "stat",
-              title: "Status",
-              buckets: [
-                { id: "open", title: "Open", when: { status: ["todo"] } },
-                { id: "done", title: "Done", when: { status: ["done"] } },
-              ],
-            },
-            unmatched: "hide",
-            multiMatch: "duplicate",
-            showEmptyBuckets: false,
+            type: "grid",
+            title: "Priority",
+            when: { tags: ["#high"], status: ["todo"] },
+            orderBy: ["deadline_asc"],
           },
           {
             type: "list",
@@ -1581,15 +1526,13 @@ test("VAL-GUI-004 production: confirm-delete-undo roundtrip preserves all QueryP
   assert.deepEqual(snap.filters.status, ["todo", "in_progress"]);
   assert.deepEqual(snap.filters.time, { scheduled: "week", deadline: "overdue", completed: "month" });
 
-  // View — col[ matrix, list-tray ] preserved
+  // View — col[ grid, list-tray ] preserved
   const snapLayout = snap.view.layout;
   assert.equal(snapLayout.dir, "col");
-  assert.equal(snapLayout.children[0].type, "matrix");
-  assert.equal(snapLayout.children[0].x.id, "pri");
-  assert.equal(snapLayout.children[0].y.id, "stat");
-  assert.equal(snapLayout.children[0].unmatched, "hide");
-  assert.equal(snapLayout.children[0].multiMatch, "duplicate");
-  assert.equal(snapLayout.children[0].showEmptyBuckets, false);
+  assert.equal(snapLayout.children[0].type, "grid");
+  assert.equal(snapLayout.children[0].title, "Priority");
+  assert.deepEqual(snapLayout.children[0].when.tags, ["#high"]);
+  assert.deepEqual(snapLayout.children[0].orderBy, ["deadline_asc"]);
   assert.equal(snapLayout.children[1].type, "list");
   assert.equal(snapLayout.children[1].title, "Backlog");
 
@@ -1809,7 +1752,7 @@ test("VAL-GUI-004: computeUndoQueryPresetState — handles deleted tab that was 
 });
 
 test("VAL-GUI-004: computeUndoQueryPresetState — preserves all snapshot fields through undo", () => {
-  // Full matrix+section+tray+summary preset
+  // Full legacy list+section+tray+summary preset (migrates to col[ list, tray ])
   const rich = normalizeQueryPreset({
     id: "sv-full",
     name: "Full View",
@@ -1822,7 +1765,7 @@ test("VAL-GUI-004: computeUndoQueryPresetState — preserves all snapshot fields
       time: { scheduled: "week", deadline: "overdue", completed: "month" },
     },
     view: {
-      type: "matrix",
+      type: "list",
       sections: [
         { id: "urgent", title: "Urgent", when: { time: { deadline: "overdue" } }, limit: 5, orderBy: ["deadline_asc"] },
       ],
@@ -1831,13 +1774,6 @@ test("VAL-GUI-004: computeUndoQueryPresetState — preserves all snapshot fields
         title: "Backlog",
         filters: { status: ["todo"], time: { scheduled: "unscheduled" } },
         orderBy: ["deadline_asc"],
-      },
-      matrix: {
-        x: { id: "pri", title: "Priority", buckets: [{ id: "high", title: "High", when: { tags: ["#high"] } }] },
-        y: { id: "stat", title: "Status", buckets: [{ id: "open", title: "Open", when: { status: ["todo"] } }] },
-        unmatched: "hide",
-        multiMatch: "duplicate",
-        showEmptyBuckets: false,
       },
       orderBy: ["deadline_asc", "created_desc"],
     },
@@ -1870,8 +1806,9 @@ test("VAL-GUI-004: computeUndoQueryPresetState — preserves all snapshot fields
   assert.deepEqual(restored.filters, undoPlan.snapshot.filters);
   assert.deepEqual(restored.view, undoPlan.snapshot.view);
   assert.deepEqual(restored.summary, undoPlan.snapshot.summary);
-  assert.equal(restored.view.layout.children[0].x.id, "pri");
-  assert.equal(restored.view.layout.children[0].unmatched, "hide");
+  // Legacy list+sections+tray migrated to col[ list(sections), list-tray ].
+  assert.equal(restored.view.layout.children[0].sections[0].id, "urgent");
+  assert.equal(restored.view.layout.children[1].title, "Backlog");
   assert.equal(restored.summary[3].by, "tags");
   assert.equal(undoState.restoredView?.id, "sv-full");
   assert.equal(undoState.shouldRestoreActive, true);
@@ -2159,7 +2096,7 @@ test("VAL-GUI-004 production view-path: Notice undo click drives full restore ca
   assert.equal(handlerExecuted, true, "undo handler should have been executed");
 });
 
-test("VAL-GUI-004 production view-path: undo preserves full QueryPreset fields (matrix/sections/tray/summary)", async () => {
+test("VAL-GUI-004 production view-path: undo preserves full QueryPreset fields (grid/sections/tray/summary)", async () => {
   // Comprehensive test: rich preset with all view config fields
   const rich = normalizeQueryPreset({
     id: "sv-rich",
@@ -2177,26 +2114,10 @@ test("VAL-GUI-004 production view-path: undo preserves full QueryPreset fields (
         dir: "col",
         children: [
           {
-            type: "matrix",
-            x: {
-              id: "pri",
-              title: "Priority",
-              buckets: [
-                { id: "high", title: "High", when: { tags: ["#high"] } },
-                { id: "low", title: "Low", when: { tags: ["#low"] } },
-              ],
-            },
-            y: {
-              id: "stat",
-              title: "Status",
-              buckets: [
-                { id: "open", title: "Open", when: { status: ["todo"] } },
-                { id: "done", title: "Done", when: { status: ["done"] } },
-              ],
-            },
-            unmatched: "hide",
-            multiMatch: "duplicate",
-            showEmptyBuckets: false,
+            type: "grid",
+            title: "Priority",
+            when: { tags: ["#high"], status: ["todo"] },
+            orderBy: ["deadline_asc"],
           },
           {
             type: "list",
@@ -2267,21 +2188,17 @@ test("VAL-GUI-004 production view-path: undo preserves full QueryPreset fields (
       scheduled: "week", deadline: "overdue", completed: "month",
     });
 
-    // View — col[ matrix, list-tray ]
+    // View — col[ grid, list-tray ]
     const rLayout = restored.view.layout;
     assert.equal(rLayout.dir, "col");
     assert.equal(rLayout.children.length, 2);
 
-    // Matrix area
-    const rMatrix = rLayout.children[0];
-    assert.equal(rMatrix.type, "matrix");
-    assert.equal(rMatrix.x.id, "pri");
-    assert.equal(rMatrix.x.buckets.length, 2);
-    assert.equal(rMatrix.y.id, "stat");
-    assert.equal(rMatrix.y.buckets.length, 2);
-    assert.equal(rMatrix.unmatched, "hide");
-    assert.equal(rMatrix.multiMatch, "duplicate");
-    assert.equal(rMatrix.showEmptyBuckets, false);
+    // Content grid area
+    const rGrid = rLayout.children[0];
+    assert.equal(rGrid.type, "grid");
+    assert.equal(rGrid.title, "Priority");
+    assert.deepEqual(rGrid.when.tags, ["#high"]);
+    assert.deepEqual(rGrid.orderBy, ["deadline_asc"]);
 
     // Tray (list area)
     assert.equal(rLayout.children[1].type, "list");

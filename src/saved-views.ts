@@ -7,9 +7,6 @@ import type {
   ListAreaConfig,
   QueryPreset,
   QueryPresetFilters,
-  QueryPresetMatrixBucket,
-  QueryPresetMatrixConfig,
-  QueryPresetMatrixAxis,
   QueryPresetSummaryMetric,
   QueryPresetValidationError,
   QueryPresetValidationResult,
@@ -97,7 +94,7 @@ export function createSavedViewId(): string {
 }
 
 function normalizeQueryViewType(type: string | null | undefined): QueryViewType {
-  return type === "week" || type === "month" || type === "matrix" ? type : "list";
+  return type === "week" || type === "month" ? type : "list";
 }
 
 function normalizeTimeFilters(time: unknown): SavedViewTimeFilters {
@@ -269,16 +266,10 @@ function normalizeArea(raw: unknown): AreaConfig {
         ...(cfg.firstDayOfWeek === "monday" || cfg.firstDayOfWeek === "sunday" ? { firstDayOfWeek: cfg.firstDayOfWeek } : {}),
         ...(cfg.density === "compact" || cfg.density === "cards" ? { density: cfg.density } : {}),
       };
-    case "matrix": {
-      const matrix = normalizeMatrixConfig(cfg);
-      if (matrix) return { ...base, type: "matrix", ...matrix };
-      return { ...base, type: "list" }; // matrix 配置无效 → 退化成空 list
-    }
     case "drop":
       return { ...base, type: "drop", onDrop: onDrop ?? { setStatus: "dropped" } };
     case "grid":
-    case "list":
-    default: {
+    case "list": {
       const when = isRecord(cfg.when) ? normalizeQueryPresetFilters(cfg.when) : undefined;
       const sections = Array.isArray(cfg.sections)
         ? cfg.sections.map(normalizeQuerySection).filter((s): s is QuerySection => s !== null)
@@ -293,6 +284,10 @@ function normalizeArea(raw: unknown): AreaConfig {
       if (emptyText) out.emptyText = emptyText;
       return out;
     }
+    default:
+      // 不认识的 area.type（含已删除的 matrix）→ unknown area，保留原始 JSON
+      // 供视图层渲染「未知类型 + JSON」，而不是静默退化成 list。
+      return { ...base, type: "unknown", rawType: type, raw };
   }
 }
 
@@ -307,10 +302,7 @@ function migrateLegacyViewToLayout(cfg: Record<string, unknown>): LayoutNode {
   let base: AreaConfig;
   if (type === "week") base = { type: "week" };
   else if (type === "month") base = { type: "month" };
-  else if (type === "matrix") {
-    const matrix = isRecord(cfg.matrix) ? normalizeMatrixConfig(cfg.matrix) : undefined;
-    base = matrix ? { type: "matrix", ...matrix } : { type: "list" };
-  } else {
+  else {
     const sections = Array.isArray(cfg.sections)
       ? cfg.sections.map(normalizeQuerySection).filter((s): s is QuerySection => s !== null)
       : undefined;
@@ -366,37 +358,9 @@ function normalizeQueryTray(raw: unknown): QueryTray | undefined {
   return out;
 }
 
-function normalizeMatrixConfig(raw: Record<string, unknown>): QueryPresetMatrixConfig | undefined {
-  const x = isRecord(raw.x) ? normalizeMatrixAxis(raw.x) : undefined;
-  const y = isRecord(raw.y) ? normalizeMatrixAxis(raw.y) : undefined;
-  if (!x || !y) return undefined;
-  const unmatched = raw.unmatched === "hide" ? "hide" : "show";
-  const multiMatch = raw.multiMatch === "duplicate" ? "duplicate" : "first";
-  const showEmptyBuckets = typeof raw.showEmptyBuckets === "boolean" ? raw.showEmptyBuckets : true;
-  return { x, y, unmatched, multiMatch, showEmptyBuckets };
-}
-
-function normalizeMatrixAxis(raw: Record<string, unknown>): QueryPresetMatrixAxis | undefined {
-  const id = typeof raw.id === "string" ? raw.id.trim() : "";
-  const title = typeof raw.title === "string" ? raw.title.trim() : "";
-  if (!id) return undefined;
-  const buckets: QueryPresetMatrixBucket[] = Array.isArray(raw.buckets)
-    ? raw.buckets.map((b: unknown) => normalizeMatrixBucket(isRecord(b) ? b : {})).filter((b): b is QueryPresetMatrixBucket => b !== null)
-    : [];
-  return { id, title: title || id, buckets };
-}
-
-function normalizeMatrixBucket(raw: Record<string, unknown>): QueryPresetMatrixBucket | null {
-  const id = typeof raw.id === "string" ? raw.id.trim() : "";
-  if (!id) return null;
-  const title = typeof raw.title === "string" ? raw.title.trim() : "";
-  const when: QueryPresetFilters = isRecord(raw.when) ? normalizeQueryPresetFilters(raw.when) : {};
-  return { id, title: title || id, when };
-}
-
 // ── 布局树校验与遍历 ──
-
-const KNOWN_AREA_TYPES = ["list", "grid", "week", "month", "matrix", "drop"];
+// 受支持的 area 类型：list / grid / week / month / drop。其它字符串 type 不
+// 报错，归一化成 unknown area 后由视图层渲染「未知类型 + JSON」。
 
 function validateLayoutNode(raw: unknown, errors: QueryPresetValidationError[], path: string): void {
   if (!isRecord(raw)) {
@@ -414,13 +378,14 @@ function validateLayoutNode(raw: unknown, errors: QueryPresetValidationError[], 
     }
     return;
   }
-  // area 叶子
+  // area 叶子。type 缺失时归一化成 list；type 是字符串但不被支持时不报错——
+  // 归一化会把它变成 unknown area，视图层渲染「未知类型 + JSON」。
   const type = raw.type;
-  if (typeof type !== "string" || !KNOWN_AREA_TYPES.includes(type)) {
+  if (type !== undefined && typeof type !== "string") {
     errors.push({
       section: "view",
-      code: "unknown_area_type",
-      message: `${path}.type 无效 "${String(type)}"，允许: ${KNOWN_AREA_TYPES.join(", ")}。`,
+      code: "invalid_area_type",
+      message: `${path}.type 必须是字符串。`,
     });
     return;
   }
@@ -564,11 +529,11 @@ export function validateQueryPreset(raw: unknown): QueryPresetValidationResult {
     } else {
       // 旧形状兜底：仍校验 type 合法，以便给出清晰错误。
       const viewType = view.type;
-      if (typeof viewType === "string" && !["list", "week", "month", "matrix"].includes(viewType)) {
+      if (typeof viewType === "string" && !["list", "week", "month"].includes(viewType)) {
         errors.push({
           section: "view",
           code: "unknown_view_type",
-          message: `未知 view.type "${viewType}"，允许: list, week, month, matrix。`,
+          message: `未知 view.type "${viewType}"，允许: list, week, month。`,
         });
       }
     }

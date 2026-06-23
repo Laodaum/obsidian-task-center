@@ -85,7 +85,7 @@ export interface TaskCenterSettings {
   // left off. Read in `TaskCenterView.constructor`'s ViewState init,
   // written in `setTab`.
   // see USER_STORIES.md
-  lastTab: "today" | "week" | "month" | "completed" | "unscheduled" | "list" | "matrix" | null;
+  lastTab: "today" | "week" | "month" | "completed" | "unscheduled" | "list" | null;
   lastSavedViewId: string | null;
   // US-510: platform-conditional UI strings — shortcut hints / mouse
   // descriptions are branched per platform (desktop hint vs mobile hint),
@@ -106,7 +106,7 @@ export type TaskFormatFlavor = "tasks" | "dataview";
 export type SavedViewStatus = "all" | TaskStatus | TaskStatus[];
 export type SavedViewTimeField = "scheduled" | "deadline" | "completed" | "created" | "dropped";
 export type SavedViewTimeFilters = Partial<Record<SavedViewTimeField, string>>;
-export type QueryViewType = "list" | "week" | "month" | "matrix";
+export type QueryViewType = "list" | "week" | "month";
 
 export interface SavedViewConfig {
   type: QueryViewType;
@@ -119,8 +119,6 @@ export interface SavedViewConfig {
   sections?: QuerySection[];
   // ARCHITECTURE.md §1.3: QueryTray — separate query area for week/month views.
   tray?: QueryTray;
-  // ARCHITECTURE.md §1.3: QueryPresetMatrixConfig — matrix view config.
-  matrix?: QueryPresetMatrixConfig;
 }
 
 export interface SavedViewSummaryMetric {
@@ -159,26 +157,6 @@ export interface QueryPresetFilters {
   time?: SavedViewTimeFilters;
 }
 
-export interface QueryPresetMatrixBucket {
-  id: string;
-  title: string;
-  when: QueryPresetFilters;
-}
-
-export interface QueryPresetMatrixAxis {
-  id: string;
-  title: string;
-  buckets: QueryPresetMatrixBucket[];
-}
-
-export interface QueryPresetMatrixConfig {
-  x: QueryPresetMatrixAxis;
-  y: QueryPresetMatrixAxis;
-  unmatched: "show" | "hide";
-  multiMatch: "first" | "duplicate";
-  showEmptyBuckets: boolean;
-}
-
 // ARCHITECTURE.md §1.3: QuerySection — a named filter group for list views.
 // Each section applies its own `when` filter to the effective task set and
 // may override sorting and limit independently.
@@ -205,9 +183,12 @@ export interface QueryTray {
 // ── View = SwiftUI 式布局树（ARCHITECTURE.md §1.3）──
 // 没有单一 view 类型，也没有 preset。一个 view 是一棵布局树：row / col
 // 容器（≈ HStack / VStack）嵌套 area 叶子组件。旧的 {type, preset,
-// sections, tray, matrix} 形状由 normalize 迁移成 { layout }。
+// sections, tray} 形状由 normalize 迁移成 { layout }。
 
-export type AreaType = "list" | "grid" | "week" | "month" | "matrix" | "drop";
+// 受支持的 area 类型。`type` 是其它字符串的 area 会被归一化成 unknown area
+// 并在视图里渲染成「未知类型 + JSON」。四象限等二维布局用 row / col 嵌套
+// 多个带标题（title）的 grid area 表达，不需要专门的 area 类型。
+export type AreaType = "list" | "grid" | "week" | "month" | "drop";
 
 // 卡片被拖入某个 area 时的写操作；三种语义互斥。
 export interface DropEffect {
@@ -256,15 +237,18 @@ export interface MonthAreaConfig extends AreaBase {
   density?: "compact" | "cards";
 }
 
-// 内联 QueryPresetMatrixConfig 的 x / y / unmatched / multiMatch / showEmptyBuckets。
-export interface MatrixAreaConfig extends AreaBase, QueryPresetMatrixConfig {
-  type: "matrix";
-}
-
 // drop：纯动作落区，无 query；onDrop 必填。放弃区就是 drop area。
 export interface DropAreaConfig extends AreaBase {
   type: "drop";
   onDrop: DropEffect;
+}
+
+// unknown：归一化时遇到不认识的 area.type 时的兜底。保留原始类型字符串与
+// 原始 JSON，视图层渲染成「未知类型 + JSON」，而不是静默退化或丢弃。
+export interface UnknownAreaConfig extends AreaBase {
+  type: "unknown";
+  rawType: string;
+  raw: unknown;
 }
 
 export type AreaConfig =
@@ -272,8 +256,8 @@ export type AreaConfig =
   | GridAreaConfig
   | WeekAreaConfig
   | MonthAreaConfig
-  | MatrixAreaConfig
-  | DropAreaConfig;
+  | DropAreaConfig
+  | UnknownAreaConfig;
 
 export interface StackConfig {
   dir: "row" | "col"; // row ≈ HStack，col ≈ VStack

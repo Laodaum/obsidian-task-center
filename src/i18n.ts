@@ -392,7 +392,6 @@ const EN = {
   "savedViews.viewList": "List",
   "savedViews.viewWeek": "Week",
   "savedViews.viewMonth": "Month",
-  "savedViews.viewMatrix": "Matrix",
   "savedViews.queryEditorSummary": "Summary",
   "savedViews.queryEditorSummaryHelp": "Add metrics to show above the task list.",
   "savedViews.summaryAdd": "Add metric",
@@ -416,9 +415,11 @@ const EN = {
   "sourceEdit.saved": "Saved",
   "sourceEdit.unsaved": "Unsaved",
   "sourceEdit.nativeFailed": "Could not open Obsidian's native editor.",
-  "matrix.noConfig": "Matrix view requires x/y axis configuration. Edit Query to set up axes.",
-  "matrix.empty": "No tasks match the matrix conditions.",
-  "matrix.unmatched": "Unmatched",
+
+  // Unknown area type — graceful degradation when a view config uses an
+  // unsupported area `type` (typo, or a removed view type).
+  "area.unknownType": "Unknown view type: {type}",
+  "area.unknownHint": "This area type is not supported. Edit the Query DSL to fix it.",
 
   // US-415: full-view upgrade gate (legacy SavedTaskView / old-DSL view →
   // new QueryPreset model). Shown instead of the board when legacy data is
@@ -430,7 +431,7 @@ const EN = {
   "migration.whatsNewTitle": "What's new",
   "migration.feature1Title": "Composable layouts",
   "migration.feature1Desc":
-    "Stack list / week / month / matrix areas freely inside one tab.",
+    "Stack list / week / month areas freely inside one tab.",
   "migration.feature2Title": "One query model",
   "migration.feature2Desc":
     "Filters, view, and summary share one QueryPreset and one JSON DSL — same across GUI and CLI.",
@@ -783,7 +784,6 @@ const ZH: Partial<typeof EN> = {
   "savedViews.viewList": "列表",
   "savedViews.viewWeek": "周",
   "savedViews.viewMonth": "月",
-  "savedViews.viewMatrix": "矩阵",
   "savedViews.queryEditorSummary": "统计",
   "savedViews.queryEditorSummaryHelp": "添加统计指标，显示在任务列表上方。",
   "savedViews.summaryAdd": "添加指标",
@@ -806,9 +806,9 @@ const ZH: Partial<typeof EN> = {
   "sourceEdit.saved": "已保存",
   "sourceEdit.unsaved": "未保存",
   "sourceEdit.nativeFailed": "无法打开 Obsidian 原生编辑器。",
-  "matrix.noConfig": "矩阵视图需要配置 x/y 轴。请编辑 Query 来设置轴。",
-  "matrix.empty": "没有任务匹配矩阵条件。",
-  "matrix.unmatched": "未匹配",
+
+  "area.unknownType": "未知视图类型：{type}",
+  "area.unknownHint": "这个 area 类型不被支持。请编辑 Query DSL 修正。",
 
   // US-415: 全屏升级闸门页
   "migration.badge": "升级",
@@ -818,7 +818,7 @@ const ZH: Partial<typeof EN> = {
   "migration.whatsNewTitle": "新版变化",
   "migration.feature1Title": "可组合布局",
   "migration.feature1Desc":
-    "列表 / 周 / 月 / 矩阵区域可在同一个 Tab 里自由堆叠。",
+    "列表 / 周 / 月区域可在同一个 Tab 里自由堆叠。",
   "migration.feature2Title": "统一查询模型",
   "migration.feature2Desc":
     "过滤、视图、统计共用一份 QueryPreset 与一份 JSON DSL，GUI 与 CLI 通用。",

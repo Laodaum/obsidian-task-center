@@ -47,13 +47,11 @@ import { taskMatchesTimeToken, timeTokenAppliesToField } from "./time-filter";
 import { deriveEffectiveTasks, countTopLevel, recomputeTopLevelInQuery } from "./task-tree";
 import type { EffectiveTask } from "./task-tree";
 import { applyQueryFilters } from "./query/filter";
-import { projectListArea, projectMatrixArea } from "./query/projection";
-import type { MatrixViewModel } from "./query/projection";
+import { projectListArea } from "./query/projection";
 import {
   applyQueryPresetFilters,
   builtinSavedViewId,
   collectAreas,
-  findAreaByType,
   computeQueryPresetSnapshot,
   computeDeleteQueryPresetState,
   computeUndoQueryPresetState,
@@ -94,7 +92,7 @@ import type {
   GridAreaConfig,
   LayoutNode,
   ListAreaConfig,
-  MatrixAreaConfig,
+  UnknownAreaConfig,
   QueryPreset,
   QueryPresetViewConfig,
   SavedViewStatus,
@@ -1311,13 +1309,13 @@ export class TaskCenterView extends ItemView {
     add.addClass("bt-add-btn");
     add.addEventListener("click", () => this.openQuickAdd());
 
-    // settings gear
-    const gear = utility.createEl("button", { text: "⚙" });
-    gear.addClass("bt-gear");
-    gear.addEventListener("click", () => {
-      (this.app as unknown as { setting: { open: () => void; openTabById: (id: string) => void } }).setting.open();
-      (this.app as unknown as { setting: { open: () => void; openTabById: (id: string) => void } }).setting.openTabById("task-center");
-    });
+    // Settings: desktop folds it into the action overflow (§5.0); mobile has no
+    // overflow there, so keep a dedicated gear.
+    if (mobileLayout) {
+      const gear = utility.createEl("button", { text: "⚙" });
+      gear.addClass("bt-gear");
+      gear.addEventListener("click", () => this.openPluginSettings());
+    }
   }
 
   private renderSavedViewsToolbar(parent: HTMLElement, rerenderControls?: FilterControlsRerender) {
@@ -1332,6 +1330,7 @@ export class TaskCenterView extends ItemView {
       includeSaveAs: true,
       includeDsl: true,
       includeManage: true,
+      overflow: true,
     });
   }
 
@@ -1439,7 +1438,7 @@ export class TaskCenterView extends ItemView {
   private renderSavedViewsActionControls(
     parent: HTMLElement,
     rerenderControls?: FilterControlsRerender,
-    options: { includeSaveAs?: boolean; includeDsl?: boolean; includeManage?: boolean } = {},
+    options: { includeSaveAs?: boolean; includeDsl?: boolean; includeManage?: boolean; overflow?: boolean } = {},
   ): void {
     const selectedView = this.activeSavedView();
     const dirty = this.isSelectedSavedViewDirty(selectedView);
@@ -1468,41 +1467,97 @@ export class TaskCenterView extends ItemView {
       });
     }
 
+    // DESIGN §5.0: collect the low-frequency actions. In `overflow` mode they
+    // collapse into a single ⋯ popover; otherwise they stay as flat buttons.
+    // Each keeps its `data-action` so e2e selectors hold either way.
+    const secondary: { label: string; action: string; run: () => void }[] = [];
     if (options.includeSaveAs) {
-      const save = parent.createEl("button", {
-        text: tr("savedViews.save"),
-        cls: "bt-saved-view-save",
-      });
-      save.dataset.action = "save-current-view";
-      save.addEventListener("click", () => {
-        void (async () => {
-          const name = await this.askSavedViewName(`${selectedView.name} Copy`);
-          if (!name || !name.trim()) return;
-          await this.saveCurrentView(name.trim());
-          this.refreshFilterControls(rerenderControls);
-        })();
+      secondary.push({
+        label: tr("savedViews.save"),
+        action: "save-current-view",
+        run: () => {
+          void (async () => {
+            const name = await this.askSavedViewName(`${selectedView.name} Copy`);
+            if (!name || !name.trim()) return;
+            await this.saveCurrentView(name.trim());
+            this.refreshFilterControls(rerenderControls);
+          })();
+        },
       });
     }
-
     if (options.includeDsl) {
-      const dsl = parent.createEl("button", {
-        text: tr("savedViews.editDsl"),
-        cls: "bt-saved-view-save",
-      });
-      dsl.dataset.action = "edit-current-view-dsl";
-      dsl.addEventListener("click", () => {
-        this.openQueryDslModal(rerenderControls);
+      secondary.push({
+        label: tr("savedViews.editDsl"),
+        action: "edit-current-view-dsl",
+        run: () => this.openQueryDslModal(rerenderControls),
       });
     }
-
     if (options.includeManage) {
-      const manage = parent.createEl("button", {
-        text: tr("savedViews.manage"),
-        cls: "bt-saved-view-save",
+      secondary.push({
+        label: tr("savedViews.manage"),
+        action: "manage-query-tabs",
+        run: () => this.openManageTabsSheet(),
       });
-      manage.dataset.action = "manage-query-tabs";
-      manage.addEventListener("click", () => this.openManageTabsSheet());
     }
+    if (options.overflow) {
+      secondary.push({
+        label: tr("toolbar.settings"),
+        action: "open-settings",
+        run: () => this.openPluginSettings(),
+      });
+      this.renderActionOverflow(parent, secondary);
+    } else {
+      for (const item of secondary) {
+        const btn = parent.createEl("button", { text: item.label, cls: "bt-saved-view-save" });
+        btn.dataset.action = item.action;
+        btn.addEventListener("click", item.run);
+      }
+    }
+  }
+
+  /**
+   * DESIGN §5.0: a single ⋯ button that toggles a popover of the low-frequency
+   * actions. Items stay real `<button data-action>` (not an Obsidian Menu) so
+   * e2e selectors keep working; the popover just hides them until opened.
+   */
+  private renderActionOverflow(
+    parent: HTMLElement,
+    items: { label: string; action: string; run: () => void }[],
+  ): void {
+    const wrap = parent.createDiv({ cls: "bt-overflow" });
+    const trigger = wrap.createEl("button", { cls: "bt-overflow-trigger" });
+    setIcon(trigger, "more-horizontal");
+    trigger.setAttr("aria-label", tr("savedViews.more"));
+    const menu = wrap.createDiv({ cls: "bt-overflow-menu" });
+    menu.hide();
+
+    const close = () => {
+      menu.hide();
+      document.removeEventListener("click", onDocClick, true);
+    };
+    const onDocClick = (e: MouseEvent) => {
+      if (!wrap.contains(e.target as Node)) close();
+    };
+    trigger.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (menu.isShown()) { close(); return; }
+      menu.show();
+      document.addEventListener("click", onDocClick, true);
+    });
+
+    for (const item of items) {
+      const btn = menu.createEl("button", { text: item.label, cls: "bt-overflow-item" });
+      btn.dataset.action = item.action;
+      btn.addEventListener("click", () => { close(); item.run(); });
+    }
+  }
+
+  private openPluginSettings(): void {
+    const setting = (this.app as unknown as {
+      setting: { open: () => void; openTabById: (id: string) => void };
+    }).setting;
+    setting.open();
+    setting.openTabById("task-center");
   }
 
   private visibleQueryTabs(): QueryPreset[] {
@@ -1734,6 +1789,8 @@ export class TaskCenterView extends ItemView {
     for (const view of this.plugin.settings.queryPresets.map((item) => normalizeQueryPreset(item))) {
       const row = rows.createDiv({ cls: "bt-manage-tab-row" });
       row.draggable = true;
+      const handle = row.createSpan({ cls: "bt-manage-tab-handle", text: "⠿" });
+      handle.setAttr("aria-hidden", "true");
       const main = row.createDiv({ cls: "bt-manage-tab-main" });
       const title = main.createDiv({ cls: "bt-manage-tab-title", text: view.name });
       title.dataset.queryTabId = view.id;
@@ -1794,29 +1851,77 @@ export class TaskCenterView extends ItemView {
         if (view.hidden && badge === tr("savedViews.currentBadge")) continue;
         meta.createSpan({ cls: "bt-manage-tab-badge", text: badge });
       }
-      const actions = row.createDiv({ cls: "bt-manage-tab-actions" });
-      const action = (label: string, handler: () => void | Promise<void>) => {
-        const btn = actions.createEl("button", { text: label, cls: "bt-manage-tab-btn" });
-        btn.addEventListener("click", () => {
-          Promise.resolve(handler()).then(rerender).catch((error) =>
-            new Notice(tr("notice.error", { msg: error instanceof Error ? error.message : String(error) }), 4000),
-          );
-        });
-      };
-      action(tr("savedViews.open"), () => this.activateSavedView(view));
-      action(tr("savedViews.editDsl"), () => {
-        this.activateSavedView(view);
-        this.openQueryDslModal();
+
+      const runRowAction = (handler: () => void | Promise<void>) =>
+        Promise.resolve(handler()).then(rerender).catch((error) =>
+          new Notice(tr("notice.error", { msg: error instanceof Error ? error.message : String(error) }), 4000),
+        );
+
+      // DESIGN §5.0: row collapses the old 6-7 button wall — single click opens
+      // the tab, double-click the name renames, everything else lives in the
+      // row's kebab (⋮) menu. The click is delayed so a double-click on the name
+      // cancels the open instead of firing both.
+      let clickTimer: number | null = null;
+      main.addEventListener("click", () => {
+        if (clickTimer !== null) return;
+        clickTimer = window.setTimeout(() => {
+          clickTimer = null;
+          void runRowAction(() => this.activateSavedView(view));
+        }, 180);
       });
-      action(tr("savedViews.rename"), () => this.renameSavedView(view));
-      action(tr("savedViews.copy"), () => this.copySavedView(view));
-      action(tr("savedViews.setDefault"), () => this.setDefaultSavedView(view.id));
-      action(view.hidden ? tr("savedViews.show") : tr("savedViews.hide"), () => this.toggleSavedViewHidden(view, !view.hidden));
-      if (view.builtin) action(tr("savedViews.restore"), () => this.restoreBuiltinSavedView(view));
-      if (!view.builtin) {
-        action(tr("savedViews.delete"), () => this.deleteSavedViewWithConfirm(view));
-      }
+      title.addEventListener("dblclick", (e) => {
+        e.stopPropagation();
+        if (clickTimer !== null) {
+          window.clearTimeout(clickTimer);
+          clickTimer = null;
+        }
+        void runRowAction(() => this.renameSavedView(view));
+      });
+
+      const kebab = row.createEl("button", { cls: "bt-manage-tab-kebab" });
+      setIcon(kebab, "more-vertical");
+      kebab.setAttr("aria-label", tr("savedViews.more"));
+      kebab.addEventListener("click", (e) => {
+        e.stopPropagation();
+        this.openManageTabRowMenu(e, view, (handler) => { void runRowAction(handler); });
+      });
     }
+  }
+
+  /**
+   * DESIGN §5.0: per-row kebab menu for the Manage Tabs panel. Collapses the
+   * former flat button row (open / edit DSL / rename / copy / set default /
+   * hide / restore / delete) into one native Menu. `run` wraps each handler so
+   * the panel re-renders after the action.
+   */
+  private openManageTabRowMenu(
+    event: MouseEvent,
+    view: QueryPreset,
+    run: (handler: () => void | Promise<void>) => void,
+  ): void {
+    const menu = new Menu();
+    menu.addItem((i) => i.setTitle(tr("savedViews.open")).setIcon("folder-open")
+      .onClick(() => run(() => this.activateSavedView(view))));
+    menu.addItem((i) => i.setTitle(tr("savedViews.editDsl")).setIcon("code")
+      .onClick(() => run(() => { this.activateSavedView(view); this.openQueryDslModal(); })));
+    menu.addItem((i) => i.setTitle(tr("savedViews.rename")).setIcon("pencil")
+      .onClick(() => run(() => this.renameSavedView(view))));
+    menu.addItem((i) => i.setTitle(tr("savedViews.copy")).setIcon("copy")
+      .onClick(() => run(() => this.copySavedView(view))));
+    menu.addItem((i) => i.setTitle(tr("savedViews.setDefault")).setIcon("star")
+      .onClick(() => run(() => this.setDefaultSavedView(view.id))));
+    menu.addItem((i) => i.setTitle(view.hidden ? tr("savedViews.show") : tr("savedViews.hide"))
+      .setIcon(view.hidden ? "eye" : "eye-off")
+      .onClick(() => run(() => this.toggleSavedViewHidden(view, !view.hidden))));
+    if (view.builtin) {
+      menu.addItem((i) => i.setTitle(tr("savedViews.restore")).setIcon("rotate-ccw")
+        .onClick(() => run(() => this.restoreBuiltinSavedView(view))));
+    }
+    if (!view.builtin) {
+      menu.addItem((i) => i.setTitle(tr("savedViews.delete")).setIcon("trash-2")
+        .onClick(() => run(() => this.deleteSavedViewWithConfirm(view))));
+    }
+    menu.showAtMouseEvent(event);
   }
 
   private async createSavedViewFromCurrent(): Promise<void> {
@@ -2552,7 +2657,6 @@ export class TaskCenterView extends ItemView {
       { value: "list", label: tr("savedViews.viewList") },
       { value: "week", label: tr("savedViews.viewWeek") },
       { value: "month", label: tr("savedViews.viewMonth") },
-      { value: "matrix", label: tr("savedViews.viewMatrix") },
     ];
     for (const vt of viewTypes) {
       const btn = viewRow.createEl("button", {
@@ -2560,8 +2664,7 @@ export class TaskCenterView extends ItemView {
         cls: "bt-query-editor-view-btn" + (currentType === vt.value ? " active" : ""),
       });
       btn.addEventListener("click", () => {
-        const current = this.currentQueryPresetViewConfig();
-        const next: QueryPresetViewConfig = { layout: this.buildLayoutForAreaType(vt.value, current) };
+        const next: QueryPresetViewConfig = { layout: this.buildLayoutForAreaType(vt.value) };
         // Update the draft
         const active = this.activeSavedView();
         const draft = this.currentQuerySnapshot(active);
@@ -3890,155 +3993,21 @@ export class TaskCenterView extends ItemView {
   }
 
   /**
-   * Matrix view rendering (US-103 / UX §6.5).
-   *
-   * Projects the filtered EffectiveTask[] through applyViewProjection with
-   * a matrix view config, then renders a 2D grid of X-axis columns × Y-axis
-   * rows. Each cell shows tasks matching both axis bucket conditions.
-   * Unmatched tasks appear in a separate section below the grid.
-   *
-   * Uses the unified projection pipeline (EffectiveTask → filters → projection)
-   * as required by VAL-CORE-008 and ARCHITECTURE.md §4.3.
+   * Unknown area rendering: graceful degradation for an unsupported area
+   * `type` (e.g. a typo, or a config written against a removed view type like
+   * the old `matrix`). Shows a "未知类型" notice plus the raw node JSON so the
+   * user can see and fix what they wrote, instead of silently dropping it.
    */
-  private renderMatrix(parent: HTMLElement, mx: MatrixAreaConfig): void {
-    const active = this.activeSavedView();
-
-    // ── Projection pipeline ──
-    const effectiveTasks = deriveEffectiveTasks(this.tasks);
-    const weekStartsOn = this.plugin.settings.weekStartsOn;
-    const filtered = Object.keys(active.filters).length > 0
-      ? applyQueryFilters(effectiveTasks, active.filters, weekStartsOn)
-      : effectiveTasks;
-    const viewModel: MatrixViewModel = projectMatrixArea(filtered, mx, weekStartsOn);
-
-    const wrapper = parent.createDiv({ cls: "bt-matrix" });
-    wrapper.dataset.view = "matrix";
-
-    if (viewModel.cells.length === 0 && viewModel.unmatched.length === 0) {
-      if (this.hasActiveFilters()) {
-        this.renderFilterEmptyState(wrapper);
-      } else {
-        wrapper.createDiv({ text: tr("matrix.empty"), cls: "bt-matrix-empty" });
-      }
-      return;
-    }
-
-    // UX-mobile §5.4: on mobile, render as a vertical bucket list instead of
-    // a 2D grid. Each Y-axis bucket is a collapsible section showing
-    // its X-axis sub-buckets, preserving axis/bucket names.
-    const isMobile = this.contentEl.dataset.mobileLayout === "true";
-
-    if (isMobile) {
-      // ── Mobile: vertical bucket list ──
-      const yBuckets = new Map<string, { title: string; cells: typeof viewModel.cells }>();
-      for (const cell of viewModel.cells) {
-        const b = yBuckets.get(cell.rowId);
-        if (b) b.cells.push(cell);
-        else yBuckets.set(cell.rowId, { title: cell.rowTitle, cells: [cell] });
-      }
-
-      for (const [rowId, bucket] of yBuckets) {
-        const section = wrapper.createDiv({ cls: "bt-matrix-mobile-bucket" });
-        section.dataset.matrixRow = rowId;
-
-        const head = section.createDiv({ cls: "bt-matrix-mobile-bucket-head" });
-        head.createSpan({ text: bucket.title, cls: "bt-matrix-mobile-bucket-title" });
-        const count = bucket.cells.reduce((s, c) => s + c.tasks.length, 0);
-        head.createSpan({
-          text: String(count),
-          cls: "bt-matrix-mobile-bucket-count",
-        });
-
-        const body = section.createDiv({ cls: "bt-matrix-mobile-bucket-body" });
-
-        for (const cell of bucket.cells) {
-          const subSection = body.createDiv({ cls: "bt-matrix-mobile-sub-bucket" });
-          const subHead = subSection.createDiv({ cls: "bt-matrix-mobile-sub-head" });
-          subHead.createSpan({ text: cell.colTitle, cls: "bt-matrix-mobile-sub-title" });
-          subHead.createSpan({
-            text: String(cell.tasks.length),
-            cls: "bt-matrix-mobile-sub-count",
-          });
-
-          if (cell.tasks.length === 0) {
-            subSection.createDiv({
-              text: tr("matrix.empty"),
-              cls: "bt-matrix-mobile-sub-empty",
-            });
-          } else {
-            const cellList = subSection.createDiv({ cls: "bt-matrix-mobile-sub-list" });
-            for (const task of cell.tasks) {
-              this.renderCard(cellList, task);
-            }
-          }
-        }
-
-        // Toggle collapse on head tap
-        head.addEventListener("click", () => {
-          body.classList.toggle("collapsed");
-        });
-      }
-    } else {
-      // ── Desktop: 2D grid (existing behavior) ──
-      // ── Header row: X-axis column titles ──
-      if (viewModel.xAxis.buckets.length > 0) {
-        const headerRow = wrapper.createDiv({ cls: "bt-matrix-header" });
-        // Corner cell
-        headerRow.createDiv({ cls: "bt-matrix-corner", text: viewModel.yAxis.title || viewModel.xAxis.title });
-        for (const col of viewModel.xAxis.buckets) {
-          headerRow.createDiv({ cls: "bt-matrix-col-head", text: col.title });
-        }
-      }
-
-      // ── Grid rows: Y-axis buckets × X-axis buckets ──
-      // Group cells by rowId to render one row per Y-axis bucket
-      const grid = wrapper.createDiv({ cls: "bt-matrix-grid" });
-      const rowMap = new Map<string, typeof viewModel.cells>();
-      for (const cell of viewModel.cells) {
-        const row = rowMap.get(cell.rowId);
-        if (row) row.push(cell);
-        else rowMap.set(cell.rowId, [cell]);
-      }
-
-      for (const rowCells of rowMap.values()) {
-        const rowEl = grid.createDiv({ cls: "bt-matrix-row" });
-        // Row label (Y-axis bucket title)
-        rowEl.createDiv({ cls: "bt-matrix-row-label", text: rowCells[0]?.rowTitle ?? "" });
-
-        // Row cells (one per X-axis bucket)
-        for (const cell of rowCells) {
-          const cellEl = rowEl.createDiv({ cls: "bt-matrix-cell" });
-          cellEl.dataset.matrixRow = cell.rowId;
-          cellEl.dataset.matrixCol = cell.colId;
-
-          if (cell.tasks.length === 0) {
-            cellEl.addClass("bt-matrix-cell-empty");
-          } else {
-            const cellList = cellEl.createDiv({ cls: "bt-matrix-cell-list" });
-            for (const task of cell.tasks) {
-              this.renderCard(cellList, task);
-            }
-          }
-        }
-      }
-    }
-
-    // ── Unmatched tasks ──
-    if (viewModel.unmatched.length > 0) {
-      const unmatchedSection = wrapper.createDiv({ cls: "bt-matrix-unmatched" });
-      const unmatchedHead = unmatchedSection.createDiv({ cls: "bt-matrix-unmatched-head" });
-      unmatchedHead.createSpan({
-        text: tr("matrix.unmatched"),
-        cls: "bt-matrix-unmatched-label",
-      });
-      unmatchedHead.createSpan({
-        text: `(${viewModel.unmatched.length})`,
-        cls: "bt-matrix-unmatched-count",
-      });
-      for (const task of viewModel.unmatched) {
-        this.renderCard(unmatchedSection, task);
-      }
-    }
+  private renderUnknownArea(parent: HTMLElement, area: UnknownAreaConfig): void {
+    const wrapper = parent.createDiv({ cls: "bt-unknown-area" });
+    wrapper.dataset.view = "unknown";
+    wrapper.createDiv({
+      cls: "bt-unknown-area-title",
+      text: tr("area.unknownType", { type: area.rawType }),
+    });
+    wrapper.createDiv({ cls: "bt-unknown-area-hint", text: tr("area.unknownHint") });
+    const pre = wrapper.createEl("pre", { cls: "bt-unknown-area-json" });
+    pre.setText(JSON.stringify(area.raw, null, 2));
   }
 
   // ── View = area 布局树（ARCHITECTURE.md §1.3 / §4.3）──
@@ -4119,11 +4088,11 @@ export class TaskCenterView extends ItemView {
       case "month":
         this.renderMonth(areaEl);
         break;
-      case "matrix":
-        this.renderMatrix(areaEl, node);
-        break;
       case "drop":
         this.renderTrashZone(areaEl);
+        break;
+      case "unknown":
+        this.renderUnknownArea(areaEl, node);
         break;
     }
   }
@@ -5082,33 +5051,21 @@ export class TaskCenterView extends ItemView {
     const type = this.primaryAreaType(config);
     if (type === "week") return "week";
     if (type === "month") return "month";
-    if (type === "matrix") return "matrix";
     if (type === "list") return "list";
     return fallback;
   }
 
   // 布局里第一个非 drop area 的类型（找不到则第一个 area，再退化 list）。
+  // unknown area 也归到 list，避免泄漏到 AreaType。
   private primaryAreaType(view: QueryPresetViewConfig): AreaType {
     const areas = collectAreas(view.layout);
     const content = areas.find((a) => a.type !== "drop");
-    return (content ?? areas[0])?.type ?? "list";
+    const type = (content ?? areas[0])?.type ?? "list";
+    return type === "unknown" ? "list" : type;
   }
 
-  // GUI view-type 切换：把布局换成「单个该类型 area」。matrix 复用已有
-  // 配置，没有则给一个空脚手架供用户配置 bucket。
-  private buildLayoutForAreaType(type: AreaType, current: QueryPresetViewConfig): LayoutNode {
-    if (type === "matrix") {
-      const existing = findAreaByType(current.layout, "matrix");
-      if (existing) return existing;
-      return {
-        type: "matrix",
-        x: { id: "x", title: "X", buckets: [] },
-        y: { id: "y", title: "Y", buckets: [] },
-        unmatched: "show",
-        multiMatch: "first",
-        showEmptyBuckets: true,
-      };
-    }
+  // GUI view-type 切换：把布局换成「单个该类型 area」。
+  private buildLayoutForAreaType(type: AreaType): LayoutNode {
     return { type } as AreaConfig;
   }
 

@@ -600,7 +600,7 @@ export default class TaskCenterPlugin extends Plugin {
       "Run a saved query preset and render its view",
       {
         id: { value: "<preset-id>", description: "Saved query preset id", required: true },
-        view: { value: "list|week|month|matrix", description: "Temporary view override" },
+        view: { value: "list|week|month", description: "Temporary view override" },
         anchor: { value: "YYYY-MM-DD", description: "Date anchor for week/month projection" },
         format: { value: "text|json", description: "Output format (default: text)" },
       },
@@ -716,7 +716,7 @@ export default class TaskCenterPlugin extends Plugin {
       "Query Tab verbs:",
       "  task-center:query-list [hidden=true] [format=json]",
       "  task-center:query-show id=<tab-id>",
-      "  task-center:query-run id=<tab-id> [view=list|week|month|matrix] [anchor=YYYY-MM-DD] [format=json]",
+      "  task-center:query-run id=<tab-id> [view=list|week|month] [anchor=YYYY-MM-DD] [format=json]",
       "  task-center:query-create dsl=<json>",
       "  task-center:query-save dsl=<json>",
       "  task-center:query-update id=<tab-id> dsl=<json>",
@@ -1161,9 +1161,9 @@ function requireArg(v: string | undefined, name: string): string {
   return v;
 }
 
-function parseQueryViewType(raw: string): "list" | "week" | "month" | "matrix" {
-  if (raw === "list" || raw === "week" || raw === "month" || raw === "matrix") return raw;
-  throw new TaskWriterError("invalid_query", `view must be list|week|month|matrix: ${raw}`);
+function parseQueryViewType(raw: string): "list" | "week" | "month" {
+  if (raw === "list" || raw === "week" || raw === "month") return raw;
+  throw new TaskWriterError("invalid_query", `view must be list|week|month: ${raw}`);
 }
 
 function toQueryRunJson(result: QueryRunResult): unknown {
@@ -1201,25 +1201,12 @@ function mapViewModel(model: QueryRunResult["viewModel"]): unknown {
       })),
     };
   }
-  if (model.type === "month") {
-    return {
-      type: "month",
-      cells: model.cells.map((cell) => ({
-        date: cell.date,
-        tasks: cell.tasks.map(queryRunTaskJson),
-      })),
-    };
-  }
   return {
-    type: "matrix",
+    type: "month",
     cells: model.cells.map((cell) => ({
-      rowId: cell.rowId,
-      rowTitle: cell.rowTitle,
-      colId: cell.colId,
-      colTitle: cell.colTitle,
+      date: cell.date,
       tasks: cell.tasks.map(queryRunTaskJson),
     })),
-    unmatched: model.unmatched.map(queryRunTaskJson),
   };
 }
 

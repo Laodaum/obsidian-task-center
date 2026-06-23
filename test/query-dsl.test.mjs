@@ -139,30 +139,33 @@ test("VAL-CORE-005: normalizeQueryPreset migrates legacy week tray into a stack 
   assert.deepEqual(tray.onDrop, { clearScheduled: true });
 });
 
-test("VAL-CORE-005: normalizeQueryPreset inlines legacy matrix config into layout", () => {
+test("normalizeQueryPreset: unsupported area type → unknown area preserving raw JSON", () => {
+  // matrix was removed; any unsupported `type` (including old "matrix") becomes
+  // an `unknown` area that keeps the original JSON so the view can render
+  // "未知类型 + JSON" instead of silently dropping it.
   const normalized = normalizeQueryPreset({
-    id: "q-matrix",
-    name: "Matrix",
+    id: "q-unknown",
+    name: "U",
     builtin: false,
     hidden: false,
     filters: {},
     view: {
-      type: "matrix",
-      matrix: {
-        x: { id: "urgency", title: "Urgency", buckets: [{ id: "u1", title: "Urgent", when: {} }] },
-        y: { id: "importance", title: "Importance", buckets: [{ id: "i1", title: "Important", when: {} }] },
+      layout: {
+        type: "matrix",
+        title: "Old Matrix",
+        x: { id: "urgency" },
+        y: { id: "importance" },
       },
     },
     summary: [],
   });
 
   const layout = normalized.view.layout;
-  assert.equal(layout.type, "matrix");
-  assert.equal(layout.x.id, "urgency");
-  assert.equal(layout.y.id, "importance");
-  assert.equal(layout.unmatched, "show");
-  assert.equal(layout.multiMatch, "first");
-  assert.equal(layout.showEmptyBuckets, true);
+  assert.equal(layout.type, "unknown");
+  assert.equal(layout.rawType, "matrix");
+  assert.equal(layout.title, "Old Matrix");
+  assert.ok(layout.raw && typeof layout.raw === "object", "raw JSON preserved");
+  assert.equal(layout.raw.x.id, "urgency");
 });
 
 test("VAL-CORE-005: normalizeQueryPreset deduplicates tags case-insensitively", () => {
@@ -277,7 +280,9 @@ test("VAL-CORE-006: validateQueryPreset — unknown legacy view.type points to v
   assert.ok(viewErr.message.includes("gantt"), "Error message should mention the bad type");
 });
 
-test("VAL-CORE-006: validateQueryPreset — unknown layout area type points to view", () => {
+test("VAL-CORE-006: validateQueryPreset — unsupported area type is accepted (renders as unknown)", () => {
+  // Unsupported area types no longer hard-fail validation; they normalize to an
+  // `unknown` area and render "未知类型 + JSON". Only a non-string `type` errors.
   const result = validateQueryPreset({
     name: "BadAreaType",
     filters: {},
@@ -285,10 +290,25 @@ test("VAL-CORE-006: validateQueryPreset — unknown layout area type points to v
     summary: [],
   });
 
+  assert.equal(result.valid, true);
+  assert.equal(
+    result.errors.find((e) => e.code === "unknown_area_type" || e.code === "invalid_area_type"),
+    undefined,
+    "unsupported string type should not produce a validation error",
+  );
+});
+
+test("VAL-CORE-006: validateQueryPreset — non-string area type errors", () => {
+  const result = validateQueryPreset({
+    name: "BadAreaType",
+    filters: {},
+    view: { layout: { type: 42 } },
+    summary: [],
+  });
+
   assert.equal(result.valid, false);
-  const viewErr = result.errors.find((e) => e.section === "view" && e.code === "unknown_area_type");
-  assert.ok(viewErr, "Expected unknown_area_type error in view section");
-  assert.ok(viewErr.message.includes("gantt"), "Error message should mention the bad type");
+  const viewErr = result.errors.find((e) => e.section === "view" && e.code === "invalid_area_type");
+  assert.ok(viewErr, "Expected invalid_area_type error for a non-string type");
 });
 
 test("VAL-CORE-006: validateQueryPreset — drop area without onDrop points to view", () => {

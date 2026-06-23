@@ -111,9 +111,6 @@ export function formatQueryRun(result: QueryRunResult, opts: CliFormatOptions = 
     case "month":
       renderQueryMonth(lines, result.viewModel.cells, opts);
       break;
-    case "matrix":
-      renderQueryMatrix(lines, result.viewModel.cells, result.viewModel.unmatched, opts);
-      break;
   }
   return lines.join("\n");
 }
@@ -160,24 +157,6 @@ function renderQueryMonth(
     renderTaskRows(cell.tasks, lines, "    ", opts);
   }
   if (nonEmpty.length === 0) lines.push("    —");
-}
-
-function renderQueryMatrix(
-  lines: string[],
-  cells: Array<{ rowTitle: string; colTitle: string; tasks: EffectiveTask[] }>,
-  unmatched: EffectiveTask[],
-  opts: CliFormatOptions,
-): void {
-  for (const cell of cells) {
-    if (cell.tasks.length === 0) continue;
-    lines.push(`${cell.rowTitle} / ${cell.colTitle} · ${cell.tasks.length} tasks`);
-    renderTaskRows(cell.tasks, lines, "    ", opts);
-  }
-  if (unmatched.length > 0) {
-    lines.push(`Unmatched · ${unmatched.length} tasks`);
-    renderTaskRows(unmatched, lines, "    ", opts);
-  }
-  if (cells.every((cell) => cell.tasks.length === 0) && unmatched.length === 0) lines.push("    —");
 }
 
 function renderTaskRows(tasks: EffectiveTask[], lines: string[], indent: string, opts: CliFormatOptions): void {
