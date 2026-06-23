@@ -97,14 +97,28 @@ import type {
   TaskStatus,
 } from "./types";
 import { isStackNode } from "./types";
+import {
+  setAreaType as layoutSetAreaType,
+  appendArea as layoutAppendArea,
+  removeNode as layoutRemoveNode,
+  wrapInStack as layoutWrapInStack,
+  setStackDir as layoutSetStackDir,
+  reorderChild as layoutReorderChild,
+  pathToAreaIndex,
+  type LayoutPath,
+} from "./layout-ops";
 import type { SavedViewTimeField, SavedViewTimeFilters } from "./types";
 import type TaskCenterPlugin from "./main";
 
 const PRIMARY_TIME_FIELD: SavedViewTimeField = "scheduled";
 const SECONDARY_TIME_FIELDS: SavedViewTimeField[] = ["deadline", "completed", "created"];
 type FilterControlsRerender = () => void;
-// US-109p6: the four Tabs of the unified Query editor panel.
-type QueryEditorTab = "filter" | "view" | "dsl";
+// US-109p10: the Query editor has two scopes, opened by different entries:
+// "tab" (toolbar / tab menu) edits tab-level objects (base set / layout / manage
+// / DSL); "area" (an area head's 编辑) edits one area (its when / appearance).
+type QueryEditorScope = "tab" | "area";
+// Area-panel sub-tabs (US-109p10): 本区过滤 / 外观.
+type QueryEditorAreaTab = "filter" | "appearance";
 type TagEditResult = {
   add: string[];
   remove: string[];
@@ -226,16 +240,18 @@ class SwitchTabConfirmModal extends Modal {
 }
 
 // US-109q: desktop tab-overflow geometry. The flex gap between tab-bar items
-// and the reserved width for the "更多 N" chip when a collapse is needed.
+// and a FALLBACK width for the "更多 N" chip, used only until its real rendered
+// width is measured — the old fixed 96px over-reserved and collapsed too many
+// tabs (panel showed only one tab even with room to spare).
 const TAB_BAR_GAP = 2;
-const MORE_CHIP_RESERVE = 96;
+const MORE_CHIP_RESERVE = 64;
 
 /**
- * Largest number of leading tabs that fit in `avail` px, reserving room for the
- * "更多" chip when not all fit. Always keeps at least one real tab so the bar is
- * never reduced to just "更多". Pure — unit-testable without the DOM.
+ * Largest number of leading tabs that fit in `avail` px, reserving `moreReserve`
+ * px for the "更多" chip when not all fit. Always keeps at least one real tab so
+ * the bar is never reduced to just "更多". Pure — unit-testable without the DOM.
  */
-export function fitTabCountFromWidths(widths: number[], avail: number): number {
+export function fitTabCountFromWidths(widths: number[], avail: number, moreReserve: number): number {
   const total = widths.length;
   if (total === 0) return 0;
   // Everything fits without a "更多" chip?
@@ -247,7 +263,7 @@ export function fitTabCountFromWidths(widths: number[], avail: number): number {
   let fit = 0;
   for (let i = 0; i < total; i++) {
     used += widths[i] + (i > 0 ? TAB_BAR_GAP : 0);
-    if (used + TAB_BAR_GAP + MORE_CHIP_RESERVE <= avail) fit = i + 1;
+    if (used + TAB_BAR_GAP + moreReserve <= avail) fit = i + 1;
     else break;
   }
   return Math.max(1, fit);
@@ -308,6 +324,10 @@ export class TaskCenterView extends ItemView {
   // overflow fit can be recomputed for tabs currently hidden inside "更多",
   // letting the bar grow back when the panel widens. Refreshed on each measure.
   private tabWidthCache: Map<string, number> = new Map();
+  // US-109q: last measured pixel width of the "更多" chip (0 until first seen).
+  // Used as the reserve when deciding how many tabs fit, so the bar doesn't
+  // over-collapse against a guessed chip width.
+  private moreChipWidth = 0;
   // Render-time DFS area counter, reset at the start of renderViewLayout so each
   // rendered area's index matches collectAreas(layout) order (for setAreaWhen).
   private renderAreaCounter = 0;
@@ -318,10 +338,11 @@ export class TaskCenterView extends ItemView {
   // The Filters tab edits this area's `when` (list/grid) and the View tab edits
   // its title. null = opened without area context (toolbar 编辑 Query).
   private queryEditorAreaIndex: number | null = null;
-  // US-109p6: which Tab the Query editor panel is showing. Persisted across
-  // re-renders of the open sheet so switching tabs / editing controls does not
-  // reset back to the first tab.
-  private queryEditorTab: QueryEditorTab = "filter";
+  // US-109p10: which scope the open Query editor is in, and which area-panel
+  // sub-tab is showing. Persisted across re-renders of the open sheet so editing
+  // controls / switching sub-tabs does not reset the panel.
+  private queryEditorScope: QueryEditorScope = "tab";
+  private queryEditorAreaTab: QueryEditorAreaTab = "filter";
   private dateCalendarAnchorISO = startOfMonth(todayISO());
   private pendingDateRangeStart: string | null = null;
   private viewResizeObserver: ResizeObserver | null = null;
@@ -1060,10 +1081,21 @@ export class TaskCenterView extends ItemView {
       // width; the ResizeObserver fires again once the bar has real width. This
       // is what prevents the "only 更多" collapse from a transient 0-width frame.
       if (barWidth < 40) return;
+      const tabEls = Array.from(bar.querySelectorAll<HTMLElement>(".bt-tab:not(.bt-tab-more)"));
+      // Styles-not-applied guard: before the plugin's CSS lands, .bt-tab divs
+      // fall back to display:block and each fills the whole row (offsetWidth ≈
+      // barWidth). Caching those bogus widths poisoned the cache and pinned the
+      // bar to a single tab forever. A properly-laid-out flex row can never have
+      // two tabs each ≈ the full bar width, so treat that as "not ready": skip
+      // caching and retry next frame.
+      if (tabEls.length >= 2 && tabEls.every((el) => el.offsetWidth >= barWidth * 0.9)) {
+        window.requestAnimationFrame(() => this.scheduleTabOverflowMeasure(bar));
+        return;
+      }
       this.lastTabbarMeasureWidth = barWidth;
       // Refresh cached widths for every tab currently in the DOM. Visible tabs
       // get fresh measurements; tabs hidden in "更多" keep their last width.
-      for (const el of Array.from(bar.querySelectorAll<HTMLElement>(".bt-tab:not(.bt-tab-more)"))) {
+      for (const el of tabEls) {
         const id = el.dataset.tabId;
         if (id) this.tabWidthCache.set(id, el.offsetWidth);
       }
@@ -1079,8 +1111,18 @@ export class TaskCenterView extends ItemView {
       }
       const tail = bar.querySelector<HTMLElement>(".bt-tabbar-tail");
       const avail = barWidth - (tail ? tail.offsetWidth + TAB_BAR_GAP : 0);
+      // Reserve the "更多" chip's REAL rendered width once it exists (it's in the
+      // DOM whenever we're collapsed). Falling back to a fixed guess over-reserved
+      // and hid tabs that actually fit — measure it so the bar fills properly.
+      const moreEl = bar.querySelector<HTMLElement>(".bt-tab-more");
+      // Same styles-not-applied caveat: only trust a sane chip width (never a
+      // full-row block fallback).
+      if (moreEl && moreEl.offsetWidth > 0 && moreEl.offsetWidth < barWidth * 0.5) {
+        this.moreChipWidth = moreEl.offsetWidth;
+      }
+      const reserve = this.moreChipWidth || MORE_CHIP_RESERVE;
       const widths = tabs.map((t) => this.tabWidthCache.get(t.id) ?? 0);
-      const fit = fitTabCountFromWidths(widths, avail);
+      const fit = fitTabCountFromWidths(widths, avail, reserve);
       // fit >= total → everything fits, keep "show all" (null) to avoid a churn
       // render; otherwise collapse to the measured cap.
       const desired = fit >= tabs.length ? null : fit;
@@ -2742,13 +2784,17 @@ export class TaskCenterView extends ItemView {
     this.refreshFilterControls(rerenderControls);
   }
 
-  // US-109p6 / US-109p9: open the unified Query editor sheet. `areaIndex` scopes
-  // the Filters/View tabs to the area whose "编辑" entry opened the sheet (its
-  // `when` and title); `initialTab` decides the landing tab. Both are stored on
-  // the view so they survive in-place re-renders of the open sheet.
-  private openQueryControlsSheet(opts: { areaIndex?: number | null; initialTab?: QueryEditorTab } = {}): void {
-    this.queryEditorAreaIndex = opts.areaIndex ?? null;
-    this.queryEditorTab = opts.initialTab ?? "filter";
+  // US-109p10: open the Query editor sheet in one of two scopes. "tab" (toolbar /
+  // tab menu entries) edits tab-level objects; "area" (an area head's 编辑) edits
+  // a single area addressed by `areaIndex`. Scope + area index + area sub-tab are
+  // stored on the view so they survive in-place re-renders of the open sheet.
+  private openQueryControlsSheet(
+    opts: { scope?: QueryEditorScope; areaIndex?: number | null; areaTab?: QueryEditorAreaTab } = {},
+  ): void {
+    const scope = opts.scope ?? (opts.areaIndex != null ? "area" : "tab");
+    this.queryEditorScope = scope;
+    this.queryEditorAreaIndex = scope === "area" ? (opts.areaIndex ?? null) : null;
+    this.queryEditorAreaTab = opts.areaTab ?? "filter";
     let body: HTMLElement;
     const mobileLayout = this.contentEl.dataset.mobileLayout === "true";
     const bodyClass = mobileLayout ? "bt-mobile-query-sheet" : "bt-query-controls-sheet";
@@ -2769,71 +2815,203 @@ export class TaskCenterView extends ItemView {
     sheet.open();
   }
 
-  // US-109p6: render the Query editor as a Tab panel — an intro + a tab strip +
-  // the body of the currently selected tab. The four tab bodies reuse the
-  // original per-section render logic (renderFiltersTab / renderSummaryTab /
-  // renderViewTab / renderDslTab). Switching tabs only swaps the body; the tab
-  // draft, summary edits and DSL error position are unaffected.
+  // US-109p10: dispatch to one of the two scoped editors. Both project the same
+  // tab draft; the scope just decides which objects are shown.
   private renderQueryControlsSheet(parent: HTMLElement, rerenderControls?: FilterControlsRerender): void {
     parent.dataset.savedViews = "true";
     parent.dataset.queryEditor = "true";
+    parent.dataset.queryEditorScope = this.queryEditorScope;
+    if (this.queryEditorScope === "area" && this.queryEditorAreaIndex !== null) {
+      this.renderAreaEditor(parent, this.queryEditorAreaIndex, rerenderControls);
+    } else {
+      this.renderTabEditor(parent, rerenderControls);
+    }
+  }
 
+  // US-109p10: Tab panel — tab-level objects only: base set, layout tree,
+  // save/manage, DSL. No single area's when / title / type (those are the Area
+  // panel). Sections stack vertically inside the scrollable sheet.
+  private renderTabEditor(parent: HTMLElement, rerenderControls?: FilterControlsRerender): void {
     const intro = parent.createDiv({ cls: "bt-query-editor-intro" });
     intro.createDiv({ cls: "bt-query-editor-current", text: this.activeSavedView().name });
 
-    // ── Tab strip ────────────────────────────────────────
-    const tabs: Array<{ key: QueryEditorTab; label: string }> = [
-      { key: "filter", label: tr("savedViews.queryEditorFilters") },
-      { key: "view", label: tr("savedViews.queryEditorView") },
-      { key: "dsl", label: tr("savedViews.queryEditorDsl") },
-    ];
-    const tabStrip = parent.createDiv({ cls: "bt-query-editor-tabs" });
-    tabStrip.dataset.queryEditorTabs = "true";
-    tabStrip.setAttr("role", "tablist");
-    for (const t of tabs) {
-      const active = this.queryEditorTab === t.key;
-      const btn = tabStrip.createEl("button", {
-        text: t.label,
-        cls: "bt-query-editor-tab" + (active ? " active" : ""),
-      });
-      btn.dataset.queryTab = t.key;
-      btn.setAttr("role", "tab");
-      btn.setAttr("aria-selected", active ? "true" : "false");
-      btn.addEventListener("click", () => {
-        if (this.queryEditorTab === t.key) return;
-        this.queryEditorTab = t.key;
-        // Re-render the sheet body in place (cheap; preserves tab draft).
-        const host = parent;
-        host.empty();
-        this.renderQueryControlsSheet(host, rerenderControls);
-      });
-    }
+    // ── Base set (applies to every area) ──────────────────
+    const baseSection = parent.createDiv({ cls: "bt-query-editor-section" });
+    baseSection.dataset.filterSection = "base";
+    baseSection.createDiv({ cls: "bt-query-editor-section-title", text: tr("savedViews.queryEditorBaseFilters") });
+    const filters = baseSection.createDiv({ cls: "bt-saved-view-filters" });
+    this.renderSavedViewsFilterControls(filters, rerenderControls);
 
-    // ── Active tab body ──────────────────────────────────
-    const panel = parent.createDiv({ cls: "bt-query-editor-panel" });
-    panel.dataset.queryTabPanel = this.queryEditorTab;
-    switch (this.queryEditorTab) {
-      case "filter":
-        this.renderFiltersTab(panel, rerenderControls);
-        break;
-      case "view":
-        this.renderViewTab(panel, rerenderControls);
-        break;
-      case "dsl":
-        this.renderDslTab(panel, rerenderControls);
-        break;
-    }
+    // ── Layout tree (US-109p11) ───────────────────────────
+    const layoutSection = parent.createDiv({ cls: "bt-query-editor-section" });
+    layoutSection.dataset.queryLayout = "true";
+    const layout = this.currentQueryPresetViewConfig().layout;
+    const areaCount = collectAreas(layout).length;
+    const rootDir = isStackNode(layout)
+      ? tr(layout.dir === "row" ? "savedViews.layoutRow" : "savedViews.layoutCol")
+      : tr("savedViews.layoutCol");
+    layoutSection.createDiv({
+      cls: "bt-query-editor-section-title",
+      text: `${tr("savedViews.layout")} · ${tr("savedViews.layoutSummary", { count: areaCount, dir: rootDir })}`,
+    });
+    const tree = layoutSection.createDiv({ cls: "bt-layout-tree" });
+    this.renderLayoutNode(tree, layout, [], { n: 0 }, rerenderControls);
 
-    // ── Actions (common to all tabs) ─────────────────────
+    // ── Save & manage ─────────────────────────────────────
     const actionsSection = parent.createDiv({ cls: "bt-query-editor-section" });
     actionsSection.createDiv({ cls: "bt-query-editor-section-title", text: tr("savedViews.queryEditorActions") });
     actionsSection.createDiv({ cls: "bt-query-editor-section-note", text: tr("savedViews.queryEditorActionsNote") });
     const actions = actionsSection.createDiv({ cls: "bt-saved-view-actions" });
     this.renderSavedViewsActionControls(actions, rerenderControls, {
       includeSaveAs: true,
-      includeDsl: false, // DSL is its own tab
+      includeDsl: false,
       includeManage: true,
     });
+
+    // ── DSL (whole preset) ────────────────────────────────
+    const dslSection = parent.createDiv({ cls: "bt-query-editor-section" });
+    this.renderDslTab(dslSection, rerenderControls);
+  }
+
+  // US-109p10: Area panel — one area's own objects only. Breadcrumb back to the
+  // Tab panel; two sub-tabs (本区过滤 / 外观); a read-only base-set hint at the
+  // bottom so the user knows the tab base set also stacks here.
+  private renderAreaEditor(
+    parent: HTMLElement,
+    areaIndex: number,
+    rerenderControls?: FilterControlsRerender,
+  ): void {
+    parent.dataset.queryEditorArea = String(areaIndex);
+    const areaWhen = this.areaWhenByIndex(areaIndex);
+    // week / month / drop have no `when` → only the appearance tab makes sense.
+    if (areaWhen === null) this.queryEditorAreaTab = "appearance";
+
+    // ── Breadcrumb ─────────────────────────────────────────
+    const crumb = parent.createDiv({ cls: "bt-query-editor-breadcrumb" });
+    const back = crumb.createEl("button", { cls: "bt-query-editor-back" });
+    back.dataset.action = "back-to-tab";
+    back.setAttr("aria-label", tr("savedViews.backToTab"));
+    setIcon(back.createSpan({ cls: "bt-query-editor-back-icon" }), "chevron-left");
+    back.createSpan({ text: this.activeSavedView().name });
+    back.addEventListener("click", () => {
+      this.openInPlace(parent, rerenderControls, () => {
+        this.queryEditorScope = "tab";
+        this.queryEditorAreaIndex = null;
+      });
+    });
+    crumb.createSpan({ cls: "bt-query-editor-breadcrumb-sep", text: "/" });
+    crumb.createSpan({ cls: "bt-query-editor-breadcrumb-area", text: this.areaCrumbLabel(areaIndex) });
+
+    // ── Sub-tab strip ──────────────────────────────────────
+    const subTabs: Array<{ key: QueryEditorAreaTab; label: string }> = [];
+    if (areaWhen !== null) subTabs.push({ key: "filter", label: tr("savedViews.queryEditorAreaFilters") });
+    subTabs.push({ key: "appearance", label: tr("savedViews.areaTabAppearance") });
+    if (subTabs.length > 1) {
+      const strip = parent.createDiv({ cls: "bt-query-editor-tabs" });
+      strip.dataset.areaEditorTabs = "true";
+      strip.setAttr("role", "tablist");
+      for (const t of subTabs) {
+        const active = this.queryEditorAreaTab === t.key;
+        const btn = strip.createEl("button", { text: t.label, cls: "bt-query-editor-tab" + (active ? " active" : "") });
+        btn.dataset.areaTab = t.key;
+        btn.setAttr("role", "tab");
+        btn.setAttr("aria-selected", active ? "true" : "false");
+        btn.addEventListener("click", () => {
+          if (this.queryEditorAreaTab === t.key) return;
+          this.openInPlace(parent, rerenderControls, () => { this.queryEditorAreaTab = t.key; });
+        });
+      }
+    }
+
+    // ── Body ───────────────────────────────────────────────
+    const panel = parent.createDiv({ cls: "bt-query-editor-panel" });
+    panel.dataset.queryTabPanel = this.queryEditorAreaTab;
+    if (this.queryEditorAreaTab === "filter" && areaWhen !== null) {
+      const sec = panel.createDiv({ cls: "bt-query-editor-section" });
+      sec.dataset.filterSection = "area";
+      const controls = sec.createDiv({ cls: "bt-area-filter-popover bt-query-editor-area-filters" });
+      this.renderAreaFilterControls(controls, areaIndex, areaWhen, rerenderControls);
+    } else {
+      this.renderAreaAppearance(panel, areaIndex, rerenderControls);
+    }
+
+    // ── Base-set hint (read-only) ──────────────────────────
+    const hint = parent.createDiv({ cls: "bt-query-editor-baseset-hint" });
+    const baseSummary = this.areaFilterSummary(this.activeSavedView().filters);
+    hint.createSpan({
+      cls: "bt-query-editor-baseset-text",
+      text: baseSummary
+        ? tr("savedViews.baseSetHint", { summary: baseSummary })
+        : tr("savedViews.baseSetHintEmpty"),
+    });
+    const goBase = hint.createEl("button", { cls: "bt-query-editor-baseset-link", text: tr("savedViews.goEditBaseSet") });
+    goBase.addEventListener("click", () => {
+      this.openInPlace(parent, rerenderControls, () => {
+        this.queryEditorScope = "tab";
+        this.queryEditorAreaIndex = null;
+      });
+    });
+  }
+
+  // Re-render the open sheet body in place after mutating editor scope/sub-tab
+  // state. Cheap; preserves the tab draft.
+  private openInPlace(
+    parent: HTMLElement,
+    rerenderControls: FilterControlsRerender | undefined,
+    mutate: () => void,
+  ): void {
+    mutate();
+    parent.empty();
+    this.renderQueryControlsSheet(parent, rerenderControls);
+  }
+
+  // Breadcrumb label for an area: its (localized) title, or a type fallback.
+  private areaCrumbLabel(areaIndex: number): string {
+    const area = collectAreas(this.currentQueryPresetViewConfig().layout)[areaIndex];
+    if (!area) return "";
+    const title = this.localizeBuiltinTitle(area.id, area.title);
+    if (title) return title;
+    return this.areaTypeLabel(area.type as AreaType);
+  }
+
+  // US-109p10/p11: Area appearance — title + type (area-level, only this leaf)
+  // + list/grid sections passthrough.
+  private renderAreaAppearance(
+    parent: HTMLElement,
+    areaIndex: number,
+    rerenderControls?: FilterControlsRerender,
+  ): void {
+    const area = collectAreas(this.currentQueryPresetViewConfig().layout)[areaIndex];
+    // Title
+    const titleSection = parent.createDiv({ cls: "bt-query-editor-section" });
+    titleSection.dataset.areaTitleSection = "true";
+    titleSection.createDiv({ cls: "bt-query-editor-section-title", text: tr("savedViews.queryEditorAreaTitle") });
+    const input = titleSection.createEl("input", { type: "text", cls: "tc-full-width-input" });
+    input.dataset.areaTitleInput = "true";
+    input.placeholder = this.effectiveSavedView().name;
+    input.value = this.areaTitleByIndex(areaIndex);
+    input.addEventListener("change", () => this.setAreaTitle(areaIndex, input.value, rerenderControls));
+
+    // Type (area-level — changing it only swaps THIS leaf, US-109p11)
+    const typeSection = parent.createDiv({ cls: "bt-query-editor-section" });
+    typeSection.createDiv({ cls: "bt-query-editor-section-title", text: tr("savedViews.queryEditorViewType") });
+    const typeRow = typeSection.createDiv({ cls: "bt-query-editor-view-row" });
+    const currentType = area?.type === "unknown" ? "list" : (area?.type ?? "list");
+    const typeOptions: Array<{ value: AreaType; label: string }> = [
+      { value: "list", label: tr("savedViews.viewList") },
+      { value: "grid", label: tr("savedViews.viewGrid") },
+      { value: "week", label: tr("savedViews.viewWeek") },
+      { value: "month", label: tr("savedViews.viewMonth") },
+      { value: "drop", label: tr("savedViews.areaTypeDrop") },
+    ];
+    for (const opt of typeOptions) {
+      const btn = typeRow.createEl("button", {
+        text: opt.label,
+        cls: "bt-query-editor-view-btn" + (currentType === opt.value ? " active" : ""),
+      });
+      btn.dataset.areaType = opt.value;
+      btn.addEventListener("click", () => this.setAreaTypeForIndex(areaIndex, opt.value, rerenderControls));
+    }
   }
 
   // US-109p7/US-109p8: Filters tab — two sections editing two filter layers:
