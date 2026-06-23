@@ -13,6 +13,7 @@
     }
   },
   "summary": [
+    { "type": "count" },
     { "type": "sum", "field": "actual", "format": "duration" },
     { "type": "ratio", "numerator": "actual", "denominator": "estimate", "format": "percent" }
   ]
