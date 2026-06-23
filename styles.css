@@ -1185,6 +1185,11 @@
   transform: translateY(-1px);
 }
 
+/* Varied bento sizing: wide tiles span both columns (banner), squares stay 1col. */
+.task-center-view .tc-bento-cell--wide {
+  grid-column: 1 / -1;
+}
+
 .task-center-view .tc-bento-art {
   display: flex;
   align-items: center;
@@ -1356,6 +1361,85 @@
   color: var(--interactive-accent);
 }
 
+/* toolbar art: one area head (title bar + edit button) over two text lines */
+.task-center-view .tc-bento-art[data-art="toolbar"],
+.task-center-view .tc-bento-art[data-art="done"] {
+  flex-direction: column;
+  gap: 8px;
+}
+.task-center-view .tc-art-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 72%;
+}
+.task-center-view .tc-art-headtitle {
+  flex: 1 1 auto;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--text-faint);
+  opacity: 0.5;
+}
+.task-center-view .tc-art-editbtn {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 18px;
+  border-radius: 5px;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+.task-center-view .tc-art-editbtn svg {
+  width: 12px;
+  height: 12px;
+}
+.task-center-view .tc-art-headline {
+  width: 72%;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--background-modifier-border);
+}
+.task-center-view .tc-art-headline.is-short {
+  width: 46%;
+}
+
+/* done art: a card that stays put, recolored, with a check */
+.task-center-view .tc-art-donecard {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 74%;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+  opacity: 0.72;
+}
+.task-center-view .tc-art-check {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+.task-center-view .tc-art-check svg {
+  width: 11px;
+  height: 11px;
+}
+.task-center-view .tc-art-donetext {
+  flex: 1 1 auto;
+  height: 7px;
+  border-radius: 4px;
+  background: var(--text-muted);
+  opacity: 0.5;
+}
+
 /* ── Migrated views list ── */
 .task-center-view .tc-migration-views {
   margin-bottom: 24px;
@@ -1416,6 +1500,43 @@
   margin: 0 0 24px;
   font-size: var(--font-ui-small);
   line-height: 1.6;
+  color: var(--text-muted);
+}
+
+/* ── Roadmap ── what's coming next (e.g. the data area replacing summary) */
+.task-center-view .tc-migration-roadmap {
+  margin: 0 0 24px;
+}
+.task-center-view .tc-roadmap-item {
+  padding: 12px 14px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  background: var(--background-secondary);
+}
+.task-center-view .tc-roadmap-item + .tc-roadmap-item {
+  margin-top: 8px;
+}
+.task-center-view .tc-roadmap-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.task-center-view .tc-roadmap-title {
+  font-weight: var(--font-semibold);
+}
+.task-center-view .tc-roadmap-tag {
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  background: var(--background-modifier-hover);
+  border: 1px dashed var(--background-modifier-border);
+}
+.task-center-view .tc-roadmap-desc {
+  margin: 0;
+  font-size: var(--font-ui-small);
+  line-height: 1.5;
   color: var(--text-muted);
 }
 
