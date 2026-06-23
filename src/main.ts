@@ -71,6 +71,11 @@ export default class TaskCenterPlugin extends Plugin {
   // shows the full-view upgrade gate instead, and only `completeMigration`
   // (the gate's confirm action) writes the migrated data back to disk.
   migratedLegacyCount = 0;
+  // US-415: the resolved name + kind (builtin vs custom) of each legacy view
+  // detected in the last `loadSettings`, so the upgrade gate can LIST exactly
+  // which views are about to migrate instead of only showing a count. Kept in
+  // lockstep with `migratedLegacyCount`; cleared together on confirm.
+  migratedLegacyViews: { name: string; builtin: boolean }[] = [];
 
   async onload() {
     await this.loadSettings();
@@ -252,7 +257,8 @@ export default class TaskCenterPlugin extends Plugin {
     // entries keep their user edits (name/hidden/order/filters/summary) while
     // their layout is refreshed to the latest factory JSON.
     const rawViews: unknown[] = merged.queryPresets ?? [];
-    this.migratedLegacyCount = rawViews.filter((v) => isLegacyQueryPresetShape(v)).length;
+    const legacyRaw = rawViews.filter((v) => isLegacyQueryPresetShape(v));
+    this.migratedLegacyCount = legacyRaw.length;
     const migratedViews = rawViews.map((v) =>
       isLegacySavedTaskView(v) ? migrateLegacySavedTaskView(v) : v,
     );
@@ -265,6 +271,20 @@ export default class TaskCenterPlugin extends Plugin {
       unscheduled: tr("tab.unscheduled"),
       completed: tr("tab.completed"),
       dropped: tr("tab.dropped"),
+    });
+    // Resolve a friendly name + kind for every legacy view so the gate can list
+    // them. Prefer the post-migration preset (matched by id) so a renamed
+    // builtin shows its current label; fall back to the raw name, then a
+    // placeholder for flat legacy views that carried none.
+    this.migratedLegacyViews = legacyRaw.map((raw) => {
+      const rec = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+      const id = typeof rec.id === "string" ? rec.id : null;
+      const matched = id ? queryPresets.find((p) => p.id === id) : undefined;
+      const rawName = typeof rec.name === "string" ? rec.name.trim() : "";
+      return {
+        name: matched?.name || rawName || tr("migration.untitledView"),
+        builtin: matched ? matched.builtin : !!rec.builtin,
+      };
     });
     const defaultSavedViewId =
       merged.defaultSavedViewId
@@ -305,6 +325,7 @@ export default class TaskCenterPlugin extends Plugin {
     if (this.migratedLegacyCount === 0) return;
     await this.saveSettings();
     this.migratedLegacyCount = 0;
+    this.migratedLegacyViews = [];
     await this.refreshOpenViews();
   }
 

@@ -653,18 +653,23 @@ export class TaskCenterView extends ItemView {
     gate.dataset.migratedCount = String(count);
 
     const card = gate.createDiv({ cls: "tc-migration-card" });
-    card.createEl("h2", { text: tr("migration.title") });
-    card.createEl("p", { cls: "tc-migration-lead", text: tr("migration.lead", { n: count }) });
 
-    const whatsNew = card.createDiv({ cls: "tc-migration-section" });
-    whatsNew.createEl("h3", { text: tr("migration.whatsNewTitle") });
-    const list = whatsNew.createEl("ul");
-    for (const key of ["migration.whatsNew1", "migration.whatsNew2", "migration.whatsNew3"] as const) {
-      list.createEl("li", { text: tr(key) });
-    }
+    const header = card.createDiv({ cls: "tc-migration-header" });
+    header.createSpan({ cls: "tc-migration-badge", text: tr("migration.badge") });
+    header.createEl("h2", { cls: "tc-migration-title", text: tr("migration.title") });
+    header.createEl("p", { cls: "tc-migration-lead", text: tr("migration.lead", { n: count }) });
 
-    card.createEl("p", { cls: "tc-migration-note", text: tr("migration.note") });
+    // What's new — a bento grid where each new capability is one cell with a
+    // small CSS-drawn illustration so the change is easy to grasp at a glance.
+    card.createEl("h3", { cls: "tc-migration-subhead", text: tr("migration.whatsNewTitle") });
+    const bento = card.createDiv({ cls: "tc-migration-bento" });
+    this.renderBentoCell(bento, "layout", "migration.feature1Title", "migration.feature1Desc");
+    this.renderBentoCell(bento, "model", "migration.feature2Title", "migration.feature2Desc");
+    this.renderBentoCell(bento, "preset", "migration.feature3Title", "migration.feature3Desc");
+    this.renderBentoCell(bento, "ui", "migration.feature4Title", "migration.feature4Desc");
 
+    // Primary action sits right under What's New so it's visible without
+    // scrolling past the (potentially long) migrated-views list below.
     const actions = card.createDiv({ cls: "tc-migration-actions" });
     const cta = actions.createEl("button", { text: tr("migration.cta"), cls: "mod-cta" });
     cta.dataset.action = "complete-migration";
@@ -673,7 +678,74 @@ export class TaskCenterView extends ItemView {
       void this.plugin.completeMigration();
     });
 
+    // The concrete list of views that will migrate — builtin vs custom tagged.
+    const viewsSection = card.createDiv({ cls: "tc-migration-views" });
+    viewsSection.createEl("h3", {
+      cls: "tc-migration-subhead",
+      text: tr("migration.viewsTitle", { n: count }),
+    });
+    const list = viewsSection.createEl("ul", { cls: "tc-migration-view-list" });
+    for (const view of this.plugin.migratedLegacyViews) {
+      const item = list.createEl("li", { cls: "tc-migration-view-item" });
+      item.createSpan({ cls: "tc-migration-view-dot" });
+      item.createSpan({ cls: "tc-migration-view-name", text: view.name });
+      item.createSpan({
+        cls: `tc-migration-view-tag ${view.builtin ? "is-builtin" : "is-custom"}`,
+        text: view.builtin ? tr("migration.viewsBuiltin") : tr("migration.viewsCustom"),
+      });
+    }
+
+    card.createEl("p", { cls: "tc-migration-note", text: tr("migration.note") });
+
     window.setTimeout(() => cta.focus(), 10);
+  }
+
+  /**
+   * One bento cell of the upgrade gate: a CSS-drawn illustration (`art`) plus a
+   * title and one-line description. The illustration is built from plain divs so
+   * it inherits theme accent colors and needs no SVG/asset.
+   */
+  private renderBentoCell(
+    grid: HTMLElement,
+    art: "layout" | "model" | "preset" | "ui",
+    titleKey: Parameters<typeof tr>[0],
+    descKey: Parameters<typeof tr>[0],
+  ): void {
+    const cell = grid.createDiv({ cls: `tc-bento-cell tc-bento-cell--${art}` });
+    const figure = cell.createDiv({ cls: "tc-bento-art" });
+    figure.dataset.art = art;
+    if (art === "layout") {
+      // A composable layout: one wide area stacked over a row of two areas.
+      figure.createDiv({ cls: "tc-art-block is-wide" });
+      const row = figure.createDiv({ cls: "tc-art-row" });
+      row.createDiv({ cls: "tc-art-block" });
+      row.createDiv({ cls: "tc-art-block" });
+    } else if (art === "model") {
+      // One shared model bridging GUI and CLI through a JSON DSL.
+      figure.createSpan({ cls: "tc-art-chip", text: "GUI" });
+      figure.createSpan({ cls: "tc-art-link" });
+      figure.createSpan({ cls: "tc-art-chip is-dsl", text: "{ }" });
+      figure.createSpan({ cls: "tc-art-link" });
+      figure.createSpan({ cls: "tc-art-chip", text: "CLI" });
+    } else if (art === "preset") {
+      // A built-in tab duplicated into an editable preset.
+      figure.createDiv({ cls: "tc-art-tab is-back" });
+      const front = figure.createDiv({ cls: "tc-art-tab is-front" });
+      front.createSpan({ cls: "tc-art-plus", text: "+" });
+    } else {
+      // A refreshed UI: a mini window mock with a sparkle.
+      const win = figure.createDiv({ cls: "tc-art-window" });
+      const bar = win.createDiv({ cls: "tc-art-winbar" });
+      bar.createSpan({ cls: "tc-art-dot" });
+      bar.createSpan({ cls: "tc-art-dot" });
+      bar.createSpan({ cls: "tc-art-dot" });
+      const body = win.createDiv({ cls: "tc-art-winrow" });
+      body.createSpan({ cls: "tc-art-fill" });
+      body.createSpan({ cls: "tc-art-fill is-muted" });
+      figure.createSpan({ cls: "tc-art-sparkle", text: "✦" });
+    }
+    cell.createEl("h4", { cls: "tc-bento-title", text: tr(titleKey) });
+    cell.createEl("p", { cls: "tc-bento-desc", text: tr(descKey) });
   }
 
   /**

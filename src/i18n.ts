@@ -420,18 +420,29 @@ const EN = {
   // US-415: full-view upgrade gate (legacy SavedTaskView / old-DSL view →
   // new QueryPreset model). Shown instead of the board when legacy data is
   // detected; the board renders only after the user confirms.
+  "migration.badge": "Upgrade",
   "migration.title": "Task Center has been upgraded",
   "migration.lead":
-    "This version reworked how views and queries are stored. We found {n} view setting(s) from your previous version that need to move to the new structure before the board can open.",
+    "This version reworked how views and queries are stored. The {n} view(s) below will migrate to the new structure automatically — just confirm to continue.",
   "migration.whatsNewTitle": "What's new",
-  "migration.whatsNew1":
-    "Views are now composable layouts — stack list / week / month / matrix areas freely in one tab.",
-  "migration.whatsNew2":
-    "Filters, view, and summary share one QueryPreset model and one JSON DSL across GUI and CLI.",
-  "migration.whatsNew3":
-    "Built-in tabs ship as editable presets you can duplicate and tweak.",
+  "migration.feature1Title": "Composable layouts",
+  "migration.feature1Desc":
+    "Stack list / week / month / matrix areas freely inside one tab.",
+  "migration.feature2Title": "One query model",
+  "migration.feature2Desc":
+    "Filters, view, and summary share one QueryPreset and one JSON DSL — same across GUI and CLI.",
+  "migration.feature3Title": "Editable presets",
+  "migration.feature3Desc":
+    "Built-in tabs become presets you can duplicate and tweak into your own views.",
+  "migration.feature4Title": "Refreshed UI",
+  "migration.feature4Desc":
+    "The board, filters, and editing panels are redesigned to feel cleaner and faster.",
+  "migration.viewsTitle": "Views migrating automatically ({n})",
+  "migration.viewsBuiltin": "Built-in",
+  "migration.viewsCustom": "Custom",
+  "migration.untitledView": "Untitled view",
   "migration.note":
-    "Your built-in view tweaks (rename / hide / order) and custom filters are all preserved. This only updates local settings — no task files are touched.",
+    "Both your built-in views (rename / hide / order) and your custom views migrate automatically and are kept. This only updates local settings — no task files are touched.",
   "migration.cta": "Upgrade and open the board",
 };
 
@@ -794,18 +805,29 @@ const ZH: Partial<typeof EN> = {
   "matrix.unmatched": "未匹配",
 
   // US-415: 全屏升级闸门页
+  "migration.badge": "升级",
   "migration.title": "Task Center 已升级",
   "migration.lead":
-    "这个版本重构了视图与查询的存储方式。我们检测到来自旧版本的 {n} 个视图配置，需要先迁移到新结构，看板才能打开。",
+    "这个版本重构了视图与查询的存储方式。下面 {n} 个视图会自动迁移到新结构，确认后即可继续。",
   "migration.whatsNewTitle": "新版变化",
-  "migration.whatsNew1":
-    "视图改为可组合布局——列表 / 周 / 月 / 矩阵区域可在同一个 Tab 里自由堆叠。",
-  "migration.whatsNew2":
-    "过滤、视图、统计统一为同一份 QueryPreset 模型和同一份 JSON DSL，GUI 与 CLI 共用。",
-  "migration.whatsNew3":
-    "内置 Tab 成为可编辑的预设，可以复制后改成自己的视图。",
+  "migration.feature1Title": "可组合布局",
+  "migration.feature1Desc":
+    "列表 / 周 / 月 / 矩阵区域可在同一个 Tab 里自由堆叠。",
+  "migration.feature2Title": "统一查询模型",
+  "migration.feature2Desc":
+    "过滤、视图、统计共用一份 QueryPreset 与一份 JSON DSL，GUI 与 CLI 通用。",
+  "migration.feature3Title": "可编辑预设",
+  "migration.feature3Desc":
+    "内置 Tab 成为预设，可复制后改成自己的视图。",
+  "migration.feature4Title": "界面焕新",
+  "migration.feature4Desc":
+    "看板、过滤与编辑面板全面重做，更清爽顺手。",
+  "migration.viewsTitle": "将自动迁移的视图（{n}）",
+  "migration.viewsBuiltin": "内置",
+  "migration.viewsCustom": "自定义",
+  "migration.untitledView": "未命名视图",
   "migration.note":
-    "你原来对内置视图的调整（重命名 / 隐藏 / 排序）和自定义过滤都会保留。本次只更新本地配置，不会改动任何任务文件。",
+    "你的内置视图（重命名 / 隐藏 / 排序）和自定义视图都会自动迁移并保留。本次只更新本地配置，不会改动任何任务文件。",
   "migration.cta": "升级并进入看板",
 };
 
