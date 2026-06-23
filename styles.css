@@ -4847,11 +4847,16 @@
 }
 
 /* ── US-109z2: area filter — searchable tag list + per-field date range ── */
+.task-center-bottom-sheet .bt-area-date-or {
+  color: var(--text-faint);
+  font-size: 11px;
+  margin-top: 2px;
+}
 .task-center-bottom-sheet .bt-area-date-range {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-top: 6px;
+  margin-top: 4px;
 }
 .task-center-bottom-sheet .bt-area-date-input {
   flex: 1 1 0;

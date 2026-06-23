@@ -409,6 +409,7 @@ const EN = {
   "savedViews.dateRangeTo": "to",
   "savedViews.searchContains": "Task text contains…",
   "savedViews.addTimeField": "Add date filter",
+  "savedViews.dateOrRange": "or a date range",
   // US-109p10 / US-109p11: two-panel Query editor + visual layout tree.
   "savedViews.areaTabAppearance": "Appearance",
   "savedViews.layout": "Layout",
@@ -845,6 +846,7 @@ const ZH: Partial<typeof EN> = {
   "savedViews.dateRangeTo": "至",
   "savedViews.searchContains": "任务文本包含…",
   "savedViews.addTimeField": "添加日期筛选",
+  "savedViews.dateOrRange": "或自定义范围",
   "savedViews.areaTabAppearance": "外观",
   "savedViews.layout": "布局",
   "savedViews.layoutSummary": "{count} 个区域 · {dir}",

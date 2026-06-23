@@ -4146,6 +4146,13 @@ export class TaskCenterView extends ItemView {
       chip.addEventListener("click", () => setToken(t || undefined));
     }
 
+    // US-109z2: two distinct semantics for one field — the chips above are
+    // RELATIVE (今天 / 本周 / 未来7天 …, resolved against "now"); the inputs below
+    // are an ABSOLUTE date range. They're mutually exclusive (picking one clears
+    // the other); the "或自定义范围" separator makes that explicit, and the active
+    // chip highlights only when no range is set (isRange gates `checked` above).
+    const sep = sec.createDiv({ cls: "bt-area-date-or" });
+    sep.setText(tr("savedViews.dateOrRange"));
     // Custom date range (a real date picker via native inputs).
     const range = sec.createDiv({ cls: "bt-area-date-range" });
     const [from, to] = isRange ? token.split("..", 2) : ["", ""];
