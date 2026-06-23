@@ -67,9 +67,6 @@ test("VAL-CORE-005: normalizeQueryPreset fills defaults and trims strings", () =
   assert.deepEqual(normalized.filters.time, { scheduled: "today", deadline: "overdue" });
   // Legacy {type:"week", preset} migrates to a week area layout; preset dropped.
   assert.deepEqual(normalized.view, { layout: { type: "week" } });
-  assert.equal(normalized.summary[0].type, "count");
-  assert.equal(normalized.summary[1].field, "actual");
-  assert.equal(normalized.summary[1].format, "duration");
 });
 
 test("VAL-CORE-005: normalizeQueryPreset defaults missing fields", () => {
@@ -82,7 +79,6 @@ test("VAL-CORE-005: normalizeQueryPreset defaults missing fields", () => {
   assert.equal(normalized.filters.tags, undefined);
   assert.equal(normalized.filters.time, undefined);
   assert.deepEqual(normalized.view, { layout: { type: "list" } });
-  assert.deepEqual(normalized.summary, []);
 });
 
 test("VAL-CORE-005: normalizeQueryPreset migrates legacy list sections into layout", () => {
@@ -363,46 +359,6 @@ test("VAL-CORE-006: validateQueryPreset — non-object view points to view", () 
   assert.ok(viewErr, "Expected invalid_view error in view section");
 });
 
-test("VAL-CORE-006: validateQueryPreset — invalid summary type points to summary", () => {
-  const result = validateQueryPreset({
-    name: "BadSummary",
-    filters: {},
-    view: { type: "list" },
-    summary: [{ type: "invalid_metric_type" }],
-  });
-
-  assert.equal(result.valid, false);
-  const sumErr = result.errors.find((e) => e.section === "summary" && e.code === "invalid_metric_type");
-  assert.ok(sumErr, "Expected invalid_metric_type error in summary section");
-  assert.ok(sumErr.message.includes("invalid_metric_type"), "Error mentions the bad type");
-});
-
-test("VAL-CORE-006: validateQueryPreset — non-array summary points to summary", () => {
-  const result = validateQueryPreset({
-    name: "BadSummaryArray",
-    filters: {},
-    view: { type: "list" },
-    summary: "not-an-array",
-  });
-
-  assert.equal(result.valid, false);
-  const sumErr = result.errors.find((e) => e.section === "summary" && e.code === "invalid_summary");
-  assert.ok(sumErr, "Expected invalid_summary error in summary section");
-});
-
-test("VAL-CORE-006: validateQueryPreset — non-object summary metric points to summary", () => {
-  const result = validateQueryPreset({
-    name: "BadMetric",
-    filters: {},
-    view: { type: "list" },
-    summary: ["not-an-object"],
-  });
-
-  assert.equal(result.valid, false);
-  const metricErr = result.errors.find((e) => e.section === "summary" && e.code === "invalid_metric");
-  assert.ok(metricErr, "Expected invalid_metric error in summary section");
-});
-
 test("VAL-CORE-006: validateQueryPreset — valid preset stays unchanged after validation", () => {
   const preset = {
     id: "stays-put",
@@ -411,7 +367,6 @@ test("VAL-CORE-006: validateQueryPreset — valid preset stays unchanged after v
     hidden: false,
     filters: { status: ["todo"] },
     view: { type: "list" },
-    summary: [],
   };
 
   const before = JSON.stringify(preset);
@@ -426,14 +381,12 @@ test("VAL-CORE-006: validateQueryPreset — multiple section errors collected to
     name: "MultiError",
     filters: { tags: 42 },
     view: { type: "gantt" },
-    summary: [{ type: "bad" }],
   });
 
   assert.equal(result.valid, false);
   const sections = new Set(result.errors.map((e) => e.section));
   assert.ok(sections.has("filters"), "Has filters error");
   assert.ok(sections.has("view"), "Has view error");
-  assert.ok(sections.has("summary"), "Has summary error");
 });
 
 // ── VAL-CORE-005 / VAL-CROSS-002: isLegacySavedTaskView ──
@@ -566,7 +519,6 @@ test("VAL-CORE-005: stringifyQueryPreset emits normalized JSON", () => {
     },
     // Legacy {type:"month", preset} migrates to a month area layout; preset dropped.
     view: { layout: { type: "month" } },
-    summary: [{ type: "count" }],
   });
 });
 
@@ -592,8 +544,6 @@ test("VAL-CORE-005: parseQueryDsl parses and normalizes JSON DSL", () => {
   assert.deepEqual(preset.filters.time, { scheduled: "week" });
   // Legacy {type:"week", preset} migrates to a week area layout; preset dropped.
   assert.deepEqual(preset.view, { layout: { type: "week" } });
-  assert.equal(preset.summary[0].type, "sum");
-  assert.equal(preset.summary[0].field, "actual");
 });
 
 test("VAL-CORE-005: parseQueryDsl missing name throws", () => {
@@ -741,34 +691,19 @@ test("VAL-CORE-006: parseQueryDsl rejects invalid view type after parse", () => 
   );
 });
 
-test("VAL-CORE-006: parseQueryDsl rejects invalid summary type after parse", () => {
-  const badJson = JSON.stringify({
-    name: "Bad Summary",
-    filters: {},
-    view: { type: "list" },
-    summary: [{ type: "bad_metric" }],
-  });
-  assert.throws(
-    () => { parseQueryDsl(badJson); },
-    /\[summary\].*invalid_metric_type/,
-    "parseQueryDsl must call validateQueryPreset and surface summary errors",
-  );
-});
-
 test("VAL-CORE-006: parseQueryDsl collects multiple section errors in message", () => {
   const badJson = JSON.stringify({
     name: "Multi Bad",
     filters: { tags: 42 },
     view: { type: "gantt" },
-    summary: [{ type: "bad" }],
   });
   assert.throws(
     () => { parseQueryDsl(badJson); },
     (err) => {
       const msg = err.message;
-      return /\[filters\]/.test(msg) && /\[view\]/.test(msg) && /\[summary\]/.test(msg);
+      return /\[filters\]/.test(msg) && /\[view\]/.test(msg);
     },
-    "All three sections should appear in error message",
+    "Both sections should appear in error message",
   );
 });
 

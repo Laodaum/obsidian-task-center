@@ -758,7 +758,6 @@ test("US-220: runQueryPreset can show preset-today through a temporary week view
   const text = formatQueryRun(result);
   assert.match(text, /Query preset-today · Today/);
   assert.match(text, /view week · 2 tasks · anchor 2026-05-04/);
-  assert.match(text, /summary count=2/);
   assert.match(text, /2026-05-05 · 0 tasks\n    —/);
   assert.match(text, /Tasks\.md:L1\s+\[ \].*Monday task/);
 });

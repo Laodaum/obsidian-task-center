@@ -487,7 +487,6 @@ test("query-show 返回当前 preset 的 DSL JSON", async () => {
       time: { scheduled: "week" },
     },
     view: { layout: { type: "month" } },
-    summary: [{ type: "count" }],
   });
 });
 
@@ -601,7 +600,6 @@ test("query-update 固定覆盖当前 id，不允许 DSL 偷换 preset 身份", 
       hidden: false,
       filters: { search: "new", tags: ["#beta"], status: ["done"], time: { completed: "month" } },
       view: { layout: { type: "month" } },
-      summary: [{ type: "sum", field: "actual", format: "duration" }],
     },
   ]);
   assert.equal(calls.save, 1);
@@ -663,7 +661,6 @@ test("query-copy / hide / set-default / delete 维护 preset 生命周期与默�
       hidden: true,
       filters: { search: "focus", tags: ["#alpha"], status: ["todo"] },
       view: { layout: { type: "list" } },
-      summary: [],
     },
   ]);
   assert.equal(calls.save, 5);
@@ -782,26 +779,6 @@ test("query-save rejects invalid QueryPreset DSL (unknown view type) with invali
   assert.equal(calls.refresh, 0);
 });
 
-test("query-save rejects invalid QueryPreset DSL (bad summary) with invalid_query", async () => {
-  const { plugin, calls } = await createPluginForQueryCli();
-
-  const invalidDsl = JSON.stringify({
-    name: "Bad Summary",
-    filters: {},
-    view: { type: "list" },
-    summary: [{ type: "bad_metric" }],
-  });
-
-  await assert.rejects(
-    () => plugin.cliQuerySave({ dsl: invalidDsl }),
-    (err) => err.code === "invalid_query" && /invalid_metric_type/.test(err.message),
-  );
-
-  assert.equal(plugin.settings.queryPresets.length, 0);
-  assert.equal(calls.save, 0);
-  assert.equal(calls.refresh, 0);
-});
-
 test("query-save rejects invalid QueryPreset DSL (non-object root) with invalid_query", async () => {
   const { plugin, calls } = await createPluginForQueryCli();
 
@@ -911,40 +888,6 @@ test("query-update rejects invalid QueryPreset DSL (unknown view type) with inva
   assert.equal(calls.refresh, 0);
 });
 
-test("query-update rejects invalid QueryPreset DSL (bad summary) with invalid_query", async () => {
-  const { plugin, calls } = await createPluginForQueryCli({
-    queryPresets: [
-      {
-        id: "sv-alpha",
-        name: "Alpha",
-        builtin: false,
-        hidden: false,
-        filters: { search: "focus", tags: ["#alpha"], status: ["todo"] },
-        view: { type: "list" },
-        summary: [],
-      },
-    ],
-  });
-
-  const invalidDsl = JSON.stringify({
-    name: "Bad Summary",
-    filters: {},
-    view: { type: "list" },
-    summary: [{ type: "bad_metric" }],
-  });
-
-  await assert.rejects(
-    () => plugin.cliQueryUpdate({ id: "sv-alpha", dsl: invalidDsl }),
-    (err) => err.code === "invalid_query" && /invalid_metric_type/.test(err.message),
-  );
-
-  // Existing preset unchanged
-  assert.equal(plugin.settings.queryPresets.length, 1);
-  assert.equal(plugin.settings.queryPresets[0].id, "sv-alpha");
-  assert.equal(calls.save, 0);
-  assert.equal(calls.refresh, 0);
-});
-
 test("query-update rejects invalid QueryPreset DSL (missing name) with invalid_query", async () => {
   const { plugin, calls } = await createPluginForQueryCli({
     queryPresets: [
@@ -1008,10 +951,9 @@ test("query-update rejects invalid QueryPreset DSL (multi-section errors) with i
 
   assert.ok(caught, "Should throw");
   assert.equal(caught.code, "invalid_query");
-  // Error message should surface all three sections
+  // Error message should surface the failing sections
   assert.match(caught.message, /filters/);
   assert.match(caught.message, /view/);
-  assert.match(caught.message, /summary/);
 
   // Existing preset unchanged
   assert.equal(plugin.settings.queryPresets.length, 1);
@@ -1107,7 +1049,6 @@ test("query-create 创建新 preset，输出稳定 id，且不覆盖已有 prese
   assert.equal(created.filters.search, "focus");
   assert.deepEqual(created.filters.tags, ["#work"]);
   assert.deepEqual(created.view, { layout: { type: "week" } });
-  assert.deepEqual(created.summary, [{ type: "count" }]);
   assert.equal(calls.save, 1);
   assert.equal(calls.refresh, 1);
 });
