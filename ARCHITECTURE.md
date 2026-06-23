@@ -253,7 +253,16 @@ Schema 约束：
 
 视图层（拖拽 handler、按钮）只负责：取当前 tab draft 的 `layout` → 调算子得到新 `layout` → `tabDrafts.set(id, normalizeQueryPreset({...snapshot, view:{layout}}))` → 重渲染。这与 DSL 直编、area 过滤入口写的是**同一份 tab draft**，满足 US-109y（DSL 能改的 UI 也能改）。`normalizeQueryPreset` 在写回时把树校验 / 归一化一遍，保证非法结构不落库。
 
-**两个编辑面板的数据流**（US-109p10）：`openQueryControlsSheet` 按 scope 渲染——`scope:"tab"`（工具栏入口，`areaIndex=null`）渲染基础集 / 布局树 / 管理 / DSL；`scope:"area"`（area head 入口，带 `areaIndex`）渲染该 area 的本区过滤 / 外观，外加一行只读基础集提示 + 返回 Tab 面板的入口。两个 scope 都只是同一份 tab draft 的不同投影，互不持有独立状态；DSL 只在 tab scope（它编辑整份 preset）。
+**两个编辑面板的数据流**（US-109p10）：编辑器面板抽到 `view/query-editor.ts` 的 `QueryEditorView` 类（不再堆在 view.ts）。`view.openQueryControlsSheet` 只是薄委托。按 scope 渲染——`scope:"tab"`（工具栏入口）渲染名称 / 布局树 / 管理 / DSL（顶部工具栏放保存与管理）；`scope:"area"`（area head 入口，带 `areaIndex`）渲染该 area 的过滤条件 / 外观。两个 scope 都只是同一份 tab draft 的不同投影，互不持有独立状态；DSL 只在 tab scope。**移动端**：同一套 `renderSheet`，shell 改成整页（`task-center-query-sheet` 用响应式 CSS 填满视口），不另写一套 UI（#10）。
+
+#### 1.3.2 area 能力抽象（US-109z2）
+
+area 的"能做什么"用 `areas.ts` 的 `AreaHandler` **类层级**统一描述，**不再**在 editor / projection / 渲染层散落 `if (type === "list" || type === "grid" ...)`（那种写法每加一个能力就漏掉 week/month）：
+
+- `AreaHandler`（基类，默认最弱）→ `TaskAreaHandler`（list/grid/week/month 共享 `rendersTasks` / `filterable` / `editable`）→ `DateGridAreaHandler`（week/month，覆盖 `acceptsDrop`，每个日格隐式是改期落点）→ 各叶子类（`ListAreaHandler` 等）只覆盖 `icon` / `labelKey`；`DropAreaHandler` / `UnknownAreaHandler` 不渲染任务。
+- `areaHandler(type)` 取处理器；`areaSupportsWhen(area)` = `areaHandler(area.type).filterable()`（唯一真源，narrow 到带 `when` 的 area 配置）。图标 / 文案 / 可编辑 / 可拖入 全部读 handler。
+- **数据仍是纯 JSON**（`AreaConfig` 在 types.ts，DSL 可序列化）；行为在类里。**per-instance** 行为（同类型两个 area 不同的拖入语义，如未排期 tray = 拖入清空 ⏳）仍是 area 自己的 `onDrop` 数据，不进类。
+- `week` / `month` 的 `AreaConfig` 也带可选 `when`（US-109z2），projection / GUI 渲染按 `when` 收窄；CLI `query-run` 与 view 覆盖也携带主 area 的 `when`。
 
 ### 1.4 TabState 与 Settings
 
