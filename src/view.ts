@@ -92,6 +92,8 @@ import type {
   GridAreaConfig,
   LayoutNode,
   ListAreaConfig,
+  MonthAreaConfig,
+  WeekAreaConfig,
   UnknownAreaConfig,
   QueryPreset,
   QueryPresetFilters,
@@ -269,9 +271,6 @@ export class TaskCenterView extends ItemView {
   // once; genuine external changes still clear.
   private skipNextRefreshClear = false;
   private filterPopoverOpen: FilterPopoverKey | null = null;
-  // US-109w: per-area filter popover. Holds the DFS area index whose filter
-  // popover is open (aligned with collectAreas order), or null when closed.
-  private filterPopoverArea: number | null = null;
   // US-109q: desktop "更多" overflow tabs dropdown open state. Mirrors the
   // per-area filter popover model — open/close is a render-time flag closed by
   // outside pointerdown / Esc / row select / button toggle (mobile uses a sheet).
@@ -287,6 +286,10 @@ export class TaskCenterView extends ItemView {
   // longer renders its own filter funnel; its `when` is edited in the Query
   // editor's Filters tab "本视图过滤" section instead.
   private summaryAreaIndex: number | null = null;
+  // US-109p9: DFS index of the area whose "编辑" entry opened the Query editor.
+  // The Filters tab edits this area's `when` (list/grid) and the View tab edits
+  // its title. null = opened without area context (toolbar 编辑 Query).
+  private queryEditorAreaIndex: number | null = null;
   // US-109p6: which Tab the Query editor panel is showing. Persisted across
   // re-renders of the open sheet so switching tabs / editing controls does not
   // reset back to the first tab.
@@ -961,8 +964,7 @@ export class TaskCenterView extends ItemView {
           event.preventDefault();
           event.stopPropagation();
           this.overflowTabsMenuOpen = !this.overflowTabsMenuOpen;
-          // Opening the overflow menu closes any open filter popovers (§5414).
-          this.filterPopoverArea = null;
+          // Opening the overflow menu closes any open filter popover.
           this.filterPopoverOpen = null;
           this.render();
         };
@@ -1347,19 +1349,9 @@ export class TaskCenterView extends ItemView {
     next.dataset.action = "nav-next";
     const label = nav.createSpan({ cls: "bt-nav-label" });
     label.setText(this.navLabel());
-
-    // US-109w: week / month filter by the tab's base filters (no per-area
-    // `when`), so their filter edit entry opens the visual Query editor where
-    // filters + summary are edited together — surfaced right in the nav row.
-    const filterEntry = nav.createEl("button", { cls: "bt-area-filter-trigger bt-nav-filter" });
-    filterEntry.dataset.action = "edit-query-controls";
-    setIcon(filterEntry.createSpan({ cls: "bt-area-filter-icon" }), "list-filter");
-    const baseSummary = this.areaFilterSummary(this.effectiveSavedView().filters ?? {});
-    if (baseSummary) {
-      filterEntry.addClass("active");
-      filterEntry.createSpan({ text: baseSummary, cls: "bt-area-filter-summary" });
-    }
-    filterEntry.addEventListener("click", () => this.openQueryControlsSheet());
+    // US-109p9: week / month no longer carry a bespoke filter chip here. Their
+    // filter / summary / title edit entry is the shared area head 编辑 button
+    // (renderAreaHead), same as list / grid.
 
     prev.addEventListener("click", () => {
       this.state.anchorISO =
@@ -2672,12 +2664,13 @@ export class TaskCenterView extends ItemView {
     this.refreshFilterControls(rerenderControls);
   }
 
-  // US-109p6: open the unified Query editor sheet. `initialTab` decides which
-  // Tab is shown on open ("filter" for 编辑 Query / 过滤漏斗, "summary" for the
-  // summary pencil). The choice is stored on `queryEditorTab` so it survives
-  // re-renders of the open sheet.
-  private openQueryControlsSheet(initialTab: QueryEditorTab = "filter"): void {
-    this.queryEditorTab = initialTab;
+  // US-109p6 / US-109p9: open the unified Query editor sheet. `areaIndex` scopes
+  // the Filters/View tabs to the area whose "编辑" entry opened the sheet (its
+  // `when` and title); `initialTab` decides the landing tab. Both are stored on
+  // the view so they survive in-place re-renders of the open sheet.
+  private openQueryControlsSheet(opts: { areaIndex?: number | null; initialTab?: QueryEditorTab } = {}): void {
+    this.queryEditorAreaIndex = opts.areaIndex ?? null;
+    this.queryEditorTab = opts.initialTab ?? "filter";
     let body: HTMLElement;
     const mobileLayout = this.contentEl.dataset.mobileLayout === "true";
     const bodyClass = mobileLayout ? "bt-mobile-query-sheet" : "bt-query-controls-sheet";
@@ -2777,10 +2770,10 @@ export class TaskCenterView extends ItemView {
   //  2. "基础集" (data-filter-section="base"): the tab-level shared base set
   //     `preset.filters`, applied to every area in the tab.
   private renderFiltersTab(parent: HTMLElement, rerenderControls?: FilterControlsRerender): void {
-    // ── Section 1: this view's area `when` (summary-bar area) ──────────────
-    const areaIndex = this.summaryAreaIndex;
-    if (areaIndex !== null) {
-      const areaWhen = this.summaryAreaWhen(areaIndex);
+    // ── Section 1: this area's `when` (the area whose 编辑 entry opened us) ──
+    const areaIndex = this.queryEditorAreaIndex;
+    const areaWhen = areaIndex !== null ? this.areaWhenByIndex(areaIndex) : null;
+    if (areaIndex !== null && areaWhen !== null) {
       const areaSection = parent.createDiv({ cls: "bt-query-editor-section" });
       areaSection.dataset.filterSection = "area";
       areaSection.createDiv({
@@ -2802,17 +2795,34 @@ export class TaskCenterView extends ItemView {
   // US-109p8: resolve the current `when` of the summary-bar area (by DFS index)
   // from the live tab draft, so the Filters tab edits the same object the DSL
   // and the per-area funnel edit.
-  private summaryAreaWhen(areaIndex: number): QueryPresetFilters {
+  // US-109p9: resolve an area's `when` by DFS index from the live tab draft, so
+  // the Filters tab edits the same object the DSL and area head edit. Returns
+  // null for areas that don't carry a `when` (week / month / drop), so callers
+  // can skip the area-filter section for them.
+  private areaWhenByIndex(areaIndex: number): QueryPresetFilters | null {
     const snapshot = this.currentQuerySnapshot(this.activeSavedView());
     const target = collectAreas(snapshot.view.layout)[areaIndex];
     if (target && (target.type === "list" || target.type === "grid")) {
       return (target as ListAreaConfig).when ?? {};
     }
-    return {};
+    return null;
   }
 
-  // US-109p6: View tab — view type + (future) layout editing.
-  private renderViewTab(parent: HTMLElement, _rerenderControls?: FilterControlsRerender): void {
+  // US-109p6 / US-109p9: View tab — area title + view type + (future) layout.
+  private renderViewTab(parent: HTMLElement, rerenderControls?: FilterControlsRerender): void {
+    // ── Area title (the area whose 编辑 entry opened us) ───────────────────
+    const areaIndex = this.queryEditorAreaIndex;
+    if (areaIndex !== null) {
+      const titleSection = parent.createDiv({ cls: "bt-query-editor-section" });
+      titleSection.dataset.areaTitleSection = "true";
+      titleSection.createDiv({ cls: "bt-query-editor-section-title", text: tr("savedViews.queryEditorAreaTitle") });
+      const input = titleSection.createEl("input", { type: "text", cls: "tc-full-width-input" });
+      input.dataset.areaTitleInput = "true";
+      input.placeholder = this.effectiveSavedView().name;
+      input.value = this.areaTitleByIndex(areaIndex);
+      input.addEventListener("change", () => this.setAreaTitle(areaIndex, input.value, rerenderControls));
+    }
+
     const viewSection = parent.createDiv({ cls: "bt-query-editor-section" });
     viewSection.createDiv({ cls: "bt-query-editor-section-title", text: tr("savedViews.queryEditorView") });
     const viewCfg = this.currentQueryPresetViewConfig();
@@ -3125,7 +3135,10 @@ export class TaskCenterView extends ItemView {
   // (US-121). Mobile renders the same columns as vertical rows, but there
   // is no touch drop target (US-503 / US-507).
   // see USER_STORIES.md
-  private renderWeek(parent: HTMLElement) {
+  private renderWeek(parent: HTMLElement, area: WeekAreaConfig, areaIndex: number) {
+    // US-109p9: shared area head (title + 编辑 entry), same component as list/grid.
+    const rawTitle = this.localizeBuiltinTitle(area.id, area.title);
+    this.renderAreaHead(parent, areaIndex, area, { title: rawTitle, isSummaryArea: false });
     // §3.0: desktop week component owns its own range nav (mobile keeps it in
     // the toolbar's first row per §6.2, so it is rendered there instead).
     if (this.contentEl.dataset.mobileLayout !== "true") {
@@ -3297,7 +3310,10 @@ export class TaskCenterView extends ItemView {
   // write semantics as the week-view day columns (US-121). Mobile taps open
   // the day's bottom sheet instead (US-504 / US-507).
   // see USER_STORIES.md
-  private renderMonth(parent: HTMLElement) {
+  private renderMonth(parent: HTMLElement, area: MonthAreaConfig, areaIndex: number) {
+    // US-109p9: shared area head (title + 编辑 entry), same component as list/grid.
+    const rawTitle = this.localizeBuiltinTitle(area.id, area.title);
+    this.renderAreaHead(parent, areaIndex, area, { title: rawTitle, isSummaryArea: false });
     // §3.0: desktop month component owns its own range nav (mobile keeps it in
     // the toolbar's first row per §6.2, so it is rendered there instead).
     if (this.contentEl.dataset.mobileLayout !== "true") {
@@ -4194,43 +4210,6 @@ export class TaskCenterView extends ItemView {
     this.renderLayoutNode(root, layout);
   }
 
-  // 通用 summary 区：顶层 summary 指标在标准位置渲染，对任何 view 都一样。
-  // 取代过去 completed 视图里硬编码的统计面板。（US-303 / ARCHITECTURE §4.4）
-  // Query summary, rendered inline on the first content area's title row (right
-  // side). A customizable metric area: chips + an ✎ edit when metrics exist, or
-  // a discoverable "+ 添加指标" ghost when empty. Both open the visual Query
-  // editor (Summary section). Week/month-only views show no inline summary — it
-  // is edited via 编辑 Query, alongside filters. (US-303 / ARCHITECTURE §4.4)
-  private renderSummaryInto(host: HTMLElement, active: QueryPreset): void {
-    const metrics = active.summary ?? [];
-    const group = host.createDiv({ cls: "bt-area-summary" });
-    group.dataset.summary = "true";
-
-    if (metrics.length > 0) {
-      // Count over the same top-level cards the view shows, so summary count
-      // matches the tab badge / footer (not double-counting nested subtasks).
-      const filtered = recomputeTopLevelInQuery(this.getEffectiveTasks().filter(this.getTextFilter()))
-        .filter((t) => t.isTopLevelInQuery);
-      for (const item of computeSummary(filtered, metrics)) {
-        const chip = group.createDiv({ cls: `bt-summary-chip bt-summary-${item.type}` });
-        chip.createSpan({ text: this.summaryChipLabel(item), cls: "bt-summary-chip-text" });
-      }
-    }
-
-    const edit = group.createEl("button", { cls: "bt-summary-edit" });
-    edit.dataset.action = "edit-summary";
-    if (metrics.length > 0) {
-      setIcon(edit, "pencil");
-      edit.setAttr("aria-label", tr("savedViews.summaryEdit"));
-    } else {
-      edit.addClass("bt-summary-edit--empty");
-      setIcon(edit.createSpan({ cls: "bt-summary-edit-icon" }), "plus");
-      edit.createSpan({ text: tr("savedViews.summaryAdd") });
-    }
-    // Summary pencil / "+ add metric" lands on the Summary tab (US-109p6).
-    edit.addEventListener("click", () => this.openQueryControlsSheet("summary"));
-  }
-
   private summaryChipLabel(item: SummaryResultItem): string {
     switch (item.type) {
       case "count":
@@ -4276,10 +4255,10 @@ export class TaskCenterView extends ItemView {
         this.renderListArea(areaEl, node, true, areaIndex);
         break;
       case "week":
-        this.renderWeek(areaEl);
+        this.renderWeek(areaEl, node, areaIndex);
         break;
       case "month":
-        this.renderMonth(areaEl);
+        this.renderMonth(areaEl, node, areaIndex);
         break;
       case "drop":
         this.renderTrashZone(areaEl);
@@ -4329,31 +4308,17 @@ export class TaskCenterView extends ItemView {
       this.makeDropZone(parent, area.onDrop.setScheduled);
     }
 
-    // US-109w: filtering belongs to the area. drop / tray areas (onDrop) are
-    // action surfaces, not query content, so they don't get a filter entry.
-    const filterable = !area.onDrop;
-    // The summary sits on the first content area's title row; that area also
-    // gets a title fallback (the tab name) so the header is never a bare count.
-    const isFirstContent = filterable && !this.summaryPlaced;
+    // US-109p9: every list/grid area (including the unscheduled tray) gets the
+    // one shared area head — title + a single 编辑 entry → unified Query editor.
+    // The first non-tray content area also carries the summary chips.
+    const isFirstContent = !area.onDrop && !this.summaryPlaced;
     const rawTitle = this.localizeBuiltinTitle(area.id, area.title);
     const areaTitle = rawTitle || (isFirstContent ? this.effectiveSavedView().name : "");
-    if (areaTitle || filterable) {
-      parent.addClass("bt-has-head");
-      const head = parent.createDiv({ cls: "bt-list-area-head" });
-      // Title only — no "(N)" count (the user reads counts in cards, not headers).
-      if (areaTitle) head.createSpan({ cls: "bt-list-area-head-title", text: areaTitle });
-      const headRight = head.createDiv({ cls: "bt-list-area-head-right" });
-      if (isFirstContent) {
-        this.summaryPlaced = true;
-        // US-109p7: this area carries the summary bar + pencil; remember its
-        // index so the Filters tab can edit its `when`, and skip the in-place
-        // funnel here so we don't render a pencil + funnel side-by-side.
-        this.summaryAreaIndex = areaIndex;
-        this.renderSummaryInto(headRight, this.effectiveSavedView());
-      }
-      // Non-summary content areas keep their in-place filter funnel popover.
-      if (filterable && !isFirstContent) this.renderAreaFilter(headRight, areaIndex, area.when ?? {});
+    if (isFirstContent) {
+      this.summaryPlaced = true;
+      this.summaryAreaIndex = areaIndex;
     }
+    this.renderAreaHead(parent, areaIndex, area, { title: areaTitle, isSummaryArea: isFirstContent });
 
     if (model.grouped) {
       let totalVisible = 0;
@@ -4430,40 +4395,84 @@ export class TaskCenterView extends ItemView {
     this.refreshFilterControls(rerenderControls);
   }
 
-  // US-109w/US-109y: per-area filter affordance. One trigger per list/grid area
-  // header opens a popover whose tag / status / scheduled / search controls edit
-  // *this area's* `when` (the same field the DSL editor edits).
-  private renderAreaFilter(head: HTMLElement, areaIndex: number, when: QueryPresetFilters): void {
-    const wrap = head.createDiv({ cls: "bt-area-filter" });
-    wrap.dataset.areaFilterWrap = String(areaIndex);
-    const open = this.filterPopoverArea === areaIndex;
-    const summary = this.areaFilterSummary(when);
-    const trigger = wrap.createEl("button", {
-      cls: "bt-area-filter-trigger" + (summary ? " active" : ""),
-    });
-    trigger.dataset.areaFilter = String(areaIndex);
-    trigger.setAttribute("aria-expanded", open ? "true" : "false");
-    setIcon(trigger.createSpan({ cls: "bt-area-filter-icon" }), "list-filter");
-    if (summary) trigger.createSpan({ text: summary, cls: "bt-area-filter-summary" });
-    trigger.addEventListener("click", () => {
-      this.filterPopoverArea = open ? null : areaIndex;
-      this.filterPopoverOpen = null;
-      this.render();
-    });
-    if (!open) return;
-
-    const pop = wrap.createDiv({ cls: "bt-area-filter-popover" });
-    // US-109p7/US-109p8: the area `when` controls (search / status / scheduled /
-    // tags) are shared between this in-place popover and the unified Query
-    // editor's Filters tab ("本视图过滤" section). Render them via the extracted
-    // helper so both paths edit the same `when` with identical behavior.
-    this.renderAreaFilterControls(pop, areaIndex, when);
+  // US-109p9: read the raw (non-localized) title of an area by DFS index from the
+  // live draft, for the View tab's title input.
+  private areaTitleByIndex(areaIndex: number): string {
+    const snapshot = this.currentQuerySnapshot(this.activeSavedView());
+    const target = collectAreas(snapshot.view.layout)[areaIndex];
+    return target?.title ?? "";
   }
 
-  // US-109p7/US-109p8: pure area-`when` filter controls (search / status /
-  // scheduled / tags), reused by the in-place popover (renderAreaFilter) and the
-  // Query editor's Filters tab "本视图过滤" section. All edits go through
-  // setAreaWhen so they land in the tab draft and rerender, same as DSL editing.
+  // US-109p9: write an area's title into the tab draft (empty clears it, so the
+  // builtin localized fallback shows again). Mirrors setAreaWhen.
+  private setAreaTitle(areaIndex: number, title: string, rerenderControls?: FilterControlsRerender): void {
+    const active = this.activeSavedView();
+    const snapshot = this.currentQuerySnapshot(active);
+    const layout = JSON.parse(JSON.stringify(snapshot.view.layout)) as LayoutNode;
+    const target = collectAreas(layout)[areaIndex];
+    if (target) {
+      const trimmed = title.trim();
+      if (trimmed) target.title = trimmed;
+      else delete target.title;
+    }
+    this.tabDrafts.set(active.id, normalizeQueryPreset({ ...snapshot, view: { layout } }));
+    this.refreshFilterControls(rerenderControls);
+  }
+
+  // US-109p9: one shared head for every queryable area (list / grid / week /
+  // month / tray). Renders the area title + a single 编辑 entry that opens the
+  // unified Query editor scoped to this area (Filters tab edits its `when`, View
+  // tab its title). The summary-bar area also shows its summary chips here. This
+  // replaces the three old paths (in-place funnel popover, week/month nav filter
+  // chip, summary pencil).
+  private renderAreaHead(
+    parent: HTMLElement,
+    areaIndex: number,
+    area: AreaConfig,
+    opts: { title: string; isSummaryArea: boolean },
+  ): void {
+    parent.addClass("bt-has-head");
+    const head = parent.createDiv({ cls: "bt-area-head" });
+    head.dataset.areaHead = String(areaIndex);
+    if (opts.title) head.createSpan({ cls: "bt-area-head-title", text: opts.title });
+    const right = head.createDiv({ cls: "bt-area-head-right" });
+    if (opts.isSummaryArea) this.renderSummaryChips(right, this.effectiveSavedView());
+
+    const edit = right.createEl("button", { cls: "bt-area-edit" });
+    edit.dataset.areaEdit = String(areaIndex);
+    edit.dataset.action = "edit-area";
+    edit.setAttr("aria-label", tr("savedViews.editQuery"));
+    setIcon(edit.createSpan({ cls: "bt-area-edit-icon" }), "sliders-horizontal");
+    // Surface the area's active `when` (list/grid) as a chip on the button, so
+    // the user sees the current narrowing without opening the sheet.
+    const areaWhen = this.areaWhenByIndex(areaIndex);
+    const whenSummary = areaWhen ? this.areaFilterSummary(areaWhen) : "";
+    if (whenSummary) {
+      edit.addClass("active");
+      edit.createSpan({ text: whenSummary, cls: "bt-area-filter-summary" });
+    }
+    edit.addEventListener("click", () => this.openQueryControlsSheet({ areaIndex, initialTab: "filter" }));
+  }
+
+  // US-303: render the tab's summary metric chips (display only). The edit
+  // affordance now lives on the area head's 编辑 button (US-109p9), not inline.
+  private renderSummaryChips(host: HTMLElement, active: QueryPreset): void {
+    const metrics = active.summary ?? [];
+    if (metrics.length === 0) return;
+    const group = host.createDiv({ cls: "bt-area-summary" });
+    group.dataset.summary = "true";
+    const filtered = recomputeTopLevelInQuery(this.getEffectiveTasks().filter(this.getTextFilter()))
+      .filter((t) => t.isTopLevelInQuery);
+    for (const item of computeSummary(filtered, metrics)) {
+      const chip = group.createDiv({ cls: `bt-summary-chip bt-summary-${item.type}` });
+      chip.createSpan({ text: this.summaryChipLabel(item), cls: "bt-summary-chip-text" });
+    }
+  }
+
+  // US-109p9: pure area-`when` filter controls (search / status / scheduled /
+  // tags), rendered inside the Query editor's Filters tab "本视图过滤" section.
+  // All edits go through setAreaWhen so they land in the tab draft and rerender,
+  // same as DSL editing.
   private renderAreaFilterControls(
     parent: HTMLElement,
     areaIndex: number,
@@ -5530,11 +5539,6 @@ export class TaskCenterView extends ItemView {
       this.pendingDateRangeStart = null;
       this.render();
       return;
-    }
-    // US-109w: close an open per-area filter popover on an outside click.
-    if (this.filterPopoverArea !== null && !insideControls) {
-      this.filterPopoverArea = null;
-      this.render();
     }
   }
 

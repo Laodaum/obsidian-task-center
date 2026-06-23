@@ -1733,6 +1733,71 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* US-109p9: one shared area head for every queryable area (list/grid/week/
+   month/tray) — title + a single 编辑 entry. Replaces bt-list-area-head,
+   the in-place funnel trigger and the summary pencil. */
+.task-center-view .bt-area-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 8px;
+  min-height: 26px;
+}
+.task-center-view .bt-area-head-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.task-center-view .bt-area-head-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 1 auto;
+  min-width: 0;
+  margin-left: auto;
+}
+.task-center-view .bt-area-edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 220px;
+  min-height: 26px;
+  padding: 2px 8px;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  cursor: pointer;
+  box-shadow: none;
+  flex: 0 0 auto;
+}
+.task-center-view .bt-area-edit:hover {
+  background: var(--background-modifier-hover);
+  border-color: var(--interactive-accent);
+  color: var(--text-normal);
+}
+.task-center-view .bt-area-edit.active {
+  color: var(--text-on-accent);
+  border-color: transparent;
+  background: var(--interactive-accent);
+}
+.task-center-view .bt-area-edit-icon {
+  display: inline-flex;
+}
+.task-center-view .bt-area-edit-icon svg {
+  width: 15px;
+  height: 15px;
+}
 .task-center-view .bt-area-filter-popover {
   position: absolute;
   top: calc(100% + 4px);
