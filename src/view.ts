@@ -1218,7 +1218,7 @@ export class TaskCenterView extends ItemView {
     const todayLabel =
       this.state.tab === "week"
         ? tr("toolbar.weekNo", { n: isoWeekNumber(this.state.anchorISO) })
-        : tr("toolbar.today");
+        : tr("toolbar.monthNo", { n: Number(this.state.anchorISO.slice(5, 7)) });
     const today = nav.createEl("button", { text: todayLabel });
     today.dataset.action = "nav-today";
     const next = nav.createEl("button", { text: "▶" });
