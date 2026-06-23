@@ -177,15 +177,20 @@ export function projectListArea(
   tasks: EffectiveTask[],
   area: ListAreaConfig | GridAreaConfig,
   weekStartsOn: 0 | 1,
+  // US-153: ids that bypass the status filter only (just-completed cards in the
+  // current view session). Threaded into both the area `when` and section `when`
+  // so a freshly-done card keeps its place in a `status: todo` list. GUI-only;
+  // CLI / summary never pass it.
+  exemptStatusIds?: ReadonlySet<string>,
 ): ListViewModel {
   const base = area.when && queryFilterHasActiveConditions(area.when)
-    ? applyQueryFilters(tasks, area.when, weekStartsOn)
+    ? applyQueryFilters(tasks, area.when, weekStartsOn, undefined, exemptStatusIds)
     : tasks;
 
   if (area.sections && area.sections.length > 0) {
     const sections: ListSectionModel[] = area.sections.map((section) => {
       const sectionTasks = queryFilterHasActiveConditions(section.when)
-        ? applyQueryFilters(base, section.when, weekStartsOn)
+        ? applyQueryFilters(base, section.when, weekStartsOn, undefined, exemptStatusIds)
         : [...base];
       const sorted = sortTasks(sectionTasks, section.orderBy ?? area.orderBy);
       const limited = section.limit !== undefined && section.limit > 0

@@ -1549,11 +1549,12 @@
   text-overflow: ellipsis;
   cursor: grab;
 }
+/* US-152: completed cards read as "done" via muted color + ✔, not a strike-
+   through. Mini cards (week/month) follow the same rule — no line-through. */
 .task-center-view .bt-mini-card.bt-mini-card-done {
   border-left-color: var(--text-muted);
   color: var(--text-muted);
-  opacity: 0.62;
-  text-decoration: line-through;
+  opacity: 0.7;
 }
 .task-center-view .bt-mini-card.bt-mini-card-dropped {
   border-left-color: var(--color-red);
@@ -1830,9 +1831,16 @@
 .task-center-view .bt-card.bt-near-deadline {
   border-left-color: var(--color-orange);
 }
+/* US-152: a done card is expressed by muted text + the ✔ status icon, not a
+   strike-through. Keep title / date / meta legible (the user may still want to
+   undo it or read it), so use a muted color and a light opacity rather than a
+   line crossing the whole card. */
 .task-center-view .bt-card.done {
-  opacity: 0.5;
-  text-decoration: line-through;
+  opacity: 0.7;
+  color: var(--text-muted);
+}
+.task-center-view .bt-card.done .bt-card-title {
+  color: var(--text-muted);
 }
 .task-center-view .bt-card-title-row {
   display: flex;
@@ -1983,8 +1991,9 @@
 .task-center-view .bt-subcard-title { flex: 1; min-width: 0; }
 .task-center-view .bt-sub-est { color: var(--text-faint); font-size: 10px; }
 .task-center-view .bt-sub-sched { color: var(--color-blue); font-size: 10px; }
-.task-center-view .bt-subcard.done { opacity: 0.65; }
-.task-center-view .bt-subcard.done .bt-subcard-title { text-decoration: line-through; }
+/* US-152: completed subcards match the main card — muted, no strike-through. */
+.task-center-view .bt-subcard.done { opacity: 0.7; color: var(--text-muted); }
+.task-center-view .bt-subcard.done .bt-subcard-title { color: var(--text-muted); }
 
 /* Drop zones */
 .task-center-view .drop-hover {

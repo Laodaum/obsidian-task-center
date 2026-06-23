@@ -222,6 +222,66 @@ describe("Task Center — 看板基础 (US-101/107/115)", function () {
     expect(todayCard.tagsAreBelowTitle).toBe(true);
   });
 
+  // US-152 / US-153: completing a card in a todo-only view does NOT remove it
+  // immediately — it lingers in its done state (muted, ✔, no line-through,
+  // data-just-completed) until the view is re-entered, then disappears.
+  it("US-153: a just-completed card lingers in place, then disappears on re-enter", async function () {
+    const today = todayISO();
+    await writeAndWait("Tasks/Inbox.md", `- [ ] Linger task ⏳ ${today}\n`);
+
+    await browser.executeObsidianCommand("task-center:open");
+    await forFlush();
+
+    // Land on the Today tab (todo-only, filters out done).
+    const todayTab = $('[data-tab="today"]');
+    await todayTab.waitForExist({ timeout: 5000 });
+    await todayTab.click();
+    await $('[data-view="today"]').waitForExist({ timeout: 3000 });
+
+    const cardSel = `[data-view="today"] [data-task-id="Tasks/Inbox.md:L1"]`;
+    await $(cardSel).waitForExist({ timeout: 5000 });
+
+    // Click the ✔ to complete it.
+    await $(`${cardSel} .bt-check`).click();
+    await forFlush();
+
+    // US-153: the card is STILL in the list, now in its done state.
+    const lingering = await browser.execute((sel: string) => {
+      const card = document.querySelector<HTMLElement>(sel);
+      if (!card) return null;
+      const check = card.querySelector<HTMLElement>(".bt-check");
+      const title = card.querySelector<HTMLElement>(".bt-card-title");
+      const titleDecoration = title
+        ? getComputedStyle(title).textDecorationLine
+        : "";
+      return {
+        present: true,
+        hasDoneClass: card.classList.contains("done"),
+        justCompleted: card.dataset.justCompleted === "true",
+        checkIcon: check?.textContent ?? "",
+        checkIsDone: check?.classList.contains("bt-check-done") ?? false,
+        // US-152: no strike-through on the title.
+        titleStruck: titleDecoration.includes("line-through"),
+      };
+    }, cardSel);
+
+    expect(lingering).not.toBeNull();
+    expect(lingering!.hasDoneClass).toBe(true);
+    expect(lingering!.justCompleted).toBe(true);
+    expect(lingering!.checkIcon).toBe("✔");
+    expect(lingering!.checkIsDone).toBe(true);
+    expect(lingering!.titleStruck).toBe(false);
+
+    // Re-enter the view: switch away to Week, then back to Today.
+    await $('[data-tab="week"]').click();
+    await $(".task-center-view .bt-week").waitForExist({ timeout: 5000 });
+    await $('[data-tab="today"]').click();
+    await $('[data-view="today"]').waitForExist({ timeout: 3000 });
+
+    // Now the completed card is gone (normal status filter applies).
+    await $(cardSel).waitForExist({ reverse: true, timeout: 5000 });
+  });
+
   // quick-add modal
   it("opens the quick-add modal via command", async function () {
     await browser.executeObsidianCommand("task-center:quick-add");
