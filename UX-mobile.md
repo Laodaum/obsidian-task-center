@@ -61,7 +61,9 @@
 ### 3.1 切换与更多
 
 - 横向滑动 tab strip 切换可见 tab。
-- “更多”打开 bottom sheet，列出溢出的 Query Tab；排序、badge、默认 tab、隐藏状态与桌面一致。（US-109q）
+- “更多”打开 bottom sheet，列出溢出的 Query Tab；badge、默认 tab、隐藏状态与桌面一致。点击行 = 切到该 tab，管理动作进 `⋮`。（US-109q）
+  - 移动端有意保留 sheet 形态（不用桌面的锚定下拉）：窄屏放不下锚定浮层，且与移动端整体 bottom sheet 心智一致。桌面同一入口改为就地下拉浮层（见 UX.md §「Tab 过多」）。
+  - 溢出 tab 的重排不在“更多”里做；排序入口在「管理 Tabs」面板。
 - 不显示 `Ctrl/Cmd+1~9` 提示。（US-510）
 
 ### 3.2 Tab 菜单

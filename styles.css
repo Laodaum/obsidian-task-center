@@ -143,6 +143,95 @@
   opacity: 1;
   font-style: normal;
 }
+/* US-109q: desktop "更多" opens an in-place dropdown anchored under the button
+ * (not a bottom sheet). Mirrors the bt-area-filter-popover anchored-popover form. */
+.task-center-view .bt-tab-more-anchor {
+  position: relative;
+}
+.task-center-view .bt-overflow-tabs-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 30;
+  min-width: 220px;
+  max-width: 320px;
+  max-height: 360px;
+  overflow-y: auto;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  box-shadow: var(--shadow-s);
+  font-style: normal;
+  cursor: default;
+}
+/* Row chrome inside the dropdown mirrors the sheet rows. */
+.task-center-view .bt-overflow-tabs-menu .bt-overflow-tab-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: var(--radius-m);
+  cursor: pointer;
+}
+.task-center-view .bt-overflow-tabs-menu .bt-overflow-tab-row:hover,
+.task-center-view .bt-overflow-tabs-menu .bt-overflow-tab-row-active {
+  background: var(--background-modifier-hover);
+}
+.task-center-view .bt-overflow-tabs-menu .bt-overflow-tab-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.task-center-view .bt-overflow-tabs-menu .bt-overflow-tab-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: var(--font-semibold);
+  color: var(--text-normal);
+}
+.task-center-view .bt-overflow-tabs-menu .bt-overflow-tab-count {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--background-modifier-hover);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+.task-center-view .bt-overflow-tabs-menu .bt-overflow-tab-badge {
+  flex: 0 0 auto;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--background-secondary);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+.task-center-view .bt-overflow-tabs-menu .bt-overflow-tab-kebab {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.task-center-view .bt-overflow-tabs-menu .bt-overflow-tab-kebab:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
 
 /* Filter summary line (VAL-GUI-010) */
 .task-center-view .bt-filter-summary {

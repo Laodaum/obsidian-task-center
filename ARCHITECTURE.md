@@ -875,6 +875,7 @@ function shouldSubmitEnter(e: KeyboardEvent): boolean {
 - 移动端首屏不挂载桌面搜索输入和筛选控件；Query 编辑 bottom sheet 复用同一套 filter controls，避免双份状态。
 - 移动端 toolbar、body、week row、card 的布局必须基于父容器宽度收缩，不依赖横向滚动承载主路径控件。
 - 移动端 Query tab strip 是例外的横向 pan 区：设置横向 overflow、固定高度、隐藏纵向 overflow，并禁用 tab 拖拽 / dwell / 快捷键提示。
+- “更多”溢出入口（US-109q）按平台分形态，但共用同一行渲染 `renderOverflowTabEntries`：桌面是锚在“更多”按钮的就地下拉浮层（`bt-overflow-tabs-menu`，`position: absolute` + `z-index`），开合状态记在 view 实例字段 `overflowTabsMenuOpen` 上，靠 `render()` 重渲染呈现；关闭复用 area 过滤同一套机制——全局 `pointerdown`（capture）经 `isClickInsideFilterControls` 判定外部点击、`Esc` keydown、选中行后、再次点按钮 toggle。`registerDomEvent` 注册的监听随 view 卸载自动清理，不留全局泄漏。移动端（`mobileLayout`）仍走 `BottomSheet`。窄下拉不承载拖拽重排，溢出 tab 的排序入口在「管理 Tabs」面板。下拉容器与每行保留一等 `data-tab-id` / `data-query-tab-id` / `data-query-tab-dirty` / `data-query-tab-default` 属性，与原 sheet 行契约一致，便于 e2e 断言。
 - 列表容器设置 `overscroll-behavior: contain`。
 - CSS 禁止 `transition: all`。
 - reduced motion 下动画时长 ≤ 50ms 但保留状态变化。

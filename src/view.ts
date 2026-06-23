@@ -272,6 +272,10 @@ export class TaskCenterView extends ItemView {
   // US-109w: per-area filter popover. Holds the DFS area index whose filter
   // popover is open (aligned with collectAreas order), or null when closed.
   private filterPopoverArea: number | null = null;
+  // US-109q: desktop "更多" overflow tabs dropdown open state. Mirrors the
+  // per-area filter popover model — open/close is a render-time flag closed by
+  // outside pointerdown / Esc / row select / button toggle (mobile uses a sheet).
+  private overflowTabsMenuOpen = false;
   // Render-time DFS area counter, reset at the start of renderViewLayout so each
   // rendered area's index matches collectAreas(layout) order (for setAreaWhen).
   private renderAreaCounter = 0;
@@ -932,11 +936,43 @@ export class TaskCenterView extends ItemView {
         moreBtn.createSpan({ text: String(overflowCount), cls: "bt-tab-count" });
       }
       moreBtn.title = overflowTabs.map((v) => v.name).join(", ");
-      moreBtn.addEventListener("click", () => this.openOverflowTabsSheet(overflowTabs));
-      moreBtn.addEventListener("contextmenu", (event) => {
-        event.preventDefault();
-        this.openOverflowTabsSheet(overflowTabs);
-      });
+
+      // US-109q: desktop opens an in-place dropdown anchored under the "更多"
+      // button; mobile keeps the bottom sheet (narrow screens can't host an
+      // anchored popover — see UX.md §「Tab 过多」 / UX-mobile §3.1).
+      if (mobileLayout) {
+        moreBtn.addEventListener("click", () => this.openOverflowTabsSheet(overflowTabs));
+        moreBtn.addEventListener("contextmenu", (event) => {
+          event.preventDefault();
+          this.openOverflowTabsSheet(overflowTabs);
+        });
+      } else {
+        moreBtn.addClass("bt-tab-more-anchor");
+        moreBtn.setAttr("aria-expanded", this.overflowTabsMenuOpen ? "true" : "false");
+        const toggleMenu = (event: Event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          this.overflowTabsMenuOpen = !this.overflowTabsMenuOpen;
+          // Opening the overflow menu closes any open filter popovers (§5414).
+          this.filterPopoverArea = null;
+          this.filterPopoverOpen = null;
+          this.render();
+        };
+        moreBtn.addEventListener("click", toggleMenu);
+        moreBtn.addEventListener("contextmenu", toggleMenu);
+        if (this.overflowTabsMenuOpen) {
+          const menu = moreBtn.createDiv({ cls: "bt-overflow-tabs-menu" });
+          // Stop clicks inside the menu chrome from bubbling to the toggle.
+          menu.addEventListener("click", (e) => e.stopPropagation());
+          this.renderOverflowTabEntries(menu, overflowTabs, () => {
+            this.overflowTabsMenuOpen = false;
+            this.render();
+          }, { draggable: false });
+        }
+      }
+    } else if (this.overflowTabsMenuOpen) {
+      // Overflow collapsed away (e.g. a tab was hidden) — drop the stale flag.
+      this.overflowTabsMenuOpen = false;
     }
 
     // DESIGN §5.0: tab-collection management belongs to the Tab Strip (the tabs'
@@ -1149,10 +1185,12 @@ export class TaskCenterView extends ItemView {
   }
 
   /**
-   * VAL-GUI-005: overflow tabs are first-class Query Tabs rendered in a sheet.
-   * UX-mobile §3.1: "更多" opens a bottom sheet (not a menu) listing
-   * overflow Query Tabs with order, badge, default status, and full
-   * management actions (rename, copy, set default, move, hide, delete).
+   * VAL-GUI-005: overflow tabs are first-class Query Tabs. On mobile (narrow
+   * screens) the "更多" entry opens a bottom sheet; desktop uses an in-place
+   * dropdown anchored under the button (see renderTabBar). Both share
+   * renderOverflowTabEntries, listing overflow Query Tabs with order, badge,
+   * default status, and full management actions (rename, copy, set default,
+   * move, hide, delete) — UX-mobile §3.1 / UX.md §「Tab 过多」.
    */
   private openOverflowTabsSheet(overflowTabs: QueryPreset[]): void {
     const sheet = new BottomSheet(this.app, {
@@ -1169,11 +1207,15 @@ export class TaskCenterView extends ItemView {
     parent: HTMLElement,
     overflowTabs: QueryPreset[],
     closeSheet: () => void,
+    options?: { draggable?: boolean },
   ): void {
+    // Drag-to-reorder only makes sense in the roomy bottom sheet; the narrow
+    // desktop dropdown skips it (reorder lives in the Manage Tabs panel).
+    const draggable = options?.draggable ?? true;
     const container = parent;
     for (const view of overflowTabs) {
       const row = parent.createDiv({ cls: "bt-overflow-tab-row" });
-      row.draggable = true;
+      row.draggable = draggable;
       // First-class data attributes: same as visible tab buttons
       row.dataset.tabId = view.id;
       row.dataset.queryTabId = view.id;
@@ -1182,7 +1224,8 @@ export class TaskCenterView extends ItemView {
       if (this.plugin.settings.defaultSavedViewId === view.id) row.dataset.queryTabDefault = "true";
       if (view.id === this.state.savedViewId) row.addClass("bt-overflow-tab-row-active");
 
-      // ── Drag-to-reorder for overflow tab rows ──
+      // ── Drag-to-reorder for overflow tab rows (sheet only) ──
+      if (draggable) {
       row.addEventListener("dragstart", (e) => {
         if (!e.dataTransfer) return;
         e.dataTransfer.effectAllowed = "move";
@@ -1232,6 +1275,7 @@ export class TaskCenterView extends ItemView {
         const insertAt = isAfter ? targetIndex + 1 : targetIndex;
         void this.reorderQueryTab(draggedId, insertAt).then(() => closeSheet());
       });
+      }
 
       // DESIGN §5.0: same row + kebab pattern as the Manage Tabs panel —
       // name + badges + count inline, management collapsed into one ⋮ menu.
@@ -5408,6 +5452,20 @@ export class TaskCenterView extends ItemView {
   }
 
   private handleFilterOutsidePointerDown(event: PointerEvent): void {
+    // US-109q: close the desktop overflow tabs dropdown on an outside click.
+    // Clicks on the menu itself or the "更多" anchor toggle keep / toggle it,
+    // so only count clicks landing outside both as "outside".
+    if (this.overflowTabsMenuOpen) {
+      const insideOverflow = event.composedPath().some(
+        (target) =>
+          target instanceof HTMLElement &&
+          !!target.closest(".bt-overflow-tabs-menu, .bt-tab-more"),
+      );
+      if (!insideOverflow) {
+        this.overflowTabsMenuOpen = false;
+        this.render();
+      }
+    }
     const insideControls = isClickInsideFilterControls(event);
     if (shouldCloseFilterPopoverOnPointerDown({
       isOpen: this.filterPopoverOpen !== null,
@@ -5480,6 +5538,15 @@ export class TaskCenterView extends ItemView {
   // see USER_STORIES.md
   handleKey(e: KeyboardEvent): void {
     if (Platform.isMobile) return;
+
+    // US-109q: Esc closes the desktop overflow tabs dropdown.
+    if (e.key === "Escape" && this.overflowTabsMenuOpen) {
+      e.preventDefault();
+      e.stopPropagation();
+      this.overflowTabsMenuOpen = false;
+      this.render();
+      return;
+    }
 
     // Global query-tab switching
     if (e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey) {
