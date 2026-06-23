@@ -3,6 +3,7 @@ import {
   ParsedTask,
   TaskStatus,
   type QueryPreset,
+  type QueryPresetFilters,
   type QueryPresetViewConfig,
   type QueryViewType,
   type TaskFormatFlavor,
@@ -223,13 +224,22 @@ export class TaskCenterApi {
   async runQueryPreset(preset: QueryPreset, opts: QueryRunOpts): Promise<QueryRunResult> {
     const normalized = normalizeQueryPreset(preset);
     const effective = deriveEffectiveTasks(await this.cache.ensureAll());
-    const view = normalizeViewOverride(normalized.view, opts.view);
-    const filtered = applyQueryFilters(effective, normalized.filters, opts.weekStartsOn, opts.anchorISO ?? todayISO());
-    // CLI / API represent a preset via its primary content area (first
-    // non-drop area). Drop areas carry no data.
+    // US-109z2: no tab-level filter — filtering lives on the primary content
+    // area's `when`. Compute it from the original preset, then carry it onto any
+    // overridden view so `view=week|month|list` still narrows.
+    const origAreas = collectAreas(normalized.view.layout);
+    const origPrimary = origAreas.find((a) => a.type !== "drop") ?? origAreas[0];
+    const primaryWhen =
+      origPrimary && origPrimary.type !== "drop" && origPrimary.type !== "unknown"
+        ? (origPrimary as { when?: QueryPresetFilters }).when
+        : undefined;
+    const view = normalizeViewOverride(normalized.view, opts.view, primaryWhen);
     const areas = collectAreas(view.layout);
     const primary = areas.find((a) => a.type !== "drop") ?? areas[0];
-    const viewModel = projectArea(primary, filtered, opts.weekStartsOn, opts.anchorISO ?? todayISO());
+    const viewModel = projectArea(primary, effective, opts.weekStartsOn, opts.anchorISO ?? todayISO());
+    const filtered = primaryWhen
+      ? applyQueryFilters(effective, primaryWhen, opts.weekStartsOn, opts.anchorISO ?? todayISO())
+      : effective;
     return {
       preset: normalized,
       view,
@@ -401,11 +411,18 @@ export class TaskCenterApi {
 
 // CLI `view=` override replaces the layout with a single area of that type
 // (list / week / month). Any other value falls back to the preset's own layout.
-function normalizeViewOverride(view: QueryPresetViewConfig, override?: QueryViewType): QueryPresetViewConfig {
+// US-109z2: a view override only changes presentation, not filtering — carry the
+// preset's primary-area `when` onto the overridden area so it still narrows.
+function normalizeViewOverride(
+  view: QueryPresetViewConfig,
+  override?: QueryViewType,
+  when?: QueryPresetFilters,
+): QueryPresetViewConfig {
   if (!override) return view;
-  if (override === "week") return { layout: { type: "week" } };
-  if (override === "month") return { layout: { type: "month" } };
-  if (override === "list") return { layout: { type: "list" } };
+  const w = when && Object.keys(when).length > 0 ? { when } : {};
+  if (override === "week") return { layout: { type: "week", ...w } };
+  if (override === "month") return { layout: { type: "month", ...w } };
+  if (override === "list") return { layout: { type: "list", ...w } };
   return view;
 }
 

@@ -174,14 +174,12 @@ function booleanOrFallback(value: unknown, fallback: boolean): boolean {
  * normalize status/tags/time, coerce view type.
  */
 export function normalizeQueryPreset(raw: QueryPreset): QueryPreset {
-  const filters = normalizeQueryPresetFilters(raw.filters);
   const view = normalizeQueryPresetView(raw.view);
   return {
     id: (typeof raw.id === "string" ? raw.id.trim() : "") || defaultSavedViewId(),
     name: (typeof raw.name === "string" ? raw.name.trim() : "") || "Query",
     builtin: !!raw.builtin,
     hidden: !!raw.hidden,
-    filters,
     view,
   };
 }
@@ -251,13 +249,21 @@ function normalizeArea(raw: unknown): AreaConfig {
     ? cfg.orderBy.map((v) => (typeof v === "string" ? v.trim() : "")).filter(Boolean)
     : undefined;
 
+  // US-109z2: date areas carry their own `when` too (no tab-level filter).
+  const dateWhen = isRecord(cfg.when) ? normalizeQueryPresetFilters(cfg.when) : undefined;
   switch (type) {
     case "week":
-      return { ...base, type: "week", ...(cfg.firstDayOfWeek === "monday" || cfg.firstDayOfWeek === "sunday" ? { firstDayOfWeek: cfg.firstDayOfWeek } : {}) };
+      return {
+        ...base,
+        type: "week",
+        ...(dateWhen && Object.keys(dateWhen).length > 0 ? { when: dateWhen } : {}),
+        ...(cfg.firstDayOfWeek === "monday" || cfg.firstDayOfWeek === "sunday" ? { firstDayOfWeek: cfg.firstDayOfWeek } : {}),
+      };
     case "month":
       return {
         ...base,
         type: "month",
+        ...(dateWhen && Object.keys(dateWhen).length > 0 ? { when: dateWhen } : {}),
         ...(cfg.firstDayOfWeek === "monday" || cfg.firstDayOfWeek === "sunday" ? { firstDayOfWeek: cfg.firstDayOfWeek } : {}),
         ...(cfg.density === "compact" || cfg.density === "cards" ? { density: cfg.density } : {}),
       };
@@ -728,9 +734,12 @@ export function restoreBuiltinQueryPresets(
   return ensureBuiltinQueryPresets(customPresets, labels);
 }
 
+// US-109z2: a preset is identity + view only (no tab-level filters). Filter
+// fields in `opts` are accepted for back-compat but ignored — filtering lives on
+// each area's `when`.
 export function createQueryPreset(
   name: string,
-  filters: {
+  opts: {
     search?: string;
     tags?: string[];
     time?: SavedViewTimeFilters;
@@ -744,13 +753,7 @@ export function createQueryPreset(
     name: name.trim(),
     builtin: false,
     hidden: false,
-    filters: {
-      ...(filters.search?.trim() ? { search: filters.search.trim() } : {}),
-      ...(filters.tags && filters.tags.length > 0 ? { tags: filters.tags } : {}),
-      status: filters.status ?? "all",
-      ...(filters.time && Object.keys(filters.time).length > 0 ? { time: normalizeTimeFilters(filters.time) } : {}),
-    },
-    view: filters.view ?? { layout: { type: "list" } },
+    view: opts.view ?? { layout: { type: "list" } },
   });
 }
 
@@ -766,20 +769,17 @@ export function updateQueryPresetById(presets: readonly QueryPreset[], preset: Q
   return presets.map((p) => (p.id === normalized.id ? normalized : p));
 }
 
-/** Extract flat filter state from a QueryPreset for the view state. */
+// US-109z2: presets have no tab-level filter, so the global filter state is
+// always empty. This returns just the preset identity + view; the global filter
+// fields stay empty (filtering is per-area `when`).
 export function applyQueryPresetFilters(preset: QueryPreset): AppliedSavedViewFilters {
   const normalized = normalizeQueryPreset(preset);
-  const tags = Array.isArray(normalized.filters.tags)
-    ? normalized.filters.tags.join(",")
-    : typeof normalized.filters.tags === "string"
-      ? normalized.filters.tags
-      : "";
   return {
     savedViewId: normalized.id,
-    search: normalized.filters.search ?? "",
-    tag: tags,
-    time: normalized.filters.time ?? {},
-    status: normalized.filters.status ?? "all",
+    search: "",
+    tag: "",
+    time: {},
+    status: "all",
     view: normalized.view,
   };
 }
@@ -795,15 +795,9 @@ export function clearQueryPresetFilters(): AppliedSavedViewFilters {
   };
 }
 
-export function hasQueryPresetFilters(preset: QueryPreset): boolean {
-  const normalized = normalizeQueryPreset(preset);
-  return !!(
-    (normalized.filters.search?.trim())
-    || (Array.isArray(normalized.filters.tags) && normalized.filters.tags.length > 0)
-    || (typeof normalized.filters.tags === "string" && normalized.filters.tags.trim())
-    || Object.values(normalized.filters.time ?? {}).some(Boolean)
-    || normalizeSavedViewStatus(normalized.filters.status) !== "all"
-  );
+// US-109z2: presets never carry a tab-level filter anymore.
+export function hasQueryPresetFilters(_preset: QueryPreset): boolean {
+  return false;
 }
 
 export function suggestQueryPresetName(
@@ -907,33 +901,22 @@ export function sameQueryPresetContent(a: QueryPreset, b: QueryPreset): boolean 
   return JSON.stringify({
     builtin: left.builtin,
     hidden: left.hidden,
-    filters: left.filters,
     view: left.view,
   }) === JSON.stringify({
     builtin: right.builtin,
     hidden: right.hidden,
-    filters: right.filters,
     view: right.view,
   });
 }
 
-/**
- * Helper: get comma-separated tag string from QueryPreset filters.
- */
-export function queryPresetTagString(preset: QueryPreset): string {
-  const tags = normalizeQueryPreset(preset).filters.tags;
-  if (Array.isArray(tags)) return tags.join(",");
-  if (typeof tags === "string") return tags;
+// US-109z2: presets carry no tab-level tags anymore (filtering is per-area
+// `when`). Kept as no-op stubs so call sites that seeded tag suggestions from
+// the tab don't break; per-area tag candidates come from the visible tasks.
+export function queryPresetTagString(_preset: QueryPreset): string {
   return "";
 }
 
-/**
- * Helper: get normalized tags array from QueryPreset filters.
- */
-export function queryPresetTagsArray(preset: QueryPreset): string[] {
-  const tags = normalizeQueryPreset(preset).filters.tags;
-  if (Array.isArray(tags)) return tags;
-  if (typeof tags === "string") return normalizeDslTags(tags);
+export function queryPresetTagsArray(_preset: QueryPreset): string[] {
   return [];
 }
 
@@ -1215,18 +1198,9 @@ export interface ComputeQueryPresetSnapshotParams {
  * (id, name, builtin, hidden).
  */
 export function computeQueryPresetSnapshot(params: ComputeQueryPresetSnapshotParams): QueryPreset {
-  const {
-    existing,
-    tabDrafts,
-    filterSearch,
-    filterTags,
-    filterTime,
-    filterStatus,
-    fallbackView,
-    name,
-  } = params;
-
-  const tagArray = filterTags ? filterTags.split(",").filter(Boolean) : undefined;
+  const { existing, tabDrafts, fallbackView, name } = params;
+  // US-109z2: a preset is identity + view only; the filter* params are accepted
+  // for back-compat but no longer contribute (filtering is per-area `when`).
   const tabDraft = existing ? tabDrafts.get(existing.id) : undefined;
 
   return normalizeQueryPreset({
@@ -1234,12 +1208,6 @@ export function computeQueryPresetSnapshot(params: ComputeQueryPresetSnapshotPar
     name: (name ?? existing?.name ?? "").trim(),
     builtin: existing?.builtin ?? false,
     hidden: existing?.hidden ?? false,
-    filters: {
-      ...(filterSearch ? { search: filterSearch } : {}),
-      ...(tagArray && tagArray.length > 0 ? { tags: tagArray } : {}),
-      time: filterTime,
-      status: filterStatus,
-    },
     view: tabDraft?.view ?? existing?.view ?? fallbackView(),
   });
 }

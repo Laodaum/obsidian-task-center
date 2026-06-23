@@ -61,10 +61,8 @@ test("VAL-CORE-005: normalizeQueryPreset fills defaults and trims strings", () =
   assert.equal(normalized.name, "My Query");
   assert.equal(normalized.builtin, false);
   assert.equal(normalized.hidden, false);
-  assert.equal(normalized.filters.search, "focus");
-  assert.deepEqual(normalized.filters.tags, ["#alpha", "#beta"]);
-  assert.deepEqual(normalized.filters.status, ["todo", "done"]);
-  assert.deepEqual(normalized.filters.time, { scheduled: "today", deadline: "overdue" });
+  // US-109z2: tab-level filters are dropped (filtering is per-area `when`).
+  assert.equal(normalized.filters, undefined);
   // Legacy {type:"week", preset} migrates to a week area layout; preset dropped.
   assert.deepEqual(normalized.view, { layout: { type: "week" } });
 });
@@ -73,11 +71,8 @@ test("VAL-CORE-005: normalizeQueryPreset defaults missing fields", () => {
   const normalized = normalizeQueryPreset({ id: "q2", name: "Minimal", builtin: false, hidden: false, filters: {}, view: { type: "list" }, summary: [] });
 
   assert.equal(normalized.id, "q2");
-  assert.deepEqual(normalized.filters.status, "all");
-  // When no tags/time/search are provided, normalize omits the keys
-  assert.equal(normalized.filters.search, undefined);
-  assert.equal(normalized.filters.tags, undefined);
-  assert.equal(normalized.filters.time, undefined);
+  // US-109z2: no tab-level filters on the normalized preset.
+  assert.equal(normalized.filters, undefined);
   assert.deepEqual(normalized.view, { layout: { type: "list" } });
 });
 
@@ -165,14 +160,13 @@ test("normalizeQueryPreset: unsupported area type → unknown area preserving ra
 });
 
 test("VAL-CORE-005: normalizeQueryPreset deduplicates tags case-insensitively", () => {
+  // US-109z2: tag dedup now applies to an area's `when` (no tab-level filter).
   const normalized = normalizeQueryPreset({
     id: "q3", name: "Dedup", builtin: false, hidden: false,
-    filters: { tags: ["#Alpha", "#alpha", "#BETA", "#Beta"] },
-    view: { type: "list" },
-    summary: [],
+    view: { layout: { type: "list", when: { tags: ["#Alpha", "#alpha", "#BETA", "#Beta"] } } },
   });
 
-  assert.deepEqual(normalized.filters.tags, ["#Alpha", "#BETA"]);
+  assert.deepEqual(normalized.view.layout.when.tags, ["#Alpha", "#BETA"]);
 });
 
 // ── VAL-CORE-006: validateQueryPreset — section-specific errors ──
@@ -474,20 +468,23 @@ test("VAL-CROSS-002: createBuiltinQueryPresets uses custom labels", () => {
 });
 
 test("VAL-CROSS-002: TODO builtin preset filters todo tasks", () => {
+  // US-109z2: status filter lives on the content area's `when`, not a tab filter.
   const presets = createBuiltinQueryPresets();
   const todoPreset = presets.find((p) => p.id === "preset-todo");
   assert.ok(todoPreset);
-  assert.deepEqual(todoPreset.filters.status, ["todo"]);
+  assert.equal(todoPreset.filters, undefined);
   assert.equal(todoPreset.view.layout.type, "list");
+  assert.deepEqual(todoPreset.view.layout.when.status, ["todo"]);
 });
 
 test("VAL-CROSS-002: Dropped builtin preset filters dropped tasks", () => {
   const presets = createBuiltinQueryPresets();
   const droppedPreset = presets.find((p) => p.id === "preset-dropped");
   assert.ok(droppedPreset);
-  // The dropped preset should filter for dropped/abandoned tasks
-  assert.deepEqual(droppedPreset.filters.status, ["dropped"]);
+  assert.equal(droppedPreset.filters, undefined);
   assert.equal(droppedPreset.view.layout.type, "list");
+  // The dropped preset's content area filters for dropped/abandoned tasks.
+  assert.deepEqual(droppedPreset.view.layout.when.status, ["dropped"]);
 });
 
 // ── VAL-CORE-005: stringifyQueryPreset / parseQueryDsl ──
@@ -506,17 +503,12 @@ test("VAL-CORE-005: stringifyQueryPreset emits normalized JSON", () => {
   const text = stringifyQueryPreset(preset);
   const parsed = JSON.parse(text);
 
+  // US-109z2: no tab-level filters; preset is identity + view only.
   assert.deepEqual(parsed, {
     id: "preset-json",
     name: "JSON Test",
     builtin: false,
     hidden: false,
-    filters: {
-      search: "focus",
-      tags: ["#alpha", "#beta"],
-      status: ["todo"],
-      time: { scheduled: "week" },
-    },
     // Legacy {type:"month", preset} migrates to a month area layout; preset dropped.
     view: { layout: { type: "month" } },
   });
@@ -538,10 +530,8 @@ test("VAL-CORE-005: parseQueryDsl parses and normalizes JSON DSL", () => {
   assert.equal(preset.id, "preset-existing");
   assert.equal(preset.name, "Deep Work");
   assert.equal(preset.builtin, false);
-  assert.equal(preset.filters.search, "docs");
-  assert.deepEqual(preset.filters.tags, ["#alpha", "#beta"]);
-  assert.deepEqual(preset.filters.status, ["todo", "done"]);
-  assert.deepEqual(preset.filters.time, { scheduled: "week" });
+  // US-109z2: tab-level filters are dropped on parse.
+  assert.equal(preset.filters, undefined);
   // Legacy {type:"week", preset} migrates to a week area layout; preset dropped.
   assert.deepEqual(preset.view, { layout: { type: "week" } });
 });
@@ -655,8 +645,8 @@ test("VAL-CROSS-002: parseQueryDsl accepts valid QueryPreset with nested filters
   });
   const preset = parseQueryDsl(validJson);
   assert.equal(preset.name, "Modern Query");
-  assert.equal(preset.filters.search, "docs");
-  assert.deepEqual(preset.filters.tags, ["#work"]);
+  // US-109z2: tab-level filters dropped on parse.
+  assert.equal(preset.filters, undefined);
   // Legacy {type:"week"} migrates to a week area layout.
   assert.equal(preset.view.layout.type, "week");
 });
@@ -672,7 +662,7 @@ test("VAL-CROSS-002: parseQueryDsl accepts valid QueryPreset in query wrapper", 
   });
   const preset = parseQueryDsl(wrappedJson);
   assert.equal(preset.name, "Wrapped Query");
-  assert.deepEqual(preset.filters.status, ["done"]);
+  assert.equal(preset.filters, undefined);
 });
 
 // ── VAL-CORE-006: parseQueryDsl validates after normalize ──

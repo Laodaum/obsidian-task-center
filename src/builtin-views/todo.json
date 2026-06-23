@@ -3,12 +3,14 @@
   "name": "TODO",
   "builtin": true,
   "hidden": false,
-  "filters": {
-    "status": ["todo"]
-  },
   "view": {
     "layout": {
-      "type": "list"
+      "type": "list",
+      "when": {
+        "status": [
+          "todo"
+        ]
+      }
     }
   }
 }

@@ -3,14 +3,18 @@
   "name": "Month",
   "builtin": true,
   "hidden": false,
-  "filters": {
-    "status": ["todo"]
-  },
   "view": {
     "layout": {
       "dir": "col",
       "children": [
-        { "type": "month" },
+        {
+          "type": "month",
+          "when": {
+            "status": [
+              "todo"
+            ]
+          }
+        },
         {
           "dir": "row",
           "children": [
@@ -18,13 +22,24 @@
               "type": "grid",
               "id": "unscheduled-tray",
               "title": "Unscheduled",
-              "when": { "time": { "scheduled": "unscheduled" } },
-              "onDrop": { "clearScheduled": true }
+              "when": {
+                "time": {
+                  "scheduled": "unscheduled"
+                },
+                "status": [
+                  "todo"
+                ]
+              },
+              "onDrop": {
+                "clearScheduled": true
+              }
             },
             {
               "type": "drop",
               "title": "Drop",
-              "onDrop": { "setStatus": "dropped" }
+              "onDrop": {
+                "setStatus": "dropped"
+              }
             }
           ]
         }

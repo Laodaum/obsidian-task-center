@@ -3,17 +3,24 @@
   "name": "Unscheduled",
   "builtin": true,
   "hidden": false,
-  "filters": {
-    "status": ["todo"]
-  },
   "view": {
     "layout": {
       "dir": "col",
       "children": [
         {
           "type": "list",
-          "when": { "time": { "scheduled": "unscheduled" } },
-          "orderBy": ["deadline_risk", "created_desc"]
+          "when": {
+            "time": {
+              "scheduled": "unscheduled"
+            },
+            "status": [
+              "todo"
+            ]
+          },
+          "orderBy": [
+            "deadline_risk",
+            "created_desc"
+          ]
         }
       ]
     }

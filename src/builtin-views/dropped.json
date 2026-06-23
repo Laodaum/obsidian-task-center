@@ -3,12 +3,14 @@
   "name": "Dropped",
   "builtin": true,
   "hidden": false,
-  "filters": {
-    "status": ["dropped"]
-  },
   "view": {
     "layout": {
-      "type": "list"
+      "type": "list",
+      "when": {
+        "status": [
+          "dropped"
+        ]
+      }
     }
   }
 }

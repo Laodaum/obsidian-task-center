@@ -726,9 +726,7 @@ test("US-220: runQueryPreset can show preset-today through a temporary week view
       name: "Today",
       builtin: true,
       hidden: false,
-      filters: { status: ["todo"] },
-      view: { type: "list", preset: "today" },
-      summary: [{ type: "count" }],
+      view: { layout: { type: "list", when: { status: ["todo"] } } },
     },
     { weekStartsOn: 1, anchorISO: "2026-05-04", view: "week" },
   );

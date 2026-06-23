@@ -137,10 +137,8 @@ test("VAL-GUI-004: undo delete restores QueryPreset snapshot with all fields", (
   assert.equal(snapshot.name, "My Tab");
   assert.equal(snapshot.builtin, false);
   assert.equal(snapshot.hidden, false);
-  assert.deepEqual(snapshot.filters.search, "focus");
-  assert.deepEqual(snapshot.filters.tags, ["#work", "#urgent"]);
-  assert.deepEqual(snapshot.filters.status, ["todo", "in_progress"]);
-  assert.deepEqual(snapshot.filters.time, { scheduled: "week", deadline: "overdue" });
+  // US-109z2: presets carry no tab-level filters anymore.
+  assert.equal(snapshot.filters, undefined);
   // Legacy {type:week, preset, orderBy} migrates to a week area; preset is dropped.
   assert.deepEqual(snapshot.view, { layout: { type: "week" } });
 
@@ -158,7 +156,6 @@ test("VAL-GUI-004: undo delete restores QueryPreset snapshot with all fields", (
   assert.equal(restored.name, "My Tab");
   assert.equal(restored.builtin, false);
   assert.equal(restored.hidden, false);
-  assert.deepEqual(restored.filters, snapshot.filters);
   assert.deepEqual(restored.view, snapshot.view);
 });
 
@@ -380,8 +377,8 @@ test("VAL-GUI-004: computeQueryPresetDeleteUndoPlan uses stable-id findIndex, no
   // Verify the snapshot is normalized (has the correct shape)
   assert.equal(plan.snapshot.builtin, false);
   assert.equal(plan.snapshot.hidden, false);
-  assert.ok(plan.snapshot.filters);
-  assert.deepEqual(plan.snapshot.filters.status, ["done"]);
+  // US-109z2: presets carry no tab-level filters anymore.
+  assert.equal(plan.snapshot.filters, undefined);
 });
 
 test("VAL-GUI-004: executeQueryPresetDeleteUndo restores at original position within bounds", () => {
@@ -400,7 +397,6 @@ test("VAL-GUI-004: executeQueryPresetDeleteUndo restores at original position wi
   assert.deepEqual(restored.map((p) => p.id), ["sv-a", "sv-b", "sv-c"],
     "undo restores at original position via executeQueryPresetDeleteUndo");
   assert.equal(restored[1].name, "B");
-  assert.deepEqual(restored[1].filters.status, ["done"]);
 });
 
 test("VAL-GUI-004: executeQueryPresetDeleteUndo handles originalIndex beyond current length (clamps)", () => {
@@ -470,9 +466,7 @@ test("VAL-GUI-004: full delete+undo flow preserves original order with default a
   assert.equal(plan.originalIndex, 1);
   assert.equal(plan.snapshot.id, "sv-beta");
   assert.equal(plan.snapshot.name, "Beta");
-  assert.deepEqual(plan.snapshot.filters.search, "docs");
-  assert.deepEqual(plan.snapshot.filters.tags, ["#docs"]);
-  assert.deepEqual(plan.snapshot.filters.status, ["done"]);
+  assert.equal(plan.snapshot.filters, undefined);
   assert.deepEqual(plan.snapshot.view, { layout: { type: "list" } });
 
   // --- Capture state before delete (as deleteSavedViewWithConfirm does) ---
@@ -494,8 +488,6 @@ test("VAL-GUI-004: full delete+undo flow preserves original order with default a
   assert.equal(restoredBeta.name, "Beta");
   assert.equal(restoredBeta.builtin, false);
   assert.equal(restoredBeta.hidden, false);
-  assert.deepEqual(restoredBeta.filters, plan.snapshot.filters,
-    "restored snapshot must have all filter fields preserved");
   assert.deepEqual(restoredBeta.view, plan.snapshot.view,
     "restored snapshot must have view config preserved");
 
@@ -601,13 +593,8 @@ test("VAL-GUI-004: delete+undo preserves full QueryPreset detail through product
   assert.equal(snapshot.id, "sv-rich");
   assert.equal(snapshot.name, "Rich View");
 
-  // Filters
-  assert.equal(snapshot.filters.search, "deep work");
-  assert.deepEqual(snapshot.filters.tags, ["#focus", "#priority"]);
-  assert.deepEqual(snapshot.filters.status, ["todo", "in_progress"]);
-  assert.deepEqual(snapshot.filters.time, {
-    scheduled: "week", deadline: "overdue", completed: "month",
-  });
+  // US-109z2: no tab-level filters; filtering lives on each area's `when`.
+  assert.equal(snapshot.filters, undefined);
 
   // View — area layout tree (col[ grid, list-tray ])
   const richLayout = snapshot.view.layout;
@@ -629,7 +616,6 @@ test("VAL-GUI-004: delete+undo preserves full QueryPreset detail through product
   assert.equal(restored.length, 2);
   const restoredRich = restored.find((p) => p.id === "sv-rich");
   assert.ok(restoredRich);
-  assert.deepEqual(restoredRich.filters, snapshot.filters);
   assert.deepEqual(restoredRich.view, snapshot.view);
 });
 
@@ -881,9 +867,7 @@ test("VAL-GUI-004 production: confirm → delete → presetsAfter removes target
   assert.equal(result.undoPlan.snapshot.id, "sv-b");
   assert.equal(result.undoPlan.snapshot.name, "Beta");
   assert.equal(result.undoPlan.originalIndex, 1);
-  assert.deepEqual(result.undoPlan.snapshot.filters.search, "docs");
-  assert.deepEqual(result.undoPlan.snapshot.filters.tags, ["#docs"]);
-  assert.deepEqual(result.undoPlan.snapshot.filters.status, ["done"]);
+  assert.equal(result.undoPlan.snapshot.filters, undefined);
   assert.deepEqual(result.undoPlan.snapshot.view, { layout: { type: "list" } });
 
   // Verify state flags
@@ -942,7 +926,7 @@ test("VAL-GUI-004 production: clicking undo restores order via executeQueryPrese
   const restoredBeta = restored[1];
   assert.equal(restoredBeta.id, "sv-b");
   assert.equal(restoredBeta.name, "Beta");
-  assert.deepEqual(restoredBeta.filters, undoPlan.snapshot.filters);
+  assert.deepEqual(restoredBeta.view, undoPlan.snapshot.view);
   assert.deepEqual(restoredBeta.view, undoPlan.snapshot.view);
 });
 
@@ -1072,10 +1056,7 @@ test("VAL-GUI-004 production: confirm-delete-undo roundtrip preserves all QueryP
   assert.equal(snap.name, "Full View");
 
   // Filters
-  assert.equal(snap.filters.search, "deep work");
-  assert.deepEqual(snap.filters.tags, ["#focus", "#priority"]);
-  assert.deepEqual(snap.filters.status, ["todo", "in_progress"]);
-  assert.deepEqual(snap.filters.time, { scheduled: "week", deadline: "overdue", completed: "month" });
+  assert.equal(snap.filters, undefined);
 
   // View — col[ grid, list-tray ] preserved
   const snapLayout = snap.view.layout;
@@ -1094,7 +1075,7 @@ test("VAL-GUI-004 production: confirm-delete-undo roundtrip preserves all QueryP
   assert.equal(restored.length, 2);
   const restoredRich = restored.find((p) => p.id === "sv-full");
   assert.ok(restoredRich);
-  assert.deepEqual(restoredRich.filters, snap.filters);
+  assert.deepEqual(restoredRich.view, snap.view);
   assert.deepEqual(restoredRich.view, snap.view);
 });
 
@@ -1244,7 +1225,6 @@ test("VAL-GUI-004: computeUndoQueryPresetState — restores deleted tab at origi
   assert.ok(undoState.restoredView);
   assert.equal(undoState.restoredView.id, "sv-b");
   assert.equal(undoState.restoredView.name, "Beta");
-  assert.deepEqual(undoState.restoredView.filters.status, ["done"]);
 });
 
 test("VAL-GUI-004: computeUndoQueryPresetState — restores default when deleted tab was default", () => {
@@ -1346,7 +1326,7 @@ test("VAL-GUI-004: computeUndoQueryPresetState — preserves all snapshot fields
   const restored = undoState.presetsRestored.find((p) => p.id === "sv-full");
   assert.ok(restored);
   assert.equal(restored.name, "Full View");
-  assert.deepEqual(restored.filters, undoPlan.snapshot.filters);
+  assert.deepEqual(restored.view, undoPlan.snapshot.view);
   assert.deepEqual(restored.view, undoPlan.snapshot.view);
   // Legacy list+sections+tray migrated to col[ list(sections), list-tray ].
   assert.equal(restored.view.layout.children[0].sections[0].id, "urgent");
@@ -1471,9 +1451,7 @@ test("VAL-GUI-004 production view-path: confirm → delete → compute state →
   // Verify snapshot content preserved
   const restoredBeta = undoState.presetsRestored[1];
   assert.equal(restoredBeta.name, "Beta");
-  assert.deepEqual(restoredBeta.filters.search, "docs");
-  assert.deepEqual(restoredBeta.filters.tags, ["#docs"]);
-  assert.deepEqual(restoredBeta.filters.status, ["done"]);
+  assert.equal(restoredBeta.filters, undefined);
   assert.deepEqual(restoredBeta.view, { layout: { type: "list" } });
 });
 
@@ -1546,7 +1524,6 @@ test("VAL-GUI-004 production view-path: delete default+active tab → undo resto
   // Verify restored Alpha has all fields
   const restoredAlpha = undoState.presetsRestored[0];
   assert.equal(restoredAlpha.name, "Alpha");
-  assert.deepEqual(restoredAlpha.filters.tags, ["#primary"]);
   assert.equal(restoredAlpha.view.layout.type, "list");
 });
 
@@ -1720,12 +1697,7 @@ test("VAL-GUI-004 production view-path: undo preserves full QueryPreset fields (
 
     // Verify ALL fields survived the roundtrip
     assert.equal(restored.name, "Rich Tab");
-    assert.equal(restored.filters.search, "deep work");
-    assert.deepEqual(restored.filters.tags, ["#focus", "#priority"]);
-    assert.deepEqual(restored.filters.status, ["todo", "in_progress"]);
-    assert.deepEqual(restored.filters.time, {
-      scheduled: "week", deadline: "overdue", completed: "month",
-    });
+    assert.equal(restored.filters, undefined);
 
     // View — col[ grid, list-tray ]
     const rLayout = restored.view.layout;
@@ -1842,10 +1814,8 @@ test("production: snapshot falls back to explicit fallbacks when no saved and no
   assert.equal(snapshot.name, "New Snapshot");
   assert.equal(snapshot.builtin, false);
   assert.equal(snapshot.hidden, false);
-  assert.equal(snapshot.filters.search, "search term");
-  assert.deepEqual(snapshot.filters.tags, ["#alpha"]);
-  assert.deepEqual(snapshot.filters.time, { scheduled: "today" });
-  assert.deepEqual(snapshot.filters.status, ["todo"]);
+  // US-109z2: snapshot is identity + view only (no tab-level filters).
+  assert.equal(snapshot.filters, undefined);
   // Fallback view used
   assert.equal(snapshot.view.layout.type, "week");
   // Fallback summary used
@@ -1988,20 +1958,16 @@ test("US-414: migrate custom legacy view collapses flat fields into nested filte
   assert.equal(migrated.name, "My work");
   assert.equal(migrated.hidden, true);
   assert.equal(migrated.builtin, false);
-  // flat → nested filters
-  assert.equal(migrated.filters.search, "report");
-  assert.deepEqual(migrated.filters.tags, ["#work", "#urgent"]);
-  assert.deepEqual(migrated.filters.status, ["todo", "done"]);
-  assert.equal(migrated.filters.time.scheduled, "2026-01-01..2026-01-31");
+  // US-109z2: the legacy flat tab-level filters are dropped (no tab filter).
+  assert.equal(migrated.filters, undefined);
   // legacy view {type} migrated to a layout tree
   assert.ok(migrated.view.layout, "view.layout exists after migration");
-  // summary preserved
 });
 
 test("US-414: migrate is robust to garbage fields and never throws", () => {
   const migrated = migrateLegacySavedTaskView({ status: 12345, tag: 999, time: "nope", view: 7 });
   assert.ok(migrated.id, "id falls back to a generated id");
-  assert.ok(migrated.filters, "filters always present");
+  assert.equal(migrated.filters, undefined, "no tab-level filters");
   assert.ok(migrated.view.layout, "view.layout always present");
 });
 
@@ -2042,7 +2008,7 @@ test("US-414: full settings-shaped migration keeps builtins + custom views", () 
   // all 7 builtins present + the 1 custom view
   assert.ok(presets.some((p) => p.id === "sv-mine"), "custom view survives migration");
   const mine = presets.find((p) => p.id === "sv-mine");
-  assert.deepEqual(mine.filters.tags, ["#deep"]);
+  assert.equal(mine.filters, undefined, "custom view migrated without tab-level filters");
   assert.equal(presets.filter((p) => p.builtin).length >= 7, true);
 
   // re-running detection on migrated output finds nothing legacy (idempotent)

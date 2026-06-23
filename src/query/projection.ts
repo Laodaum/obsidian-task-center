@@ -74,7 +74,7 @@ export function projectArea(
     case "week":
       return projectWeekArea(tasks, area, weekStartsOn, anchorISO);
     case "month":
-      return projectMonthArea(tasks, area, anchorISO);
+      return projectMonthArea(tasks, area, anchorISO, weekStartsOn);
     case "drop":
     case "unknown":
       return { type: "list", grouped: false, sections: [{ title: "", tasks: [] }] };
@@ -214,17 +214,21 @@ export function projectListArea(
 
 export function projectWeekArea(
   tasks: EffectiveTask[],
-  _area: WeekAreaConfig,
+  area: WeekAreaConfig,
   weekStartsOn: 0 | 1,
   anchorISO: string = todayISO(),
 ): WeekViewModel {
+  // US-109z2: the week area filters by its own `when` (e.g. status: todo).
+  const scoped = area.when && queryFilterHasActiveConditions(area.when)
+    ? applyQueryFilters(tasks, area.when, weekStartsOn, anchorISO)
+    : tasks;
   const weekStart = startOfWeek(anchorISO, weekStartsOn);
   const days: DayColumnModel[] = [];
   for (let i = 0; i < 7; i++) {
     days.push({ date: addDays(weekStart, i), tasks: [] });
   }
   const daysByDate = new Map(days.map((day) => [day.date, day]));
-  for (const task of tasks) {
+  for (const task of scoped) {
     if (task.effectiveScheduled) {
       const dayCol = daysByDate.get(task.effectiveScheduled);
       if (dayCol) dayCol.tasks.push(task);
@@ -235,9 +239,14 @@ export function projectWeekArea(
 
 export function projectMonthArea(
   tasks: EffectiveTask[],
-  _area: MonthAreaConfig,
+  area: MonthAreaConfig,
   anchorISO: string = todayISO(),
+  weekStartsOn: 0 | 1 = 1,
 ): MonthViewModel {
+  // US-109z2: the month area filters by its own `when`.
+  const scoped = area.when && queryFilterHasActiveConditions(area.when)
+    ? applyQueryFilters(tasks, area.when, weekStartsOn, anchorISO)
+    : tasks;
   const monthStart = startOfMonth(anchorISO);
   const monthEnd = endOfMonth(anchorISO);
   const totalDays = daysBetween(monthStart, monthEnd) + 1;
@@ -246,7 +255,7 @@ export function projectMonthArea(
     cells.push({ date: addDays(monthStart, i), tasks: [] });
   }
   const cellsByDate = new Map(cells.map((cell) => [cell.date, cell]));
-  for (const task of tasks) {
+  for (const task of scoped) {
     if (task.effectiveScheduled) {
       const cell = cellsByDate.get(task.effectiveScheduled);
       if (cell) cell.tasks.push(task);

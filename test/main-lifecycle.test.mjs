@@ -315,8 +315,8 @@ test("US-414: loadSettings migrates legacy flat SavedTaskView instead of droppin
   const migrated = plugin.settings.queryPresets.find((p) => p.id === "sv-legacy");
   assert.ok(migrated, "legacy custom view survives as a migrated QueryPreset");
   assert.equal(migrated.hidden, true, "user hidden flag preserved");
-  assert.equal(migrated.filters.search, "report", "flat search migrated into nested filters");
-  assert.deepEqual(migrated.filters.tags, ["#work"], "flat tag migrated into nested tags");
+  // US-109z2: legacy flat tab-level filters are dropped (no tab filter).
+  assert.equal(migrated.filters, undefined, "flat tab-level filters dropped");
   assert.ok(migrated.view.layout, "legacy view migrated to a layout tree");
 });
 
@@ -475,17 +475,12 @@ test("query-show 返回当前 preset 的 DSL JSON", async () => {
   });
 
   const shown = JSON.parse(await plugin.cliQueryShow({ id: "sv-alpha" }));
+  // US-109z2: presets carry no tab-level filters; DSL is identity + view only.
   assert.deepEqual(shown, {
     id: "sv-alpha",
     name: "Alpha",
     builtin: false,
     hidden: false,
-    filters: {
-      search: "deep work",
-      tags: ["#alpha", "#beta"],
-      status: ["todo", "done"],
-      time: { scheduled: "week" },
-    },
     view: { layout: { type: "month" } },
   });
 });
@@ -553,8 +548,7 @@ test("query-save 总是新建 preset id，而不是复用 DSL 里的 id", async 
   assert.match(createdId, /^sv-[a-z0-9]+-4fzz$/);
   assert.equal(createdId === "sv-from-dsl", false);
   assert.equal(plugin.settings.queryPresets[0].name, "Deep Work");
-  assert.equal(plugin.settings.queryPresets[0].filters.search, "docs");
-  assert.deepEqual(plugin.settings.queryPresets[0].filters.status, ["todo"]);
+  assert.equal(plugin.settings.queryPresets[0].filters, undefined);
   assert.deepEqual(plugin.settings.queryPresets[0].view, { layout: { type: "week" } });
   assert.equal(calls.save, 1);
   assert.equal(calls.refresh, 1);
@@ -598,7 +592,6 @@ test("query-update 固定覆盖当前 id，不允许 DSL 偷换 preset 身份", 
       name: "Alpha Updated",
       builtin: false,
       hidden: false,
-      filters: { search: "new", tags: ["#beta"], status: ["done"], time: { completed: "month" } },
       view: { layout: { type: "month" } },
     },
   ]);
@@ -659,7 +652,6 @@ test("query-copy / hide / set-default / delete 维护 preset 生命周期与默�
       name: "Alpha",
       builtin: false,
       hidden: true,
-      filters: { search: "focus", tags: ["#alpha"], status: ["todo"] },
       view: { layout: { type: "list" } },
     },
   ]);
@@ -847,7 +839,6 @@ test("query-update rejects legacy flat SavedTaskView DSL with invalid_query", as
   assert.equal(plugin.settings.queryPresets.length, 1);
   assert.equal(plugin.settings.queryPresets[0].id, "sv-alpha");
   assert.equal(plugin.settings.queryPresets[0].name, "Alpha");
-  assert.equal(plugin.settings.queryPresets[0].filters.search, "focus");
   assert.equal(calls.save, 0);
   assert.equal(calls.refresh, 0);
 });
@@ -883,7 +874,6 @@ test("query-update rejects invalid QueryPreset DSL (unknown view type) with inva
   assert.equal(plugin.settings.queryPresets.length, 1);
   assert.equal(plugin.settings.queryPresets[0].id, "sv-alpha");
   assert.equal(plugin.settings.queryPresets[0].name, "Alpha");
-  assert.equal(plugin.settings.queryPresets[0].filters.search, "focus");
   assert.equal(calls.save, 0);
   assert.equal(calls.refresh, 0);
 });
@@ -1046,8 +1036,7 @@ test("query-create 创建新 preset，输出稳定 id，且不覆盖已有 prese
   const created = plugin.settings.queryPresets[1];
   assert.match(created.id, /^sv-[a-z0-9]+-4fzz$/);
   assert.equal(created.name, "New via Create");
-  assert.equal(created.filters.search, "focus");
-  assert.deepEqual(created.filters.tags, ["#work"]);
+  assert.equal(created.filters, undefined);
   assert.deepEqual(created.view, { layout: { type: "week" } });
   assert.equal(calls.save, 1);
   assert.equal(calls.refresh, 1);

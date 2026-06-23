@@ -39,6 +39,7 @@ import { markdownSourceOpenState } from "./view/source-open-state";
 import { weekMinHeightFromViewHeightPx } from "./view/layout";
 import { SavedViewNameModal } from "./view/saved-view-name-modal";
 import { QueryDslModal, type QueryDslSubmitMode } from "./view/query-dsl-modal";
+import { renderMigrationGate } from "./view/migration-gate";
 import type { FilterPopoverKey, TabKey, ViewState } from "./view/state";
 import { taskDisplayTags } from "./tags";
 import { formatDateFilterLabel } from "./date-filter";
@@ -745,7 +746,7 @@ export class TaskCenterView extends ItemView {
     // the migration is confirmed (and persisted) here before any tab/toolbar/
     // body is drawn.
     if (this.plugin.migratedLegacyCount > 0) {
-      this.renderMigrationGate(el);
+      renderMigrationGate(el, this.plugin);
       return;
     }
 
@@ -782,157 +783,6 @@ export class TaskCenterView extends ItemView {
         });
       }
     }
-  }
-
-  /**
-   * US-415: full-view upgrade gate. Shown instead of the board when legacy
-   * view data (flat SavedTaskView or old-DSL `view`) was detected at load.
-   * Tells the user what changed and what's new, then offers a single confirm
-   * action that persists the already-in-memory-migrated data and enters the
-   * new board. Nothing of the board renders until the user confirms.
-   */
-  private renderMigrationGate(el: HTMLElement): void {
-    const count = this.plugin.migratedLegacyCount;
-    const gate = el.createDiv({ cls: "tc-migration-gate" });
-    gate.dataset.migratedCount = String(count);
-
-    const card = gate.createDiv({ cls: "tc-migration-card" });
-
-    const header = card.createDiv({ cls: "tc-migration-header" });
-    header.createSpan({ cls: "tc-migration-badge", text: tr("migration.badge") });
-    header.createEl("h2", { cls: "tc-migration-title", text: tr("migration.title") });
-    header.createEl("p", { cls: "tc-migration-lead", text: tr("migration.lead", { n: count }) });
-
-    // What's new — a bento grid where each new capability is one cell with a
-    // small CSS-drawn illustration so the change is easy to grasp at a glance.
-    card.createEl("h3", { cls: "tc-migration-subhead", text: tr("migration.whatsNewTitle") });
-    const bento = card.createDiv({ cls: "tc-migration-bento" });
-    // Varied bento tiles: some span the full width (wide), some are square — so
-    // the grid reads as a real bento, not a uniform 2×N table.
-    const cells: Array<{
-      art: "layout" | "model" | "preset" | "ui" | "toolbar" | "done";
-      size: "wide" | "square";
-      title: Parameters<typeof tr>[0];
-      desc: Parameters<typeof tr>[0];
-    }> = [
-      { art: "layout", size: "wide", title: "migration.feature1Title", desc: "migration.feature1Desc" },
-      { art: "model", size: "square", title: "migration.feature2Title", desc: "migration.feature2Desc" },
-      { art: "preset", size: "square", title: "migration.feature3Title", desc: "migration.feature3Desc" },
-      { art: "toolbar", size: "wide", title: "migration.feature5Title", desc: "migration.feature5Desc" },
-      { art: "ui", size: "square", title: "migration.feature4Title", desc: "migration.feature4Desc" },
-      { art: "done", size: "square", title: "migration.feature6Title", desc: "migration.feature6Desc" },
-    ];
-    for (const c of cells) this.renderBentoCell(bento, c.art, c.size, c.title, c.desc);
-
-    // Primary action sits right under What's New so it's visible without
-    // scrolling past the (potentially long) migrated-views list below.
-    const actions = card.createDiv({ cls: "tc-migration-actions" });
-    const cta = actions.createEl("button", { text: tr("migration.cta"), cls: "mod-cta" });
-    cta.dataset.action = "complete-migration";
-    cta.addEventListener("click", () => {
-      cta.disabled = true;
-      void this.plugin.completeMigration();
-    });
-
-    // The concrete list of views that will migrate — builtin vs custom tagged.
-    const viewsSection = card.createDiv({ cls: "tc-migration-views" });
-    viewsSection.createEl("h3", {
-      cls: "tc-migration-subhead",
-      text: tr("migration.viewsTitle", { n: count }),
-    });
-    const list = viewsSection.createEl("ul", { cls: "tc-migration-view-list" });
-    for (const view of this.plugin.migratedLegacyViews) {
-      const item = list.createEl("li", { cls: "tc-migration-view-item" });
-      item.createSpan({ cls: "tc-migration-view-dot" });
-      item.createSpan({ cls: "tc-migration-view-name", text: view.name });
-      item.createSpan({
-        cls: `tc-migration-view-tag ${view.builtin ? "is-builtin" : "is-custom"}`,
-        text: view.builtin ? tr("migration.viewsBuiltin") : tr("migration.viewsCustom"),
-      });
-    }
-
-    card.createEl("p", { cls: "tc-migration-note", text: tr("migration.note") });
-
-    // Roadmap — what's intentionally not here yet and what replaces it, so the
-    // upgrade doesn't read as "features were just removed".
-    const roadmap = card.createDiv({ cls: "tc-migration-roadmap" });
-    roadmap.createEl("h3", { cls: "tc-migration-subhead", text: tr("migration.roadmapTitle") });
-    const roadmapItems: Array<{ title: Parameters<typeof tr>[0]; desc: Parameters<typeof tr>[0] }> = [
-      { title: "migration.roadmap1Title", desc: "migration.roadmap1Desc" },
-      { title: "migration.roadmap2Title", desc: "migration.roadmap2Desc" },
-    ];
-    for (const r of roadmapItems) {
-      const item = roadmap.createDiv({ cls: "tc-roadmap-item" });
-      const head = item.createDiv({ cls: "tc-roadmap-head" });
-      head.createSpan({ cls: "tc-roadmap-title", text: tr(r.title) });
-      head.createSpan({ cls: "tc-roadmap-tag", text: tr("migration.roadmapTag") });
-      item.createEl("p", { cls: "tc-roadmap-desc", text: tr(r.desc) });
-    }
-
-    window.setTimeout(() => cta.focus(), 10);
-  }
-
-  /**
-   * One bento cell of the upgrade gate: a CSS-drawn illustration (`art`) plus a
-   * title and one-line description. The illustration is built from plain divs so
-   * it inherits theme accent colors and needs no SVG/asset.
-   */
-  private renderBentoCell(
-    grid: HTMLElement,
-    art: "layout" | "model" | "preset" | "ui" | "toolbar" | "done",
-    size: "wide" | "square",
-    titleKey: Parameters<typeof tr>[0],
-    descKey: Parameters<typeof tr>[0],
-  ): void {
-    const cell = grid.createDiv({ cls: `tc-bento-cell tc-bento-cell--${art} tc-bento-cell--${size}` });
-    const figure = cell.createDiv({ cls: "tc-bento-art" });
-    figure.dataset.art = art;
-    if (art === "layout") {
-      // A composable layout: one wide area stacked over a row of two areas.
-      figure.createDiv({ cls: "tc-art-block is-wide" });
-      const row = figure.createDiv({ cls: "tc-art-row" });
-      row.createDiv({ cls: "tc-art-block" });
-      row.createDiv({ cls: "tc-art-block" });
-    } else if (art === "toolbar") {
-      // One shared edit entry per area: a header row with a title + edit button.
-      const head = figure.createDiv({ cls: "tc-art-head" });
-      head.createSpan({ cls: "tc-art-headtitle" });
-      const editBtn = head.createSpan({ cls: "tc-art-editbtn" });
-      setIcon(editBtn, "sliders-horizontal");
-      figure.createDiv({ cls: "tc-art-headline" });
-      figure.createDiv({ cls: "tc-art-headline is-short" });
-    } else if (art === "done") {
-      // A done card: stays in place, recolored with a check instead of vanishing.
-      const doneCard = figure.createDiv({ cls: "tc-art-donecard" });
-      const check = doneCard.createSpan({ cls: "tc-art-check" });
-      setIcon(check, "check");
-      doneCard.createSpan({ cls: "tc-art-donetext" });
-    } else if (art === "model") {
-      // One shared model bridging GUI and CLI through a JSON DSL.
-      figure.createSpan({ cls: "tc-art-chip", text: "GUI" });
-      figure.createSpan({ cls: "tc-art-link" });
-      figure.createSpan({ cls: "tc-art-chip is-dsl", text: "{ }" });
-      figure.createSpan({ cls: "tc-art-link" });
-      figure.createSpan({ cls: "tc-art-chip", text: "CLI" });
-    } else if (art === "preset") {
-      // A built-in tab duplicated into an editable preset.
-      figure.createDiv({ cls: "tc-art-tab is-back" });
-      const front = figure.createDiv({ cls: "tc-art-tab is-front" });
-      front.createSpan({ cls: "tc-art-plus", text: "+" });
-    } else {
-      // A refreshed UI: a mini window mock with a sparkle.
-      const win = figure.createDiv({ cls: "tc-art-window" });
-      const bar = win.createDiv({ cls: "tc-art-winbar" });
-      bar.createSpan({ cls: "tc-art-dot" });
-      bar.createSpan({ cls: "tc-art-dot" });
-      bar.createSpan({ cls: "tc-art-dot" });
-      const body = win.createDiv({ cls: "tc-art-winrow" });
-      body.createSpan({ cls: "tc-art-fill" });
-      body.createSpan({ cls: "tc-art-fill is-muted" });
-      figure.createSpan({ cls: "tc-art-sparkle", text: "✦" });
-    }
-    cell.createEl("h4", { cls: "tc-bento-title", text: tr(titleKey) });
-    cell.createEl("p", { cls: "tc-bento-desc", text: tr(descKey) });
   }
 
   /**
@@ -2761,25 +2611,15 @@ export class TaskCenterView extends ItemView {
     return `${first} +${selected.length - 1}`;
   }
 
+  // US-109z2: there is no tab-level filter anymore, so the global filter state
+  // is always empty — these are constant false. (Per-area `when` does the
+  // narrowing inside projection / the area renderers.)
   private hasSaveableFilters(): boolean {
-    const tags = this.state.savedViewTag ? this.state.savedViewTag.split(",").filter(Boolean) : undefined;
-    return hasQueryPresetFilters({
-      id: "",
-      name: "",
-      builtin: false,
-      hidden: false,
-      filters: {
-        ...(this.state.filter ? { search: this.state.filter } : {}),
-        ...(tags && tags.length > 0 ? { tags } : {}),
-        time: this.state.savedViewTime,
-        status: this.state.savedViewStatus,
-      },
-      view: { layout: { type: "list" } },
-    });
+    return false;
   }
 
   private hasActiveFilters(): boolean {
-    return this.hasSaveableFilters();
+    return false;
   }
 
   /**
@@ -2904,13 +2744,9 @@ export class TaskCenterView extends ItemView {
     nameInput.value = this.activeSavedView().name;
     nameInput.addEventListener("change", () => this.setActiveTabName(nameInput.value));
 
-    // ── Base set (applies to every area) ──────────────────
-    const baseSection = parent.createDiv({ cls: "bt-query-editor-section" });
-    baseSection.dataset.filterSection = "base";
-    baseSection.createDiv({ cls: "bt-query-editor-section-title", text: tr("savedViews.queryEditorBaseFilters") });
-    baseSection.createDiv({ cls: "bt-query-editor-section-note", text: tr("savedViews.queryEditorBaseFiltersNote") });
-    const filters = baseSection.createDiv({ cls: "bt-saved-view-filters" });
-    this.renderSavedViewsFilterControls(filters, rerenderControls);
+    // US-109z2: no tab-level base filter anymore — all filtering is per-area
+    // (each area's 编辑区域 → 过滤条件). The Tab panel is just name + layout +
+    // manage + DSL.
 
     // ── Layout tree (US-109p11) ───────────────────────────
     const layoutSection = parent.createDiv({ cls: "bt-query-editor-section" });
@@ -3003,23 +2839,7 @@ export class TaskCenterView extends ItemView {
     } else {
       this.renderAreaAppearance(panel, areaIndex, rerenderControls);
     }
-
-    // ── Base-set hint (read-only) ──────────────────────────
-    const hint = parent.createDiv({ cls: "bt-query-editor-baseset-hint" });
-    const baseSummary = this.areaFilterSummary(this.activeSavedView().filters);
-    hint.createSpan({
-      cls: "bt-query-editor-baseset-text",
-      text: baseSummary
-        ? tr("savedViews.baseSetHint", { summary: baseSummary })
-        : tr("savedViews.baseSetHintEmpty"),
-    });
-    const goBase = hint.createEl("button", { cls: "bt-query-editor-baseset-link", text: tr("savedViews.goEditBaseSet") });
-    goBase.addEventListener("click", () => {
-      this.openInPlace(parent, rerenderControls, () => {
-        this.queryEditorScope = "tab";
-        this.queryEditorAreaIndex = null;
-      });
-    });
+    // US-109z2: no base-set hint — there is no tab-level filter to stack here.
   }
 
   // Re-render the open sheet body in place after mutating editor scope/sub-tab
@@ -5345,11 +5165,20 @@ export class TaskCenterView extends ItemView {
   }
 
   private getSavedViewFilter(view: QueryPreset): (t: EffectiveTask) => boolean {
+    // US-109z2: the tab badge count derives from the primary content area's
+    // own `when` (no tab-level filter anymore).
     const normalized = normalizeQueryPreset(view);
-    const q = (normalized.filters.search ?? "").trim().toLowerCase();
-    const tags = parseFilterTags(queryPresetTagString(normalized));
-    const time = normalized.filters.time ?? {};
-    const status = normalizeSavedViewStatus(normalized.filters.status);
+    const areas = collectAreas(normalized.view.layout);
+    const primary = areas.find((a) => a.type !== "drop") ?? areas[0];
+    const when: QueryPresetFilters =
+      primary && primary.type !== "unknown" && primary.type !== "drop"
+        ? ((primary as { when?: QueryPresetFilters }).when ?? {})
+        : {};
+    const q = (when.search ?? "").trim().toLowerCase();
+    const tagStr = Array.isArray(when.tags) ? when.tags.join(",") : (when.tags ?? "");
+    const tags = parseFilterTags(tagStr);
+    const time = when.time ?? {};
+    const status = normalizeSavedViewStatus(when.status);
     if (!q && tags.length === 0 && !this.hasTimeFilters(time) && status === "all") return () => true;
     return (t) => {
       if (q && !taskMatchesText(t, q)) return false;
@@ -5574,8 +5403,7 @@ export class TaskCenterView extends ItemView {
       name: tr("tab.today"),
       builtin: true,
       hidden: false,
-      filters: { status: ["todo"] },
-      view: { layout: { type: "list" } },
+      view: { layout: { type: "list", when: { status: ["todo"] } } },
     });
   }
 

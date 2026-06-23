@@ -3,13 +3,17 @@
   "name": "Completed",
   "builtin": true,
   "hidden": false,
-  "filters": {
-    "status": ["done"]
-  },
   "view": {
     "layout": {
       "type": "list",
-      "orderBy": ["completed_desc"]
+      "orderBy": [
+        "completed_desc"
+      ],
+      "when": {
+        "status": [
+          "done"
+        ]
+      }
     }
   }
 }

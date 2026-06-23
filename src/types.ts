@@ -274,16 +274,14 @@ export interface QueryPresetViewConfig {
   layout: LayoutNode; // 根节点：可以是 Stack，也可以直接是单个 area
 }
 
-// US-109z2 (in progress): moving toward NO tab-level filter — all filtering on
-// each area's `when` (list / grid / week / month, the last two gained `when`
-// above). `filters` is being phased out; kept for now so the data layer / GUI /
-// CLI / tests stay green until the teardown lands as one reviewable change.
+// US-109z2: a tab has NO tab-level filter. All filtering lives on each area's
+// `when` (list / grid / week / month). `QueryPresetFilters` survives only as the
+// shape of an area's `when`.
 export interface QueryPreset {
   id: string;
   name: string;
   builtin: boolean;
   hidden: boolean;
-  filters: QueryPresetFilters;
   view: QueryPresetViewConfig;
 }
 

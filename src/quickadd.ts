@@ -6,6 +6,7 @@ import { todayISO, addDays, isValidISO, fromISO } from "./dates";
 import { isMobileMode } from "./platform";
 import { extractMarkdownTags, stripMarkdownTags } from "./tags";
 import type { TaskCenterSettings } from "./types";
+import { collectAreas } from "./saved-views";
 
 // US-167-3: prefill chips. Token strings must match parseQuickAdd's
 // existing recognizers (resolveRelativeDate / markdown tag parser). Tag chips come from
@@ -304,12 +305,15 @@ function contentErr(e: unknown): string {
 function savedViewTags(settings?: TaskCenterSettings): string[] {
   if (!settings) return [];
   const out: string[] = [];
+  // US-109z2: tags live on each area's `when` now (no tab-level filter).
   for (const view of settings.queryPresets) {
-    const tags = view.filters.tags;
-    if (Array.isArray(tags)) {
-      for (const t of tags) out.push(t);
-    } else if (typeof tags === "string" && tags) {
-      out.push(tags);
+    for (const area of collectAreas(view.view.layout)) {
+      const tags = (area as { when?: { tags?: string[] | string } }).when?.tags;
+      if (Array.isArray(tags)) {
+        for (const t of tags) out.push(t);
+      } else if (typeof tags === "string" && tags) {
+        out.push(tags);
+      }
     }
   }
   return out;
