@@ -229,10 +229,11 @@ const EN = {
   "meta.est": "est {dur}",
   "meta.act": "act {dur}",
 
-  // task #43: mobile long-press action sheet (view.ts:openCardActionSheet).
-  // `sheet.scheduleAt` formats a single ⏳ button with an explicit ISO date;
-  // the date is opaque to the translator (no language-specific reformatting)
-  // so EN and ZH share the literal template.
+  // Mobile task sheet labels (view.ts:openMobileTaskDetailSheet — the single
+  // grouped sheet that both tap and long-press now open). `sheet.scheduleAt`
+  // formats a ⏳ button with an explicit ISO date; the date is opaque to the
+  // translator (no language-specific reformatting) so EN and ZH share the
+  // literal template.
   "sheet.markUndone": "↩ Mark undone",
   "sheet.done": "✓ Done",
   "sheet.scheduleAt": "⏳ {date}",

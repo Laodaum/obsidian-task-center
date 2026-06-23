@@ -31,6 +31,8 @@ import { animateOut } from "./anim";
 import { TabDwellTracker } from "./view/dnd";
 import { UndoStack, UndoEntry, UndoOp } from "./view/undo";
 import { BottomSheet } from "./view/bottom-sheet";
+import { openMobileDatePicker, openMobileTagEditor, type TagEditResult } from "./view/mobile-task-sheet";
+import { WEEKDAY_KEYS, weekdayLabel } from "./weekday";
 import { attachCardGestures, attachLongPress } from "./view/touch";
 import { shouldCloseFilterPopoverOnPointerDown, isClickInsideFilterControls } from "./view/filter-popover";
 import { isMobileMode } from "./platform";
@@ -115,29 +117,9 @@ import type TaskCenterPlugin from "./main";
 const PRIMARY_TIME_FIELD: SavedViewTimeField = "scheduled";
 const SECONDARY_TIME_FIELDS: SavedViewTimeField[] = ["deadline", "completed", "created"];
 type FilterControlsRerender = () => void;
-type TagEditResult = {
-  add: string[];
-  remove: string[];
-};
-
 // `UndoOp` and `UndoEntry` re-exported from `./view/undo` (the canonical
 // definitions). Local re-export so existing usage in this file compiles.
 export type { UndoOp, UndoEntry };
-
-const WEEKDAY_KEYS = [
-  "weekday.0",
-  "weekday.1",
-  "weekday.2",
-  "weekday.3",
-  "weekday.4",
-  "weekday.5",
-  "weekday.6",
-] as const;
-
-function weekdayLabel(dow: number): string {
-  const label = tr(WEEKDAY_KEYS[dow]);
-  return getLocale() === "zh" ? `周${label}` : label;
-}
 
 function normalizeFilterTag(value: string): string {
   const trimmed = value.trim();
@@ -150,26 +132,6 @@ function parseFilterTags(value: string): string[] {
   const out: string[] = [];
   for (const part of value.split(",")) {
     const tag = normalizeFilterTag(part);
-    if (!tag || seen.has(tag)) continue;
-    seen.add(tag);
-    out.push(tag);
-  }
-  return out;
-}
-
-function normalizeEditorTag(value: string): string | null {
-  const trimmed = value.trim().replace(/^#+/, "");
-  if (!trimmed) return null;
-  const token = trimmed.split(/[\s,，]+/)[0]?.trim();
-  if (!token) return null;
-  return `#${token}`;
-}
-
-function parseEditorTags(value: string): string[] {
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const part of value.split(/[\s,，]+/)) {
-    const tag = normalizeEditorTag(part);
     if (!tag || seen.has(tag)) continue;
     seen.add(tag);
     out.push(tag);
@@ -3021,77 +2983,6 @@ export class TaskCenterView extends ItemView {
    * into a single thumb-reachable surface. Buttons call the same `api.*`
    * methods as the desktop UI; rendered as a flat list of large tap targets.
    */
-  private openCardActionSheet(t: EffectiveTask): void {
-    const today = todayISO();
-    const tomorrow = addDays(today, 1);
-    let sheet: BottomSheet | null = null;
-    const run = async (label: string, op: () => Promise<unknown>) => {
-      sheet?.close();
-      try {
-        await op();
-      } catch (err) {
-        new Notice(tr("notice.error", { msg: (err as Error).message }), 4000);
-      }
-      this.scheduleRefresh();
-      void label; // for future telemetry; intentional no-op
-    };
-
-    sheet = new BottomSheet(this.app, {
-      title: t.title,
-      populate: (el) => {
-        // Source location — quick orientation only. Editing source context
-        // now goes through the US-168 single-click source edit shell.
-        const source = el.createDiv({ cls: "bt-sheet-source" });
-        source.setText(`${t.path}:L${t.line + 1}`);
-
-        const actions = el.createDiv({ cls: "bt-sheet-actions" });
-
-        const btn = (text: string, action: () => Promise<unknown>) => {
-          const b = actions.createEl("button", {
-            cls: "bt-sheet-action",
-            text,
-          });
-          b.addEventListener("click", () => {
-            void run(text, async () => action());
-          });
-        };
-
-        // task #43: route every label in the long-press action sheet
-        // through tr() so a Chinese session sees "完成 / 取消完成 / 放弃"
-        // etc. instead of the raw EN literals. The two
-        // ⏳ <date> entries keep the date verbatim — the i18n template
-        // wraps it without reformatting (locale-stable per US-411).
-        // UX-mobile §8.1: action sheet includes done, schedule today/tomorrow,
-        // custom date, clear schedule, nest, edit tag, drop.
-        btn(
-          t.effectiveStatus === "done" ? tr("sheet.markUndone") : tr("sheet.done"),
-          () => (t.effectiveStatus === "done" ? this.api.undone(t.id) : this.api.done(t.id)),
-        );
-        btn(tr("sheet.scheduleAt", { date: today }), () => this.api.schedule(t.id, today));
-        btn(tr("sheet.scheduleAt", { date: tomorrow }), () => this.api.schedule(t.id, tomorrow));
-        btn(tr("sheet.scheduleCustom"), async () => {
-          // UX-mobile §8.2: 改期 opens a date picker with quick presets + calendar
-          const date = await this.openDatePicker();
-          if (date !== null) await this.api.schedule(t.id, date);
-        });
-        btn(tr("sheet.scheduleClear"), () => this.api.schedule(t.id, null));
-        btn(tr("sheet.nest"), async () => {
-          // UX-mobile §8.3: nest opens a parent picker bottom sheet
-          const parentId = await this.openParentPickerForTask(t);
-          if (parentId !== null) await this.nestFromMobile(t, parentId);
-        });
-        btn(tr("sheet.editTag"), async () => {
-          // UX-mobile §8.1: edit tag opens a tag editor
-          const edit = await this.openTagEditorForTask(t);
-          if (edit !== null) await this.applyTagEditResult(t, edit);
-        });
-        btn(tr("sheet.editSource"), () => this.openSourceEditShell(t));
-        btn(tr("sheet.drop"), () => this.api.drop(t.id));
-      },
-    });
-    sheet.open();
-  }
-
   /**
    * Mobile default card tap: task details first, source Markdown only by
    * explicit action. This keeps the touch path small while still preserving
@@ -3110,7 +3001,10 @@ export class TaskCenterView extends ItemView {
     };
 
     const scheduleWithPicker = async () => {
-      const date = await this.openDatePicker(t.effectiveScheduled ?? todayISO());
+      const date = await openMobileDatePicker(this.app, {
+        initialISO: t.effectiveScheduled ?? todayISO(),
+        weekStartsOn: this.plugin.settings.weekStartsOn,
+      });
       if (date !== null) await this.api.schedule(t.id, date);
     };
 
@@ -3156,7 +3050,14 @@ export class TaskCenterView extends ItemView {
           btn.addEventListener("click", () => { void run(fn); });
         };
         secondaryAction("tag", tr("sheet.editTag"), async () => {
-          const edit = await this.openTagEditorForTask(t);
+          const initialTags = taskDisplayTags(t.tags);
+          const initialSet = new Set(initialTags);
+          const suggestions = taskDisplayTags(
+            this.getEffectiveTasks().flatMap((task) => taskDisplayTags(task.tags)),
+          )
+            .filter((tag) => !initialSet.has(tag))
+            .slice(0, 16);
+          const edit = await openMobileTagEditor(this.app, { initialTags, suggestions });
           if (edit !== null) await this.applyTagEditResult(t, edit);
         });
         secondaryAction("nest", tr("sheet.nest"), async () => {
@@ -3167,102 +3068,6 @@ export class TaskCenterView extends ItemView {
       },
     });
     sheet.open();
-  }
-
-  /**
-   * Mobile date picker: no typed YYYY-MM-DD input. Users pick from quick
-   * dates or a touch calendar; persistence still writes ISO dates.
-   */
-  private openDatePicker(initialISO: string = todayISO()): Promise<string | null> {
-    return new Promise((resolve) => {
-      let settled = false;
-      let anchor = startOfMonth(initialISO);
-      let body: HTMLElement;
-      let sheet: BottomSheet | null = null;
-      const finish = (iso: string | null) => {
-        settled = true;
-        resolve(iso);
-        sheet?.close();
-      };
-      const render = () => {
-        body.empty();
-        const quick = body.createDiv({ cls: "bt-mobile-date-quick" });
-        const today = todayISO();
-        const quickDates = [
-          today,
-          addDays(today, 1),
-          addDays(today, 2),
-          addDays(today, 3),
-          addDays(today, 4),
-          addDays(today, 5),
-          addDays(today, 6),
-        ];
-        for (const iso of quickDates) {
-          const d = fromISO(iso);
-          const label = iso === today
-            ? tr("savedViews.dateToday")
-            : iso === addDays(today, 1)
-              ? tr("savedViews.dateTomorrow")
-              : `${weekdayLabel(d.getDay())} ${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-          const btn = quick.createEl("button", { cls: "bt-mobile-date-quick-btn", text: label });
-          btn.dataset.dateChoice = iso;
-          if (iso === initialISO) btn.addClass("active");
-          btn.addEventListener("click", () => finish(iso));
-        }
-
-        const calendar = body.createDiv({ cls: "bt-mobile-date-calendar" });
-        const nav = calendar.createDiv({ cls: "bt-mobile-date-calendar-nav" });
-        const prev = nav.createEl("button", { text: "‹", cls: "bt-date-month-nav" });
-        nav.createSpan({ text: this.dateCalendarMonthLabelFor(anchor), cls: "bt-date-month-label" });
-        const next = nav.createEl("button", { text: "›", cls: "bt-date-month-nav" });
-        prev.addEventListener("click", () => {
-          anchor = startOfMonth(shiftMonth(anchor, -1));
-          render();
-        });
-        next.addEventListener("click", () => {
-          anchor = startOfMonth(shiftMonth(anchor, 1));
-          render();
-        });
-
-        const weekdays = calendar.createDiv({ cls: "bt-date-calendar-weekdays" });
-        const weekStart = this.plugin.settings.weekStartsOn;
-        for (let i = 0; i < 7; i++) {
-          const day = (weekStart + i) % 7;
-          weekdays.createSpan({ text: tr(WEEKDAY_KEYS[day]), cls: "bt-date-calendar-weekday" });
-        }
-
-        const monthStart = startOfMonth(anchor);
-        const gridStart = startOfWeek(monthStart, weekStart);
-        const grid = calendar.createDiv({ cls: "bt-date-calendar-grid" });
-        for (let i = 0; i < 42; i++) {
-          const iso = addDays(gridStart, i);
-          const d = fromISO(iso);
-          const cell = grid.createEl("button", { text: String(d.getDate()), cls: "bt-date-calendar-day" });
-          cell.dataset.dateChoice = iso;
-          if (startOfMonth(iso) !== monthStart) cell.addClass("other-month");
-          if (iso === today) cell.addClass("today");
-          if (iso === initialISO) cell.addClass("active");
-          cell.addEventListener("click", () => finish(iso));
-        }
-      };
-
-      sheet = new BottomSheet(this.app, {
-        title: tr("sheet.scheduleCustom"),
-        onClose: () => {
-          if (!settled) resolve(null);
-        },
-        populate: (el) => {
-          body = el.createDiv({ cls: "bt-mobile-date-sheet" });
-          render();
-        },
-      });
-      sheet.open();
-    });
-  }
-
-  private dateCalendarMonthLabelFor(anchorISO: string): string {
-    const d = fromISO(anchorISO);
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}`;
   }
 
   /**
@@ -3507,146 +3312,6 @@ export class TaskCenterView extends ItemView {
   private async applyTagEditResult(t: EffectiveTask, edit: TagEditResult): Promise<void> {
     for (const tag of edit.remove) await this.api.tag(t.id, tag, true);
     for (const tag of edit.add) await this.api.tag(t.id, tag);
-  }
-
-  /**
-   * Mobile tag management sheet. It edits the tag set as a diff and lets
-   * writer.ts keep Markdown mutation byte-local to the task line.
-   */
-  private openTagEditorForTask(t: EffectiveTask): Promise<TagEditResult | null> {
-    return new Promise((resolve) => {
-      const initialTags = taskDisplayTags(t.tags);
-      const initialSet = new Set(initialTags);
-      const current = new Set(initialTags);
-      const suggestions = taskDisplayTags(
-        this.getEffectiveTasks().flatMap((task) => taskDisplayTags(task.tags)),
-      )
-        .filter((tag) => !initialSet.has(tag))
-        .slice(0, 16);
-      let sheet: BottomSheet | null = null;
-      let settled = false;
-      const finish = (result: TagEditResult | null) => {
-        if (settled) return;
-        settled = true;
-        sheet?.close();
-        resolve(result);
-      };
-
-      sheet = new BottomSheet(this.app, {
-        title: tr("sheet.editTag"),
-        onClose: () => finish(null),
-        populate: (el) => {
-          const root = el.createDiv({ cls: "bt-mobile-tag-sheet" });
-          const currentSection = root.createDiv({ cls: "bt-tag-editor-section" });
-          currentSection.createDiv({ cls: "bt-tag-editor-label", text: tr("sheet.editTagCurrent") });
-          const currentList = currentSection.createDiv({ cls: "bt-tag-chip-row" });
-
-          const inputSection = root.createDiv({ cls: "bt-tag-editor-section" });
-          inputSection.createDiv({ cls: "bt-tag-editor-label", text: tr("sheet.editTagAdd") });
-          const inputRow = inputSection.createDiv({ cls: "bt-tag-editor-input-row" });
-          const input = el.createEl("input", {
-            type: "text",
-            placeholder: "#tag",
-            cls: "bt-tag-search bt-tag-editor-input",
-          });
-          inputRow.appendChild(input);
-          const addBtn = inputRow.createEl("button", {
-            cls: "bt-tag-editor-add",
-            text: tr("sheet.editTagAddButton"),
-          });
-
-          const suggestionSection = root.createDiv({ cls: "bt-tag-editor-section" });
-          suggestionSection.createDiv({ cls: "bt-tag-editor-label", text: tr("sheet.editTagSuggestions") });
-          const suggestionList = suggestionSection.createDiv({ cls: "bt-tag-chip-row" });
-
-          const footer = root.createDiv({ cls: "bt-tag-editor-footer" });
-          const cancel = footer.createEl("button", {
-            cls: "bt-tag-editor-cancel",
-            text: tr("sheet.cancel"),
-          });
-          const save = footer.createEl("button", {
-            cls: "bt-tag-editor-save",
-            text: tr("sheet.save"),
-          });
-
-          const render = () => {
-            currentList.empty();
-            const currentTags = Array.from(current);
-            if (currentTags.length === 0) {
-              currentList.createDiv({ cls: "bt-tag-editor-empty", text: tr("sheet.editTagEmpty") });
-            }
-            for (const tag of currentTags) {
-              const chip = currentList.createEl("button", {
-                cls: "bt-tag-editor-chip bt-tag-editor-chip-active",
-              });
-              chip.dataset.tagChip = tag;
-              chip.setAttr("aria-label", tr("sheet.editTagRemove", { tag }));
-              chip.createSpan({ text: tag });
-              chip.createSpan({ cls: "bt-tag-editor-chip-remove", text: "×" });
-              chip.addEventListener("click", () => {
-                current.delete(tag);
-                render();
-              });
-            }
-
-            suggestionList.empty();
-            const available = suggestions.filter((tag) => !current.has(tag));
-            if (available.length === 0) {
-              suggestionList.createDiv({ cls: "bt-tag-editor-empty", text: tr("sheet.editTagNoSuggestions") });
-            }
-            for (const tag of available) {
-              const chip = suggestionList.createEl("button", {
-                cls: "bt-tag-editor-chip",
-                text: tag,
-              });
-              chip.dataset.tagSuggestion = tag;
-              chip.addEventListener("click", () => {
-                current.add(tag);
-                render();
-              });
-            }
-          };
-
-          const addInputTags = () => {
-            const tags = parseEditorTags(input.value);
-            if (tags.length === 0) return;
-            for (const tag of tags) current.add(tag);
-            input.value = "";
-            render();
-            input.focus();
-          };
-
-          addBtn.addEventListener("click", addInputTags);
-
-          input.addEventListener("keydown", (e) => {
-            if (e.key === "Enter" && !e.isComposing) {
-              e.preventDefault();
-              addInputTags();
-            } else if (e.key === "Escape") {
-              finish(null);
-            }
-          });
-
-          cancel.addEventListener("click", () => finish(null));
-          save.addEventListener("click", () => {
-            const next = new Set(current);
-            const add = Array.from(next).filter((tag) => !initialSet.has(tag));
-            const remove = Array.from(initialSet).filter((tag) => !next.has(tag));
-            finish({ add, remove });
-          });
-
-          render();
-          window.setTimeout(() => input.focus(), 100);
-
-          sheet!.modalEl.addEventListener("click", (e) => {
-            if (e.target === sheet!.modalEl) {
-              finish(null);
-            }
-          });
-        },
-      });
-      sheet.open();
-    });
   }
 
   // US-123: bottom abandon target — dragging a card here marks it
@@ -4377,7 +4042,9 @@ export class TaskCenterView extends ItemView {
     if (isMobileMode()) {
       // Unified mobile gesture controller (UX-mobile §13 #6): long-press,
       // scroll cancellation, and swipe share one state machine.
-      //   US-506: hold N ms still → openCardActionSheet (action menu)
+      //   US-506: hold N ms still → openMobileTaskDetailSheet (same grouped
+      //           sheet a tap opens; long-press is just a second way in, so
+      //           there is no cryptic flat duplicate action menu anymore).
       //   US-507: no mobile drag/drop; movement routes to scroll/swipe.
       //   US-508: swipe ≥ 50% left → done; ≥ 50% right → drop. Visual
       //           feedback appears only after crossing the half-card threshold.
@@ -4388,7 +4055,7 @@ export class TaskCenterView extends ItemView {
         longPressMs: settings.mobileLongPressMs,
         moveThresholdPx: 4,
         swipeThresholdRatio: 0.5,
-        onLongPress: () => this.openCardActionSheet(t),
+        onLongPress: () => this.openMobileTaskDetailSheet(t),
         onSwipeProgress: (el, direction, progress) => {
           if (direction === null || progress < 1) {
             delete el.dataset.swipeReady;
