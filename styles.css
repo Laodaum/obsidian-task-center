@@ -4519,22 +4519,34 @@
    render the editor inside .task-center-bottom-sheet).
    ────────────────────────────────────────────────────────────────────────── */
 
-/* Sections become lightly-carded groups instead of flat stacks, so 基础集 /
-   布局 / 保存与管理 / DSL read as distinct blocks. */
+/* User feedback: no cards — flat sections with consistent vertical rhythm, the
+   same on the Tab panel and the Area panel. Sections are separated by spacing
+   (the sheet's flex gap) + a faint top divider, not boxes. */
 .task-center-bottom-sheet .bt-query-controls-sheet .bt-query-editor-section,
 .task-center-bottom-sheet .bt-mobile-query-sheet .bt-query-editor-section {
   gap: 10px;
-  padding: 12px 14px;
-  border-radius: var(--radius-m);
-  background: var(--background-secondary);
-  border: 1px solid var(--background-modifier-border);
-}
-/* The area-filter section inside the Area panel keeps its own popover reset,
-   so don't double-card it. */
-.task-center-bottom-sheet .bt-query-editor-panel > .bt-query-editor-section {
+  padding: 0;
   background: transparent;
   border: none;
-  padding: 4px 0 0;
+}
+.task-center-bottom-sheet .bt-query-editor-panel > .bt-query-editor-section {
+  padding: 0;
+}
+
+/* Top toolbar row (Tab panel): tab-level actions as a compact flat row with a
+   divider below — like the board toolbar, not a card. */
+.task-center-bottom-sheet .bt-query-editor-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-bottom: 12px;
+  margin-bottom: 2px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+/* Root-level add-area button under the layout tree. */
+.task-center-bottom-sheet .bt-layout-add--root {
+  margin-top: 8px;
 }
 
 /* ── Breadcrumb (Area panel header) ── */

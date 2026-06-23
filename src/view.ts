@@ -2735,6 +2735,16 @@ export class TaskCenterView extends ItemView {
   // save/manage, DSL. No single area's when / title / type (those are the Area
   // panel). Sections stack vertically inside the scrollable sheet.
   private renderTabEditor(parent: HTMLElement, rerenderControls?: FilterControlsRerender): void {
+    // ── Top toolbar (US-109p10): tab-level actions sit at the top as a compact
+    // toolbar row (no card, no verbose blurb) — mirrors the board toolbar. ──
+    const toolbar = parent.createDiv({ cls: "bt-query-editor-toolbar" });
+    toolbar.dataset.queryEditorToolbar = "true";
+    this.renderSavedViewsActionControls(toolbar, rerenderControls, {
+      includeSaveAs: true,
+      includeDsl: false,
+      includeManage: true,
+    });
+
     // ── View name (editable inline; US-109n1) ─────────────
     const nameSection = parent.createDiv({ cls: "bt-query-editor-section" });
     nameSection.dataset.areaTitleSection = "true";
@@ -2743,10 +2753,6 @@ export class TaskCenterView extends ItemView {
     nameInput.dataset.viewNameInput = "true";
     nameInput.value = this.activeSavedView().name;
     nameInput.addEventListener("change", () => this.setActiveTabName(nameInput.value));
-
-    // US-109z2: no tab-level base filter anymore — all filtering is per-area
-    // (each area's 编辑区域 → 过滤条件). The Tab panel is just name + layout +
-    // manage + DSL.
 
     // ── Layout tree (US-109p11) ───────────────────────────
     const layoutSection = parent.createDiv({ cls: "bt-query-editor-section" });
@@ -2762,19 +2768,16 @@ export class TaskCenterView extends ItemView {
     });
     const tree = layoutSection.createDiv({ cls: "bt-layout-tree" });
     this.renderLayoutTreeNode(tree, layout, [], { n: 0 }, rerenderControls);
-
-    // ── Save & manage ─────────────────────────────────────
-    const actionsSection = parent.createDiv({ cls: "bt-query-editor-section" });
-    actionsSection.createDiv({ cls: "bt-query-editor-section-title", text: tr("savedViews.queryEditorActions") });
-    actionsSection.createDiv({ cls: "bt-query-editor-section-note", text: tr("savedViews.queryEditorActionsNote") });
-    const actions = actionsSection.createDiv({ cls: "bt-saved-view-actions" });
-    this.renderSavedViewsActionControls(actions, rerenderControls, {
-      includeSaveAs: true,
-      includeDsl: false,
-      includeManage: true,
+    // Section-level add-area (always present, incl. single bare-area roots that
+    // have no enclosing stack frame). Appends to the root container.
+    const addArea = layoutSection.createEl("button", {
+      cls: "bt-layout-add bt-layout-add--root",
+      text: `＋ ${tr("savedViews.layoutAddArea")}`,
     });
+    addArea.dataset.action = "add-area-root";
+    addArea.addEventListener("click", (e) => this.openAddAreaMenu(e, [], rerenderControls));
 
-    // ── DSL (whole preset) — renderDslTab makes its own section card ──
+    // ── DSL (whole preset) ────────────────────────────────
     this.renderDslTab(parent, rerenderControls);
   }
 
@@ -2929,8 +2932,13 @@ export class TaskCenterView extends ItemView {
       const children = frame.createDiv({ cls: "bt-layout-stack-children" });
       node.children.forEach((child, i) =>
         this.renderLayoutTreeNode(children, child, [...path, i], counter, rerenderControls));
-      const addBtn = frame.createEl("button", { cls: "bt-layout-add", text: `＋ ${tr("savedViews.layoutAddArea")}` });
-      addBtn.addEventListener("click", (e) => this.openAddAreaMenu(e, path, rerenderControls));
+      // Per-stack add only for NESTED containers; the root container's add is
+      // the section-level button in renderTabEditor (so single bare-area roots
+      // get one too).
+      if (path.length > 0) {
+        const addBtn = frame.createEl("button", { cls: "bt-layout-add", text: `＋ ${tr("savedViews.layoutAddArea")}` });
+        addBtn.addEventListener("click", (e) => this.openAddAreaMenu(e, path, rerenderControls));
+      }
       return;
     }
     // Area leaf row.
