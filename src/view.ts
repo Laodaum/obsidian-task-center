@@ -1441,53 +1441,6 @@ export class TaskCenterView extends ItemView {
    * VAL-GUI-010: Render a readable summary of current filter conditions.
    * Example: "tag:#alpha,#beta · 排期:本周 · 状态:TODO · view:周"
    */
-  private renderFilterSummary(parent: HTMLElement): void {
-    const summary = parent.createDiv({ cls: "bt-filter-summary" });
-    const parts: string[] = [];
-
-    // Search
-    if (this.state.filter.trim()) {
-      parts.push(`🔍 ${this.state.filter.trim()}`);
-    }
-    // Tags
-    const selectedTags = parseFilterTags(this.state.savedViewTag);
-    if (selectedTags.length > 0) {
-      const first = selectedTags[0];
-      const more = selectedTags.length > 1 ? `+${selectedTags.length - 1}` : "";
-      parts.push(`${first}${more}`);
-    }
-    // Scheduled time
-    const scheduledVal = this.state.savedViewTime["scheduled"]?.trim();
-    if (scheduledVal) {
-      parts.push(`${tr("savedViews.timeScheduled")}:${this.timeFilterLabel("scheduled", scheduledVal)}`);
-    }
-    // Status
-    const status = normalizeSavedViewStatus(this.state.savedViewStatus);
-    if (status !== "all") {
-      parts.push(tr("savedViews.statusAll") + ":" + status.join(","));
-    }
-    // More time fields
-    const activeMoreFields = ["deadline", "completed", "created"] as const;
-    for (const field of activeMoreFields) {
-      const val = this.state.savedViewTime[field]?.trim();
-      if (val) {
-        parts.push(`${this.timeFieldLabel(field)}:${this.timeFilterLabel(field, val)}`);
-      }
-    }
-    // View type — 主内容 area 类型
-    const active = this.activeSavedView();
-    const primary = active.view ? this.primaryAreaType(active.view) : "list";
-    if (primary !== "list") {
-      parts.push(primary);
-    }
-
-    if (parts.length === 0) {
-      summary.createSpan({ text: tr("savedViews.emptyCondition"), cls: "bt-filter-summary-text bt-filter-summary-empty" });
-    } else {
-      summary.createSpan({ text: parts.join(" · "), cls: "bt-filter-summary-text" });
-    }
-  }
-
   private renderSavedViewsCompactBar(parent: HTMLElement) {
     const wrap = parent.createDiv({ cls: "bt-saved-views" });
     wrap.dataset.savedViews = "true";
@@ -2702,7 +2655,6 @@ export class TaskCenterView extends ItemView {
 
     const intro = parent.createDiv({ cls: "bt-query-editor-intro" });
     intro.createDiv({ cls: "bt-query-editor-current", text: this.activeSavedView().name });
-    this.renderFilterSummary(intro);
 
     // ── Tab strip ────────────────────────────────────────
     const tabs: Array<{ key: QueryEditorTab; label: string }> = [
@@ -3136,14 +3088,16 @@ export class TaskCenterView extends ItemView {
   // is no touch drop target (US-503 / US-507).
   // see USER_STORIES.md
   private renderWeek(parent: HTMLElement, area: WeekAreaConfig, areaIndex: number) {
-    // US-109p9: shared area head (title + 编辑 entry), same component as list/grid.
+    // US-109p9: shared area head (title + 日期导航 + 编辑 entry) — one row, same
+    // component as list/grid. §3.0: desktop owns the range nav inside this head;
+    // mobile keeps the nav in the toolbar's first row (§6.2), so head has none.
     const rawTitle = this.localizeBuiltinTitle(area.id, area.title);
-    this.renderAreaHead(parent, areaIndex, area, { title: rawTitle, isSummaryArea: false });
-    // §3.0: desktop week component owns its own range nav (mobile keeps it in
-    // the toolbar's first row per §6.2, so it is rendered there instead).
-    if (this.contentEl.dataset.mobileLayout !== "true") {
-      this.renderRangeNav(parent.createDiv({ cls: "bt-area-nav" }));
-    }
+    const desktop = this.contentEl.dataset.mobileLayout !== "true";
+    this.renderAreaHead(parent, areaIndex, area, {
+      title: rawTitle,
+      isSummaryArea: false,
+      renderNav: desktop ? (host) => this.renderRangeNav(host) : undefined,
+    });
     const today = todayISO();
     const weekStart = startOfWeek(this.state.anchorISO, this.plugin.settings.weekStartsOn);
     const days: string[] = [];
@@ -3311,14 +3265,14 @@ export class TaskCenterView extends ItemView {
   // the day's bottom sheet instead (US-504 / US-507).
   // see USER_STORIES.md
   private renderMonth(parent: HTMLElement, area: MonthAreaConfig, areaIndex: number) {
-    // US-109p9: shared area head (title + 编辑 entry), same component as list/grid.
+    // US-109p9: shared area head (title + 日期导航 + 编辑 entry) — one row.
     const rawTitle = this.localizeBuiltinTitle(area.id, area.title);
-    this.renderAreaHead(parent, areaIndex, area, { title: rawTitle, isSummaryArea: false });
-    // §3.0: desktop month component owns its own range nav (mobile keeps it in
-    // the toolbar's first row per §6.2, so it is rendered there instead).
-    if (this.contentEl.dataset.mobileLayout !== "true") {
-      this.renderRangeNav(parent.createDiv({ cls: "bt-area-nav" }));
-    }
+    const desktop = this.contentEl.dataset.mobileLayout !== "true";
+    this.renderAreaHead(parent, areaIndex, area, {
+      title: rawTitle,
+      isSummaryArea: false,
+      renderNav: desktop ? (host) => this.renderRangeNav(host) : undefined,
+    });
     const today = todayISO();
     const weekStart = this.plugin.settings.weekStartsOn;
     const first = startOfMonth(this.state.anchorISO);
@@ -4096,6 +4050,10 @@ export class TaskCenterView extends ItemView {
   // abandon drop zone.
   // see USER_STORIES.md
   private renderTrashZone(parent: HTMLElement) {
+    // US-109p9: drop zone has no query (no title / 编辑 entry), but reserves an
+    // equal-height empty head so it lines up with sibling areas that do.
+    parent.addClass("bt-has-head");
+    parent.createDiv({ cls: "bt-area-head bt-area-head--empty" });
     const trash = parent.createDiv({ cls: "bt-trash" });
     // e2e drop-zone selector: `[data-drop-zone="abandon"]`. Stable across the
     // visible icon / label / theme. Desktop-only; mobile abandon is handled
@@ -4429,12 +4387,17 @@ export class TaskCenterView extends ItemView {
     parent: HTMLElement,
     areaIndex: number,
     area: AreaConfig,
-    opts: { title: string; isSummaryArea: boolean },
+    opts: { title: string; isSummaryArea: boolean; renderNav?: (host: HTMLElement) => void },
   ): void {
     parent.addClass("bt-has-head");
     const head = parent.createDiv({ cls: "bt-area-head" });
     head.dataset.areaHead = String(areaIndex);
     if (opts.title) head.createSpan({ cls: "bt-area-head-title", text: opts.title });
+    // week/month 把日期导航（「功能」）放进同一行 head，不再单独占一行。
+    if (opts.renderNav) {
+      const nav = head.createDiv({ cls: "bt-area-head-nav" });
+      opts.renderNav(nav);
+    }
     const right = head.createDiv({ cls: "bt-area-head-right" });
     if (opts.isSummaryArea) this.renderSummaryChips(right, this.effectiveSavedView());
 

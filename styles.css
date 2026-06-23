@@ -1765,6 +1765,19 @@
   min-width: 0;
   margin-left: auto;
 }
+/* week/month 日期导航并入 head 同一行（「功能」段） */
+.task-center-view .bt-area-head-nav {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.task-center-view .bt-area-head-nav .bt-nav {
+  margin: 0;
+}
+/* 放弃区等没有标题/编辑入口的 area：留等高空 head 占位避免错位 */
+.task-center-view .bt-area-head--empty {
+  pointer-events: none;
+}
 .task-center-view .bt-area-edit {
   display: inline-flex;
   align-items: center;
