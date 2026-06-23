@@ -2456,12 +2456,16 @@ export class TaskCenterView extends ItemView {
     const empty = parent.createDiv({ cls: "bt-filter-empty" });
     empty.dataset.emptyState = "filters";
 
+    const icon = empty.createDiv({ cls: "bt-filter-empty-icon" });
+
     // Distinguish: is the vault completely empty or just filtered empty?
     const totalAll = this.tasks.length;
     if (totalAll === 0) {
+      setIcon(icon, "inbox");
       empty.createDiv({ text: tr("filters.emptyVault"), cls: "bt-filter-empty-title" });
       empty.createDiv({ text: tr("filters.emptyVaultHint"), cls: "bt-filter-empty-hint" });
     } else {
+      setIcon(icon, "search-x");
       empty.createDiv({ text: tr("filters.emptyFiltersTitle"), cls: "bt-filter-empty-title" });
       empty.createDiv({ text: tr("filters.emptyFiltersHint"), cls: "bt-filter-empty-hint" });
       const actions = empty.createDiv({ cls: "bt-filter-empty-actions" });

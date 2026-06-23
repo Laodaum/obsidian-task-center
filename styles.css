@@ -229,21 +229,24 @@
   font-size: 12px;
 }
 
-/* Enhanced empty states (VAL-GUI-010) */
+/* Enhanced empty states (VAL-GUI-010) — clean centered column, no banner */
 .bt-filter-empty-title {
-  font-size: 14px;
-  font-weight: 600;
+  font-size: var(--font-ui-medium);
+  font-weight: var(--font-semibold);
   color: var(--text-normal);
-  margin-bottom: 4px;
+  margin: 0;
 }
 .bt-filter-empty-hint {
-  font-size: 12px;
+  font-size: var(--font-ui-small);
   color: var(--text-muted);
-  margin-bottom: 8px;
+  margin: 0;
+  max-width: 320px;
 }
 .bt-filter-empty-actions {
   display: flex;
+  justify-content: center;
   gap: 8px;
+  margin-top: 6px;
 }
 
 .task-center-view .bt-toolbar {
@@ -1401,8 +1404,7 @@
 /* D6 selection baseline: soft accent mix + inset accent bar. This is the
    canonical "selected / current" treatment promoted to month cells below. */
 .task-center-view .bt-week-col.today {
-  background: color-mix(in srgb, var(--interactive-accent) 8%, var(--background-secondary));
-  box-shadow: inset 0 2px 0 var(--interactive-accent);
+  background: color-mix(in srgb, var(--interactive-accent) 12%, var(--background-secondary));
 }
 .task-center-view .bt-week-col.today .bt-week-dow,
 .task-center-view .bt-week-col.today .bt-week-date {
@@ -1472,8 +1474,7 @@
 /* D6: month cell "today" uses the same soft accent mix + inset accent bar as
    the week column baseline, replacing the old solid 2px outline. */
 .task-center-view .bt-month-cell.today {
-  background: color-mix(in srgb, var(--interactive-accent) 8%, var(--background-secondary));
-  box-shadow: inset 0 2px 0 var(--interactive-accent);
+  background: color-mix(in srgb, var(--interactive-accent) 12%, var(--background-secondary));
 }
 .task-center-view .bt-month-cell.today .bt-month-cell-date {
   color: var(--interactive-accent);
@@ -1932,27 +1933,42 @@
 }
 .task-center-view .bt-filter-empty {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  padding: 10px 12px;
-  margin: 0 0 8px;
-  border: 1px dashed var(--background-modifier-border);
-  border-radius: 7px;
+  text-align: center;
+  gap: 6px;
+  padding: 48px 24px;
+  margin: 0;
   color: var(--text-muted);
-  font-size: 12px;
+}
+.task-center-view .bt-filter-empty-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  margin-bottom: 6px;
+  border-radius: 50%;
+  color: var(--text-muted);
+  background: var(--background-modifier-hover);
+}
+.task-center-view .bt-filter-empty-icon .svg-icon {
+  width: 22px;
+  height: 22px;
 }
 .task-center-view .bt-filter-empty-clear {
-  min-height: 26px;
-  padding: 2px 8px;
+  min-height: 28px;
+  padding: 4px 14px;
   border: 1px solid var(--background-modifier-border);
-  border-radius: 6px;
+  border-radius: var(--radius-s);
   background: var(--background-secondary);
   color: var(--text-normal);
-  font-weight: 600;
+  font-weight: var(--font-semibold);
 }
 .task-center-view .bt-filter-empty-clear:hover {
   background: var(--background-modifier-hover);
+  border-color: var(--interactive-accent);
 }
 
 .task-center-view .bt-onboarding {
@@ -2400,8 +2416,7 @@
   /* D6: selected day uses the canonical soft-mix + inset accent treatment,
      matching today / week-col instead of a bespoke outline. */
   .task-center-view[data-mobile-layout="true"] .bt-month-cell.selected {
-    background: color-mix(in srgb, var(--interactive-accent) 8%, var(--background-secondary));
-    box-shadow: inset 0 2px 0 var(--interactive-accent);
+    background: color-mix(in srgb, var(--interactive-accent) 12%, var(--background-secondary));
   }
   .task-center-view[data-mobile-layout="true"] .bt-month-cell-head {
     flex-direction: column;

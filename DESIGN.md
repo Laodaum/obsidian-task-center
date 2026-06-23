@@ -114,22 +114,23 @@ background: color-mix(in srgb, var(--interactive-accent) 8%, var(--background-se
 | --- | --- |
 | 默认 | 容器表面色 + 1px token 边框 |
 | hover | 边框转 `var(--interactive-accent)`，可选 `transform: translateY(-1px)` |
-| 选中 / 当前 | **soft 混色背景 + `inset` accent 指示条**（沿用周视图 `.today` 的范式），不要整块实色 accent 填充 |
+| 选中 / 当前 | **soft 混色背景**（`color-mix(... accent 12% ...)`）即可，不要整块实色 accent 填充，也不要再叠加边框 / 指示条——背景色已足够区分 |
 | 焦点（键盘） | accent 描边（`box-shadow: 0 0 0 2px ...` 或 border-color），不要只靠浏览器默认 outline |
 | 拖拽中 | 全局加 `dragging-active`，有效落点边框转实线高亮（见 §5.7） |
 | 空 | 居中弱文字 + 可选示图，padding 24 |
 | 加载 | 居中弱文字，复用 `.bt-empty` / `.bt-loading` 容器 |
 | 错误 | `var(--text-error)` 文本 / `var(--background-modifier-error)` 底，**不用裸红** |
 
-"选中"的标准范式（推广到周列、月格、tab、option）：
+"选中 / 当前"的标准范式（推广到周列、月格等区块）：**只用背景混色**，不叠加边框或指示条。
 
 ```css
 .selected {
-  background: color-mix(in srgb, var(--interactive-accent) 8%, var(--background-secondary));
-  box-shadow: inset 0 2px 0 var(--interactive-accent); /* 或 inset 边指示条 */
+  background: color-mix(in srgb, var(--interactive-accent) 12%, var(--background-secondary));
 }
 .selected .title { color: var(--interactive-accent); }
 ```
+
+例外：纯文字列表项（如任务卡 `.bt-card.selected`）背景混色偏弱时，可用**左侧** accent 竖条（`inset 2px 0 0`）辅助，但区块/格子（日列、月格）一律背景色，不加横条。
 
 ## 4. 与 Obsidian 兼容的硬约束
 
