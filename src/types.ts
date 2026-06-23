@@ -222,11 +222,16 @@ export interface GridAreaConfig extends AreaBase, ListLikeFields {
 
 export interface WeekAreaConfig extends AreaBase {
   type: "week";
+  // US-109z2: date areas carry their own `when` too, so filtering is always
+  // per-area (there is no tab-level base filter anymore). e.g. a week view that
+  // only shows todo tasks sets `when: { status: ["todo"] }`.
+  when?: QueryPresetFilters;
   firstDayOfWeek?: "monday" | "sunday";
 }
 
 export interface MonthAreaConfig extends AreaBase {
   type: "month";
+  when?: QueryPresetFilters;
   firstDayOfWeek?: "monday" | "sunday";
   density?: "compact" | "cards";
 }
@@ -269,6 +274,10 @@ export interface QueryPresetViewConfig {
   layout: LayoutNode; // 根节点：可以是 Stack，也可以直接是单个 area
 }
 
+// US-109z2 (in progress): moving toward NO tab-level filter — all filtering on
+// each area's `when` (list / grid / week / month, the last two gained `when`
+// above). `filters` is being phased out; kept for now so the data layer / GUI /
+// CLI / tests stay green until the teardown lands as one reviewable change.
 export interface QueryPreset {
   id: string;
   name: string;
