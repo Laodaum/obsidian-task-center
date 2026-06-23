@@ -1227,6 +1227,20 @@ export class TaskCenterView extends ItemView {
     next.dataset.action = "nav-next";
     const label = nav.createSpan({ cls: "bt-nav-label" });
     label.setText(this.navLabel());
+
+    // US-109w: week / month filter by the tab's base filters (no per-area
+    // `when`), so their filter edit entry opens the visual Query editor where
+    // filters + summary are edited together — surfaced right in the nav row.
+    const filterEntry = nav.createEl("button", { cls: "bt-area-filter-trigger bt-nav-filter" });
+    filterEntry.dataset.action = "edit-query-controls";
+    setIcon(filterEntry.createSpan({ cls: "bt-area-filter-icon" }), "list-filter");
+    const baseSummary = this.areaFilterSummary(this.effectiveSavedView().filters ?? {});
+    if (baseSummary) {
+      filterEntry.addClass("active");
+      filterEntry.createSpan({ text: baseSummary, cls: "bt-area-filter-summary" });
+    }
+    filterEntry.addEventListener("click", () => this.openQueryControlsSheet());
+
     prev.addEventListener("click", () => {
       this.state.anchorISO =
         this.state.tab === "week"
@@ -3941,7 +3955,8 @@ export class TaskCenterView extends ItemView {
   // 遍历 active view 的 layout：row / col 容器递归排列，叶子 area 派发到
   // 对应组件。没有 today / completed / unscheduled 专属渲染分支。
   private renderViewLayout(parent: HTMLElement): void {
-    const active = this.activeSavedView();
+    // Render from the draft-merged preset so per-area `when` edits take effect.
+    const active = this.effectiveSavedView();
     const layout: LayoutNode = active.view?.layout ?? { type: "list" };
     const root = parent.createDiv({ cls: "bt-view-root" });
     // Reset the DFS area counter so each rendered area's index lines up with
@@ -4094,7 +4109,7 @@ export class TaskCenterView extends ItemView {
     // gets a title fallback (the tab name) so the header is never a bare count.
     const isFirstContent = filterable && !this.summaryPlaced;
     const rawTitle = this.localizeBuiltinTitle(area.id, area.title);
-    const areaTitle = rawTitle || (isFirstContent ? this.activeSavedView().name : "");
+    const areaTitle = rawTitle || (isFirstContent ? this.effectiveSavedView().name : "");
     if (areaTitle || filterable) {
       parent.addClass("bt-has-head");
       const head = parent.createDiv({ cls: "bt-list-area-head" });
@@ -4103,7 +4118,7 @@ export class TaskCenterView extends ItemView {
       const headRight = head.createDiv({ cls: "bt-list-area-head-right" });
       if (isFirstContent) {
         this.summaryPlaced = true;
-        this.renderSummaryInto(headRight, this.activeSavedView());
+        this.renderSummaryInto(headRight, this.effectiveSavedView());
       }
       if (filterable) this.renderAreaFilter(headRight, areaIndex, area.when ?? {});
     }
@@ -5074,6 +5089,16 @@ export class TaskCenterView extends ItemView {
   private selectedSavedView(): QueryPreset | null {
     const view = this.plugin.settings.queryPresets.find((item) => item.id === this.state.savedViewId) ?? null;
     return view ? normalizeQueryPreset(view) : null;
+  }
+
+  // US-109x: the active preset MERGED with its unsaved draft (tabDrafts), so the
+  // rendered layout/summary reflect in-progress edits — notably per-area `when`
+  // set via the area filter popover. `activeSavedView()` returns only the saved
+  // preset; the board must render from this instead or filter edits do nothing.
+  private effectiveSavedView(): QueryPreset {
+    const active = this.activeSavedView();
+    const draft = this.tabDrafts.get(active.id);
+    return draft ? normalizeQueryPreset(draft) : active;
   }
 
   private persistCurrentDraft(): void {

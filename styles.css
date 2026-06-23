@@ -287,6 +287,9 @@
   align-items: center;
   gap: 4px;
 }
+.task-center-view .bt-nav-filter {
+  margin-left: auto;
+}
 /* §3.0: range nav rendered inside the week / month component (desktop). */
 .task-center-view .bt-area-nav {
   display: flex;
