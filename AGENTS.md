@@ -16,6 +16,19 @@
 4. 所有实现都要能回溯到用户故事，不做“感觉有用”的游离开发。
 5. commit message 使用中文 conventional：`<type>(<scope>): <description>`，其中 `type ∈ feat/fix/chore/upgrade/docs`。
 
+## 多 Agent 并行（重要）
+
+这个仓库经常有多个 agent **同时**在 `main` 上工作。分支历史会在你工作期间被别的 agent 推进（新提交、甚至 rebase/amend），你看到的 HEAD 随时可能已经不是你上次看到的那个。据此：
+
+1. **只在 `main` 上并行**：不开分支、不切分支。每个 agent 直接在 `main` 上提交自己的小步改动；并行靠"各自频繁提交"，不靠分支隔离。
+2. **绝不改写共享历史**：禁止 `git reset --hard`、`git rebase`、`git commit --amend`、`git push --force`、`git reset HEAD~` 等任何会移动/重写 `main` 历史的操作。这些会把别的 agent 刚提交的工作从分支上摘掉（即使能从 reflog 找回，也是事故）。
+3. **撤销自己的改动就手动改文件**：要回退你自己写的东西，直接用编辑器把那几处改回去，再正常提交一个新 commit。不要用 git 历史操作去"抹掉"。
+4. **不碰不是你写的东西**：工作树里出现你没动过的未提交改动（`git status` 里的 `M`/`??`），那是别的 agent 的在途工作——不要 `git add -A` 一把全提交、不要 `git checkout/restore` 覆盖、不要 reset。提交时只 `git add` 你自己明确改过的文件。
+5. **提交前先看清范围**：用 `git status` + `git diff` 确认你只提交了自己的改动；`git add -A` 在多 agent 环境里很危险，会卷入别人的在途文件。
+6. 如果确实需要动历史或清理工作树，先停下来问人，不要自行决定。
+
+> 教训：曾经为了撤销自己的一个提交用了 `git reset --hard`，连带把另一个 agent 刚加在其上的提交一起摘掉。正确做法是手动改回自己的文件 + 新提交，永远不动 `main` 历史。
+
 ## 项目命令
 
 - 开发：`pnpm dev`
