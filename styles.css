@@ -603,57 +603,6 @@
   font-style: italic;
 }
 
-/* 通用 summary 区：任何 view 顶部的指标条（取代 completed 专属统计面板）*/
-.task-center-view .bt-summary-bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  margin: 0 0 6px;
-}
-.task-center-view .bt-summary-chip {
-  display: inline-flex;
-  align-items: center;
-  padding: 2px 10px;
-  border-radius: 999px;
-  background: var(--background-secondary);
-  border: 1px solid var(--background-modifier-border);
-  font-size: var(--font-ui-smaller);
-  color: var(--text-muted);
-}
-.task-center-view .bt-summary-chip-text {
-  white-space: nowrap;
-}
-/* Summary edit affordance: ✎ when chips exist, "+ 统计" ghost when empty. */
-.task-center-view .bt-summary-edit {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  height: 22px;
-  padding: 0 8px;
-  border: 1px solid transparent;
-  border-radius: 999px;
-  background: transparent;
-  color: var(--text-muted);
-  font-size: var(--font-ui-smaller);
-  cursor: pointer;
-}
-.task-center-view .bt-summary-edit .svg-icon {
-  width: 13px;
-  height: 13px;
-}
-.task-center-view .bt-summary-edit:hover {
-  background: var(--background-modifier-hover);
-  color: var(--text-normal);
-}
-.task-center-view .bt-summary-edit--empty {
-  border-style: dashed;
-  border-color: var(--background-modifier-border);
-}
-.task-center-view .bt-summary-edit--empty:hover {
-  border-color: var(--interactive-accent);
-  color: var(--interactive-accent);
-}
 .task-center-view .bt-filter-popover-wrap {
   position: relative;
   display: inline-flex;
@@ -1697,12 +1646,6 @@
   align-items: center;
   gap: 8px;
   flex: 0 0 auto;
-  min-width: 0;
-}
-.task-center-view .bt-area-summary {
-  display: flex;
-  align-items: center;
-  gap: 6px;
   min-width: 0;
 }
 .task-center-view .bt-area-filter {
@@ -3217,96 +3160,6 @@
   line-height: 1.45;
 }
 
-/* Summary metric editor — each metric a clean card row, then an add form. */
-.task-center-bottom-sheet .bt-query-editor-summary-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.task-center-bottom-sheet .bt-query-editor-summary-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 8px 6px 12px;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: var(--radius-m);
-  background: var(--background-secondary);
-}
-.task-center-bottom-sheet .bt-query-editor-summary-type {
-  font-weight: var(--font-semibold);
-  color: var(--text-normal);
-}
-.task-center-bottom-sheet .bt-query-editor-summary-field-input {
-  min-width: 0;
-  flex: 1 1 auto;
-  height: 26px;
-  padding: 2px 8px;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: var(--radius-s);
-  background: var(--background-primary);
-  color: var(--text-normal);
-  font-size: var(--font-ui-smaller);
-}
-.task-center-bottom-sheet .bt-query-editor-summary-remove {
-  flex: 0 0 auto;
-  margin-left: auto;
-  padding: 3px 10px;
-  border: none;
-  border-radius: var(--radius-s);
-  background: transparent;
-  color: var(--text-muted);
-  font-size: var(--font-ui-smaller);
-  cursor: pointer;
-}
-.task-center-bottom-sheet .bt-query-editor-summary-remove:hover {
-  background: var(--background-modifier-error);
-  color: var(--text-error);
-}
-/* Add-metric form: type select + dynamic fields + add button on one line. */
-.task-center-bottom-sheet .bt-query-editor-summary-add-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  margin-top: 4px;
-  padding-top: 10px;
-  border-top: 1px solid var(--background-modifier-border);
-}
-.task-center-bottom-sheet .bt-query-editor-summary-type-select {
-  height: 28px;
-  padding: 2px 8px;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: var(--radius-s);
-  background: var(--background-secondary);
-  color: var(--text-normal);
-}
-.task-center-bottom-sheet .bt-query-editor-summary-fields {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  flex: 1 1 auto;
-  min-width: 0;
-}
-.task-center-bottom-sheet .bt-query-editor-summary-field-label {
-  color: var(--text-muted);
-  font-size: var(--font-ui-smaller);
-}
-.task-center-bottom-sheet .bt-query-editor-summary-add-btn {
-  flex: 0 0 auto;
-  margin-left: auto;
-  height: 28px;
-  padding: 0 14px;
-  border: none;
-  border-radius: var(--radius-s);
-  background: var(--interactive-accent);
-  color: var(--text-on-accent);
-  font-weight: var(--font-semibold);
-  cursor: pointer;
-}
-.task-center-bottom-sheet .bt-query-editor-summary-add-btn:hover {
-  background: var(--interactive-accent-hover);
-}
 .task-center-bottom-sheet .bt-query-controls-sheet .bt-saved-view-filters,
 .task-center-bottom-sheet .bt-query-controls-sheet .bt-saved-view-actions {
   display: flex;
@@ -3929,13 +3782,6 @@
 
 .task-center-bottom-sheet .bt-mobile-query-sheet .bt-query-editor-view-label {
   grid-column: 1 / -1;
-}
-
-.task-center-bottom-sheet .bt-mobile-query-sheet .bt-query-editor-summary-add-row,
-.task-center-bottom-sheet .bt-mobile-query-sheet .bt-query-editor-summary-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 8px;
 }
 
 .task-center-bottom-sheet .bt-mobile-query-sheet .tc-full-width-input {
