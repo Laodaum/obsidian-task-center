@@ -4069,10 +4069,23 @@
   background: color-mix(in srgb, var(--interactive-accent) 10%, var(--background-secondary));
 }
 
+/* US-109p10 / #10: on mobile the editor presents as a full PAGE, not a bottom
+   sheet — same shared render path (renderSheet), just a different shell via
+   responsive CSS. Fills the viewport; the breadcrumb gives in-editor back, the
+   Modal's close button (top-right) exits. */
+.task-center-bottom-sheet.task-center-query-sheet.modal {
+  align-items: stretch;
+}
 .task-center-bottom-sheet.task-center-query-sheet.modal .modal-content {
-  width: min(640px, 100%);
-  max-height: calc(100dvh - env(safe-area-inset-top, 0px) - 8px);
-  border-radius: 18px 18px 0 0;
+  width: 100%;
+  height: 100dvh;
+  max-height: 100dvh;
+  border-radius: 0;
+  padding-top: max(12px, env(safe-area-inset-top, 0px));
+}
+/* A page doesn't need the bottom-sheet drag handle. */
+.task-center-bottom-sheet.task-center-query-sheet .bt-sheet-handle {
+  display: none;
 }
 
 .task-center-bottom-sheet.task-center-parent-picker-sheet.modal .modal-content {
