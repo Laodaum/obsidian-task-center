@@ -1703,48 +1703,27 @@ export class TaskCenterView extends ItemView {
 
   private countForSavedView(view: QueryPreset): number {
     const normalized = normalizeQueryPreset(view);
+    // Badge = top-level cards the tab renders (US-105). The set is decided by
+    // the primary area's own `when` (via getSavedViewFilter) — no per-tab-name
+    // special cases. Date views (week/month) only render cards that fall in the
+    // current period, so the count is scoped to it; everything else is a plain
+    // top-level count of the filtered set. (The old `today`/`completed`/
+    // `unscheduled` branches were dead code — tabForSavedView only ever returns
+    // week/month/list.)
     const tab = this.tabForSavedView(normalized, "list");
     const filter = this.getSavedViewFilter(normalized);
-    const effectiveTasks = this.getEffectiveTasks();
+    const filtered = this.getEffectiveTasks().filter(filter);
     const today = todayISO();
-    if (tab === "today") {
-      const activeTodos = recomputeTopLevelInQuery(
-        effectiveTasks.filter(filter).filter((task) => task.effectiveStatus === "todo"),
-      );
-      const topLevelTodos = activeTodos.filter((task) => task.isTopLevelInQuery);
-      const overdueCount = topLevelTodos.filter((task) => task.effectiveDeadline && task.effectiveDeadline < today).length;
-      const todayScheduled = topLevelTodos.filter((task) => task.effectiveScheduled === today).length;
-      return overdueCount + todayScheduled;
-    }
-    if (tab === "week") {
-      const weekStart = startOfWeek(today, this.plugin.settings.weekStartsOn);
-      const weekEnd = addDays(weekStart, 6);
-      const weekTasks = effectiveTasks.filter(filter).filter((task) => {
+    if (tab === "week" || tab === "month") {
+      const start = tab === "week" ? startOfWeek(today, this.plugin.settings.weekStartsOn) : startOfMonth(today);
+      const end = tab === "week" ? addDays(start, 6) : endOfMonth(today);
+      const inRange = filtered.filter((task) => {
         const date = task.effectiveScheduled;
-        return !!date && date >= weekStart && date <= weekEnd;
+        return !!date && date >= start && date <= end;
       });
-      return countTopLevel(recomputeTopLevelInQuery(weekTasks));
+      return countTopLevel(recomputeTopLevelInQuery(inRange));
     }
-    if (tab === "month") {
-      const monthStart = startOfMonth(today);
-      const monthEnd = endOfMonth(today);
-      const monthTasks = effectiveTasks.filter(filter).filter((task) => {
-        const date = task.effectiveScheduled;
-        return !!date && date >= monthStart && date <= monthEnd;
-      });
-      return countTopLevel(recomputeTopLevelInQuery(monthTasks));
-    }
-    if (tab === "completed") {
-      const completedTasks = effectiveTasks.filter(filter).filter((task) => task.effectiveStatus === "done");
-      return countTopLevel(recomputeTopLevelInQuery(completedTasks));
-    }
-    if (tab === "unscheduled") {
-      const unscheduledTasks = effectiveTasks.filter(filter).filter(
-        (task) => task.effectiveStatus === "todo" && !task.effectiveScheduled,
-      );
-      return countTopLevel(recomputeTopLevelInQuery(unscheduledTasks));
-    }
-    return countTopLevel(recomputeTopLevelInQuery(effectiveTasks.filter(filter)));
+    return countTopLevel(recomputeTopLevelInQuery(filtered));
   }
 
   private openSavedViewMenu(event: MouseEvent, view: QueryPreset): void {
@@ -1795,17 +1774,18 @@ export class TaskCenterView extends ItemView {
 
   private openManageTabsSheet(): void {
     let body: HTMLElement;
+    let sheet: BottomSheet;
     const rerender = () => {
       this.render();
       if (!body) return;
       body.empty();
-      this.renderManageTabsSheet(body, rerender);
+      this.renderManageTabsSheet(body, rerender, () => sheet.close());
     };
-    const sheet = new BottomSheet(this.app, {
+    sheet = new BottomSheet(this.app, {
       title: tr("savedViews.manageTitle"),
       populate: (el) => {
         body = el.createDiv({ cls: "bt-manage-tabs-sheet" });
-        this.renderManageTabsSheet(body, rerender);
+        this.renderManageTabsSheet(body, rerender, () => sheet.close());
       },
     });
     sheet.open();
@@ -1815,7 +1795,7 @@ export class TaskCenterView extends ItemView {
     this.openManageTabsSheet();
   }
 
-  private renderManageTabsSheet(parent: HTMLElement, rerender: () => void): void {
+  private renderManageTabsSheet(parent: HTMLElement, rerender: () => void, closeSheet: () => void): void {
     const topActions = parent.createDiv({ cls: "bt-manage-tabs-actions" });
     const create = topActions.createEl("button", {
       text: tr("savedViews.create"),
@@ -1897,10 +1877,17 @@ export class TaskCenterView extends ItemView {
         void this.reorderQueryTab(draggedId, insertAt).then(rerender);
       });
 
+      // UX §2.3: 当前 tab 靠整行高亮 + 左侧 accent 竖条表达，不再用「当前」文字徽标。
+      if (this.isViewCurrentlyActive(view)) row.addClass("bt-manage-tab-row-active");
+
+      // 状态标记降噪：只保留「已隐藏」「预设」文字徽标。当前 tab 靠整行高亮表达；
+      // 「默认」「未保存」不在面板列表里展示（信息量低、看着杂），改由 ⋮ 菜单承载。
       const meta = main.createDiv({ cls: "bt-manage-tab-meta" });
-      for (const badge of this.savedViewBadges(view)) {
-        if (view.hidden && badge === tr("savedViews.currentBadge")) continue;
-        meta.createSpan({ cls: "bt-manage-tab-badge", text: badge });
+      if (view.hidden) {
+        meta.createSpan({ cls: "bt-manage-tab-badge", text: tr("savedViews.hiddenBadge") });
+      }
+      if (view.builtin) {
+        meta.createSpan({ cls: "bt-manage-tab-badge bt-manage-tab-badge-preset", text: tr("savedViews.presetBadge") });
       }
 
       const runRowAction = (handler: () => void | Promise<void>) =>
@@ -1908,25 +1895,11 @@ export class TaskCenterView extends ItemView {
           new Notice(tr("notice.error", { msg: error instanceof Error ? error.message : String(error) }), 4000),
         );
 
-      // DESIGN §5.0: row collapses the old 6-7 button wall — single click opens
-      // the tab, double-click the name renames, everything else lives in the
-      // row's kebab (⋮) menu. The click is delayed so a double-click on the name
-      // cancels the open instead of firing both.
-      let clickTimer: number | null = null;
+      // UX §2.3: 点击行 = 切到该 tab 并关闭面板（跳转语义）。单击即关闭，故面板内不再
+      // 支持双击重命名（第一击就关了面板，与之冲突）；重命名走行尾 kebab (⋮) 菜单。
       main.addEventListener("click", () => {
-        if (clickTimer !== null) return;
-        clickTimer = window.setTimeout(() => {
-          clickTimer = null;
-          void runRowAction(() => this.activateSavedView(view));
-        }, 180);
-      });
-      title.addEventListener("dblclick", (e) => {
-        e.stopPropagation();
-        if (clickTimer !== null) {
-          window.clearTimeout(clickTimer);
-          clickTimer = null;
-        }
-        void runRowAction(() => this.renameSavedView(view));
+        closeSheet();
+        this.activateSavedView(view);
       });
 
       const kebab = row.createEl("button", { cls: "bt-manage-tab-kebab" });

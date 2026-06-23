@@ -616,8 +616,9 @@
   align-items: center;
   gap: 8px;
   margin: 0 0 6px;
-  padding: 0 0 4px;
-  border-bottom: 1px solid var(--background-modifier-border);
+  /* No divider line — section heads read as plain muted labels, consistent
+     with the area head (which has no underline). Spacing alone separates them;
+     no section-only special styling. */
 }
 .task-center-view .bt-list-section-body {
   display: flex;
@@ -3633,24 +3634,41 @@
 .task-center-bottom-sheet .bt-manage-tabs-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 2px;
 }
-/* DESIGN §5.0: one compact row per tab — handle + name/badges + kebab. */
+/* DESIGN §5.0 / UX §2.3: one compact row per tab — handle + name/markers + kebab.
+ * Tight row height so the whole tab set fits on one screen. */
 .task-center-bottom-sheet .bt-manage-tab-row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
+  gap: 8px;
+  padding: 5px 10px;
   border-radius: var(--radius-m);
   cursor: pointer;
 }
 .task-center-bottom-sheet .bt-manage-tab-row:hover {
   background: var(--background-modifier-hover);
 }
+/* UX §2.3: current tab = full-row highlight + left accent bar (replaces the
+ * 「当前」text badge — you spot where you are without reading). */
+.task-center-bottom-sheet .bt-manage-tab-row-active {
+  background: var(--background-modifier-hover);
+  box-shadow: inset 2px 0 0 var(--interactive-accent);
+}
+/* Handle stays out of the way until you hover the row; always shown on mobile
+ * (no hover) so drag-to-reorder remains discoverable. */
 .task-center-bottom-sheet .bt-manage-tab-handle {
   flex: 0 0 auto;
   color: var(--text-faint);
   cursor: grab;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.task-center-bottom-sheet .bt-manage-tab-row:hover .bt-manage-tab-handle {
+  opacity: 1;
+}
+.task-center-obsidian-mobile-sheet .bt-manage-tab-handle {
+  opacity: 1;
 }
 .task-center-bottom-sheet .bt-manage-tab-main {
   flex: 1 1 auto;
@@ -3670,8 +3688,10 @@
 }
 .task-center-bottom-sheet .bt-manage-tab-meta {
   display: flex;
+  align-items: center;
   flex-wrap: wrap;
   gap: 6px;
+  margin-left: auto;
 }
 .task-center-bottom-sheet .bt-manage-tab-badge {
   padding: 1px 8px;
@@ -3679,6 +3699,31 @@
   background: var(--background-secondary);
   color: var(--text-muted);
   font-size: var(--font-ui-smaller);
+}
+/* UX §2.3: preset badge is low-signal (almost every row has it) — keep it only
+ * to tell preset vs custom apart, dialed way down so it doesn't grab the eye. */
+.task-center-bottom-sheet .bt-manage-tab-badge-preset {
+  padding: 1px 4px;
+  background: transparent;
+  color: var(--text-faint);
+}
+/* 「未保存」→ accent dot; 「默认」→ star icon. Both replace text badges. */
+.task-center-bottom-sheet .bt-manage-tab-dot {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--interactive-accent);
+}
+.task-center-bottom-sheet .bt-manage-tab-star {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  color: var(--text-accent);
+}
+.task-center-bottom-sheet .bt-manage-tab-star svg {
+  width: 14px;
+  height: 14px;
 }
 .task-center-bottom-sheet .bt-manage-tab-kebab {
   flex: 0 0 auto;
