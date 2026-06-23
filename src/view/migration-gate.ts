@@ -5,6 +5,7 @@ import type TaskCenterPlugin from "../main";
 // One CSS-drawn illustration per "what's new" tile. Kept self-contained here so
 // the (sizeable) upgrade gate doesn't bloat view.ts.
 type BentoArt = "layout" | "model" | "preset" | "ui" | "toolbar" | "done";
+type RoadmapArt = "data" | "graph";
 type TrKey = Parameters<typeof tr>[0];
 
 /**
@@ -47,6 +48,19 @@ export function renderMigrationGate(el: HTMLElement, plugin: TaskCenterPlugin): 
   ];
   for (const c of cells) renderBentoCell(bento, c.art, c.span, c.title, c.desc);
 
+  // Heads-up for AI users: the query DSL shape changed in 1.0, so the CLI skill
+  // must be updated or the agent keeps emitting the old flat DSL.
+  const aiTip = card.createDiv({ cls: "tc-migration-aitip" });
+  const aiIcon = aiTip.createSpan({ cls: "tc-migration-aitip-icon" });
+  setIcon(aiIcon, "sparkles");
+  const aiBody = aiTip.createDiv({ cls: "tc-migration-aitip-body" });
+  aiBody.createEl("strong", { cls: "tc-migration-aitip-title", text: tr("migration.aiTipTitle") });
+  aiBody.createEl("p", { cls: "tc-migration-aitip-desc", text: tr("migration.aiTipDesc") });
+  aiBody.createEl("code", {
+    cls: "tc-migration-aitip-code",
+    text: "npx skills update obsidian-task-center",
+  });
+
   // Primary action under What's New (still above the long views list).
   const actions = card.createDiv({ cls: "tc-migration-actions" });
   const cta = actions.createEl("button", { text: tr("migration.cta"), cls: "mod-cta" });
@@ -80,12 +94,14 @@ export function renderMigrationGate(el: HTMLElement, plugin: TaskCenterPlugin): 
   const roadmap = card.createDiv({ cls: "tc-migration-roadmap" });
   roadmap.createEl("h3", { cls: "tc-migration-subhead", text: tr("migration.roadmapTitle") });
   const roadmapGrid = roadmap.createDiv({ cls: "tc-migration-roadmap-bento" });
-  const roadmapItems: Array<{ title: TrKey; desc: TrKey }> = [
-    { title: "migration.roadmap1Title", desc: "migration.roadmap1Desc" },
-    { title: "migration.roadmap2Title", desc: "migration.roadmap2Desc" },
+  const roadmapItems: Array<{ art: RoadmapArt; title: TrKey; desc: TrKey }> = [
+    { art: "data", title: "migration.roadmap1Title", desc: "migration.roadmap1Desc" },
+    { art: "graph", title: "migration.roadmap2Title", desc: "migration.roadmap2Desc" },
   ];
   for (const r of roadmapItems) {
     const item = roadmapGrid.createDiv({ cls: "tc-roadmap-cell" });
+    const figure = item.createDiv({ cls: `tc-roadmap-art tc-roadmap-art--${r.art}` });
+    renderRoadmapArt(figure, r.art);
     const head = item.createDiv({ cls: "tc-roadmap-head" });
     head.createSpan({ cls: "tc-roadmap-title", text: tr(r.title) });
     head.createSpan({ cls: "tc-roadmap-tag", text: tr("migration.roadmapTag") });
@@ -105,25 +121,42 @@ function renderBentoCell(grid: HTMLElement, art: BentoArt, span: 1 | 2 | 3, titl
   const figure = cell.createDiv({ cls: "tc-bento-art" });
   figure.dataset.art = art;
   if (art === "layout") {
-    // A composable layout: one wide area stacked over a row of two areas.
-    figure.createDiv({ cls: "tc-art-block is-wide" });
+    // A composable layout: a mini board — a wide list area over two stacked areas.
+    const wide = figure.createDiv({ cls: "tc-art-area is-wide" });
+    wide.createSpan({ cls: "tc-art-area-bar" });
+    wide.createSpan({ cls: "tc-art-area-line" });
     const row = figure.createDiv({ cls: "tc-art-row" });
-    row.createDiv({ cls: "tc-art-block" });
-    row.createDiv({ cls: "tc-art-block" });
+    for (let i = 0; i < 2; i++) {
+      const area = row.createDiv({ cls: "tc-art-area" });
+      area.createSpan({ cls: "tc-art-area-bar" });
+      area.createSpan({ cls: "tc-art-area-line" });
+    }
   } else if (art === "toolbar") {
-    // One shared edit entry per area: a header row with a title + edit button.
-    const head = figure.createDiv({ cls: "tc-art-head" });
-    head.createSpan({ cls: "tc-art-headtitle" });
-    const editBtn = head.createSpan({ cls: "tc-art-editbtn" });
+    // One edit entry per area: the old scattered icons (filter / rename / tag)
+    // collapse into a single edit button that opens one panel — before → after.
+    const before = figure.createDiv({ cls: "tc-art-ba is-before" });
+    const beforeHead = before.createDiv({ cls: "tc-art-ba-head" });
+    for (const icon of ["filter", "pencil", "tag"]) {
+      const chip = beforeHead.createSpan({ cls: "tc-art-ba-icon" });
+      setIcon(chip, icon);
+    }
+    before.createSpan({ cls: "tc-art-ba-line" });
+    figure.createSpan({ cls: "tc-art-ba-arrow", text: "→" });
+    const after = figure.createDiv({ cls: "tc-art-ba is-after" });
+    const afterHead = after.createDiv({ cls: "tc-art-ba-head" });
+    afterHead.createSpan({ cls: "tc-art-ba-line is-grow" });
+    const editBtn = afterHead.createSpan({ cls: "tc-art-editbtn" });
     setIcon(editBtn, "sliders-horizontal");
-    figure.createDiv({ cls: "tc-art-headline" });
-    figure.createDiv({ cls: "tc-art-headline is-short" });
+    const panel = after.createDiv({ cls: "tc-art-ba-panel" });
+    for (let i = 0; i < 3; i++) panel.createSpan({ cls: "tc-art-ba-seg" });
   } else if (art === "done") {
-    // A done card: stays in place, recolored with a check instead of vanishing.
-    const doneCard = figure.createDiv({ cls: "tc-art-donecard" });
-    const check = doneCard.createSpan({ cls: "tc-art-check" });
-    setIcon(check, "check");
-    doneCard.createSpan({ cls: "tc-art-donetext" });
+    // Done cards linger in place: a list of rows, the top one checked + dimmed.
+    for (let i = 0; i < 3; i++) {
+      const task = figure.createDiv({ cls: `tc-art-task${i === 0 ? " is-done" : ""}` });
+      const check = task.createSpan({ cls: "tc-art-task-check" });
+      if (i === 0) setIcon(check, "check");
+      task.createSpan({ cls: "tc-art-task-line" });
+    }
   } else if (art === "model") {
     // One shared model bridging GUI and CLI through a JSON DSL.
     figure.createSpan({ cls: "tc-art-chip", text: "GUI" });
@@ -151,4 +184,28 @@ function renderBentoCell(grid: HTMLElement, art: BentoArt, span: 1 | 2 | 3, titl
   const text = cell.createDiv({ cls: "tc-bento-text" });
   text.createEl("h4", { cls: "tc-bento-title", text: tr(titleKey) });
   text.createEl("p", { cls: "tc-bento-desc", text: tr(descKey) });
+}
+
+/**
+ * Roadmap illustration — same primitives as the bento, but "planned": dashed and
+ * desaturated so it reads as coming-soon, not shipped.
+ */
+function renderRoadmapArt(figure: HTMLElement, kind: RoadmapArt): void {
+  if (kind === "data") {
+    // A composable data area: a stat tile, a mini bar chart, a ratio ring.
+    const stat = figure.createDiv({ cls: "tc-rart-tile tc-rart-stat" });
+    stat.createSpan({ cls: "tc-rart-num" });
+    stat.createSpan({ cls: "tc-rart-cap" });
+    const chart = figure.createDiv({ cls: "tc-rart-tile tc-rart-chart" });
+    for (let i = 0; i < 4; i++) chart.createSpan({ cls: "tc-rart-bar" });
+    figure.createDiv({ cls: "tc-rart-tile tc-rart-ring" });
+  } else {
+    // Graphical layout editing: a nested block tree with a drag handle.
+    const outer = figure.createDiv({ cls: "tc-rart-node is-outer" });
+    const handle = outer.createSpan({ cls: "tc-rart-handle" });
+    setIcon(handle, "grip-vertical");
+    const row = outer.createDiv({ cls: "tc-rart-node-row" });
+    row.createDiv({ cls: "tc-rart-node is-inner" });
+    row.createDiv({ cls: "tc-rart-node is-inner" });
+  }
 }

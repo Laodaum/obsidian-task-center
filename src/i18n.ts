@@ -481,6 +481,9 @@ const EN = {
   "migration.untitledView": "Untitled view",
   "migration.note":
     "Both your built-in views (rename / hide / order) and your custom views migrate automatically and are kept. This only updates local settings — no task files are touched.",
+  "migration.aiTipTitle": "Manage tasks with AI? Update the skill",
+  "migration.aiTipDesc":
+    "This release changed the query DSL shape. If you read or write tasks through Task Center's AI skill / CLI, update the skill after upgrading — otherwise the agent will keep emitting the old DSL:",
   "migration.cta": "Upgrade and open the board",
 };
 
@@ -900,6 +903,9 @@ const ZH: Partial<typeof EN> = {
   "migration.untitledView": "未命名视图",
   "migration.note":
     "你的内置视图（重命名 / 隐藏 / 排序）和自定义视图都会自动迁移并保留。本次只更新本地配置，不会改动任何任务文件。",
+  "migration.aiTipTitle": "用 AI 管理任务？记得更新 skill",
+  "migration.aiTipDesc":
+    "这次升级改了查询 DSL 的结构。如果你通过 Task Center 的 AI skill / CLI 读写任务，升级后请运行下面的命令更新 skill，否则 AI 还会按旧结构生成 DSL：",
   "migration.cta": "升级并进入看板",
 };
 
