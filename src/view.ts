@@ -46,7 +46,7 @@ import { formatDateFilterLabel } from "./date-filter";
 import { taskMatchesTimeToken, timeTokenAppliesToField } from "./time-filter";
 import { deriveEffectiveTasks, countTopLevel, recomputeTopLevelInQuery } from "./task-tree";
 import type { EffectiveTask } from "./task-tree";
-import { applyQueryFilters, queryFilterHasActiveConditions } from "./query/filter";
+import { queryFilterHasActiveConditions } from "./query/filter";
 import { projectListArea } from "./query/projection";
 import {
   applyQueryPresetFilters,
