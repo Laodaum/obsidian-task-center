@@ -258,6 +258,11 @@ export type AreaConfig =
   | DropAreaConfig
   | UnknownAreaConfig;
 
+// US-109z2: area *behaviour* / capabilities (rendersTasks / filterable /
+// editable / acceptsDrop / icon / label) live in the AreaHandler class
+// hierarchy in `areas.ts`, keyed by type. types.ts stays pure data so the DSL
+// serializes cleanly. See `areas.ts` for `areaHandler()` / `areaSupportsWhen()`.
+
 export interface StackConfig {
   dir: "row" | "col"; // row ≈ HStack，col ≈ VStack
   weight?: number;

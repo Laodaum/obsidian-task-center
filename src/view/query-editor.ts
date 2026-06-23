@@ -27,6 +27,7 @@ import {
 } from "../layout-ops";
 import { isStackNode } from "../types";
 import type { AreaType, LayoutNode } from "../types";
+import { areaHandler, SELECTABLE_AREA_TYPES } from "../areas";
 import { BottomSheet } from "./bottom-sheet";
 import type { TaskCenterView } from "../view";
 
@@ -214,20 +215,13 @@ export class QueryEditorView {
     typeSection.createDiv({ cls: "bt-query-editor-section-title", text: tr("savedViews.queryEditorViewType") });
     const typeRow = typeSection.createDiv({ cls: "bt-query-editor-view-row" });
     const currentType = area?.type === "unknown" ? "list" : (area?.type ?? "list");
-    const typeOptions: Array<{ value: AreaType; label: string }> = [
-      { value: "list", label: tr("savedViews.viewList") },
-      { value: "grid", label: tr("savedViews.viewGrid") },
-      { value: "week", label: tr("savedViews.viewWeek") },
-      { value: "month", label: tr("savedViews.viewMonth") },
-      { value: "drop", label: tr("savedViews.areaTypeDrop") },
-    ];
-    for (const opt of typeOptions) {
+    for (const value of SELECTABLE_AREA_TYPES) {
       const btn = typeRow.createEl("button", {
-        text: opt.label,
-        cls: "bt-query-editor-view-btn" + (currentType === opt.value ? " active" : ""),
+        text: this.areaTypeLabel(value),
+        cls: "bt-query-editor-view-btn" + (currentType === value ? " active" : ""),
       });
-      btn.dataset.areaType = opt.value;
-      btn.addEventListener("click", () => this.setAreaTypeForIndex(areaIndex, opt.value, rerender));
+      btn.dataset.areaType = value;
+      btn.addEventListener("click", () => this.setAreaTypeForIndex(areaIndex, value, rerender));
     }
   }
 
@@ -323,8 +317,7 @@ export class QueryEditorView {
   // US-109p11: "＋ 添加区域" dropdown — choose which area type to append.
   private openAddAreaMenu(e: MouseEvent, path: LayoutPath, rerender?: Rerender): void {
     const menu = new Menu();
-    const types: AreaType[] = ["list", "grid", "week", "month", "drop"];
-    for (const type of types) {
+    for (const type of SELECTABLE_AREA_TYPES) {
       menu.addItem((i) => i.setTitle(this.areaTypeLabel(type)).setIcon(this.areaTypeIcon(type)).onClick(() =>
         this.commitDraftLayout(this.insertAreaInto(this.draftLayout(), path, type), rerender)));
     }
@@ -356,24 +349,14 @@ export class QueryEditorView {
     this.v.refreshFilterControls(rerender);
   }
 
+  // US-109z2: label / icon come from the central area capability table, not a
+  // local switch — so a new area type is described in one place.
   private areaTypeLabel(type: AreaType): string {
-    switch (type) {
-      case "grid": return tr("savedViews.viewGrid");
-      case "week": return tr("savedViews.viewWeek");
-      case "month": return tr("savedViews.viewMonth");
-      case "drop": return tr("savedViews.areaTypeDrop");
-      default: return tr("savedViews.viewList");
-    }
+    return tr(areaHandler(type).labelKey as Parameters<typeof tr>[0]);
   }
 
   private areaTypeIcon(type: AreaType): string {
-    switch (type) {
-      case "grid": return "layout-grid";
-      case "week": return "calendar-range";
-      case "month": return "calendar";
-      case "drop": return "trash-2";
-      default: return "list";
-    }
+    return areaHandler(type).icon;
   }
 
   // US-109p11: change one area's type without rebuilding the tree.

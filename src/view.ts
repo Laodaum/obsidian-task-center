@@ -98,6 +98,7 @@ import type {
   TaskStatus,
 } from "./types";
 import { isStackNode } from "./types";
+import { areaSupportsWhen, areaHandler } from "./areas";
 import {
   setAreaType as layoutSetAreaType,
   appendArea as layoutAppendArea,
@@ -2679,15 +2680,17 @@ export class TaskCenterView extends ItemView {
     this.queryEditor.open(opts);
   }
 
-  // US-109p9: resolve an area's `when` by DFS index from the live tab draft, so
-  // the Area panel filter tab edits the same object the DSL and area head edit.
-  // Returns null for areas that don't carry a `when` (week / month / drop).
+  // US-109p9 / US-109z2: resolve an area's `when` by DFS index from the live tab
+  // draft, so the Area panel filter tab edits the same object the DSL and area
+  // head edit. Every task-rendering area is filterable (list / grid / week /
+  // month) — only `drop` / `unknown` return null. Capability decided by the
+  // single `areaSupportsWhen` guard, not ad-hoc type checks here.
   // Public: read by QueryEditorView (view/query-editor.ts) and renderAreaHead.
   areaWhenByIndex(areaIndex: number): QueryPresetFilters | null {
     const snapshot = this.currentQuerySnapshot(this.activeSavedView());
     const target = collectAreas(snapshot.view.layout)[areaIndex];
-    if (target && (target.type === "list" || target.type === "grid")) {
-      return (target as ListAreaConfig).when ?? {};
+    if (target && areaSupportsWhen(target)) {
+      return target.when ?? {};
     }
     return null;
   }
@@ -3800,7 +3803,7 @@ export class TaskCenterView extends ItemView {
       if (node.dir === "row") {
         const hasTitledChild = node.children.some(
           (c) => !isStackNode(c)
-            && (c.type === "list" || c.type === "grid")
+            && areaHandler(c.type).rendersTasks()
             && this.localizeBuiltinTitle(c.id, c.title) !== "",
         );
         if (hasTitledChild) box.addClass("bt-row-has-head");
@@ -3953,8 +3956,8 @@ export class TaskCenterView extends ItemView {
     const snapshot = this.currentQuerySnapshot(active);
     const layout = JSON.parse(JSON.stringify(snapshot.view.layout)) as LayoutNode;
     const target = collectAreas(layout)[areaIndex];
-    if (target && (target.type === "list" || target.type === "grid")) {
-      (target as ListAreaConfig).when = when;
+    if (target && areaSupportsWhen(target)) {
+      target.when = when;
     }
     this.tabDrafts.set(active.id, normalizeQueryPreset({ ...snapshot, view: { layout } }));
     this.refreshFilterControls(rerenderControls);
@@ -4064,58 +4067,124 @@ export class TaskCenterView extends ItemView {
       });
     }
 
-    // Scheduled (quick tokens)
-    const schedSec = parent.createDiv({ cls: "bt-area-filter-sec" });
-    schedSec.createDiv({ cls: "bt-area-filter-sec-label", text: tr("savedViews.timeScheduled") });
-    const schedRow = schedSec.createDiv({ cls: "bt-area-filter-chips" });
-    const schedOptions: Array<readonly [string, string]> = [
-      ...this.timeFilterOptions("scheduled"),
-      ["unscheduled", tr("pool.unscheduled")],
-    ];
-    for (const [token, label] of schedOptions) {
-      const checked = scheduled === token;
-      const chip = schedRow.createEl("button", {
+    // US-109z2: time fields — scheduled (primary) + deadline / completed /
+    // created. Each gets quick-token chips AND a native date-range picker.
+    void scheduled;
+    for (const field of [PRIMARY_TIME_FIELD, ...SECONDARY_TIME_FIELDS]) {
+      this.renderAreaTimeField(parent, areaIndex, when, field, rerenderControls);
+    }
+
+    // Tags — a searchable, scrollable list (scales to thousands of tags).
+    this.renderAreaTagList(parent, areaIndex, when, selectedTags, rerenderControls);
+  }
+
+  // US-109z2: one time field's area controls — quick tokens + a date-range
+  // picker (two native date inputs writing a `START..END` range token).
+  private renderAreaTimeField(
+    parent: HTMLElement,
+    areaIndex: number,
+    when: QueryPresetFilters,
+    field: SavedViewTimeField,
+    rerenderControls?: FilterControlsRerender,
+  ): void {
+    const token = when.time?.[field]?.trim() ?? "";
+    const isRange = token.includes("..");
+    const sec = parent.createDiv({ cls: "bt-area-filter-sec" });
+    sec.dataset.areaTimeField = field;
+    sec.createDiv({ cls: "bt-area-filter-sec-label", text: this.timeFieldLabel(field) });
+
+    const setToken = (next: string | undefined) => {
+      const nextTime = { ...(when.time ?? {}) };
+      if (next) nextTime[field] = next;
+      else delete nextTime[field];
+      this.setAreaWhen(areaIndex, { ...when, time: nextTime }, rerenderControls);
+    };
+
+    const chips = sec.createDiv({ cls: "bt-area-filter-chips" });
+    const opts: Array<readonly [string, string]> = field === "scheduled"
+      ? [...this.timeFilterOptions("scheduled"), ["unscheduled", tr("pool.unscheduled")]]
+      : this.timeFilterOptions(field);
+    for (const [t, label] of opts) {
+      const checked = !isRange && token === t;
+      const chip = chips.createEl("button", {
         text: label,
         cls: "bt-area-filter-chip" + (checked ? " active" : ""),
       });
-      chip.dataset.areaScheduled = token || "all";
-      chip.addEventListener("click", () => {
-        const nextTime = { ...(when.time ?? {}) };
-        if (token) nextTime.scheduled = token;
-        else delete nextTime.scheduled;
-        this.setAreaWhen(areaIndex, { ...when, time: nextTime }, rerenderControls);
-      });
+      if (field === "scheduled") chip.dataset.areaScheduled = t || "all";
+      chip.addEventListener("click", () => setToken(t || undefined));
     }
 
-    // Tags
-    const tagSec = parent.createDiv({ cls: "bt-area-filter-sec" });
-    const tagHead = tagSec.createDiv({ cls: "bt-area-filter-sec-head" });
-    tagHead.createSpan({ cls: "bt-area-filter-sec-label", text: tr("savedViews.tag") });
+    // Custom date range (a real date picker via native inputs).
+    const range = sec.createDiv({ cls: "bt-area-date-range" });
+    const [from, to] = isRange ? token.split("..", 2) : ["", ""];
+    const fromIn = range.createEl("input", { type: "date", cls: "bt-area-date-input" });
+    fromIn.value = from ?? "";
+    range.createSpan({ cls: "bt-area-date-sep", text: tr("savedViews.dateRangeTo") });
+    const toIn = range.createEl("input", { type: "date", cls: "bt-area-date-input" });
+    toIn.value = to ?? "";
+    const applyRange = () => {
+      const f = fromIn.value.trim();
+      const t = toIn.value.trim();
+      if (!f && !t) { setToken(undefined); return; }
+      setToken(`${f || t}..${t || f}`);
+    };
+    fromIn.addEventListener("change", applyRange);
+    toIn.addEventListener("change", applyRange);
+  }
+
+  // US-109z2: searchable, scrollable tag list. Renders selected-first + filtered
+  // candidates, capped so thousands of tags don't blow up the DOM; the search
+  // box re-renders rows locally (no sheet rerender, keeps focus).
+  private renderAreaTagList(
+    parent: HTMLElement,
+    areaIndex: number,
+    when: QueryPresetFilters,
+    selectedTags: string[],
+    rerenderControls?: FilterControlsRerender,
+  ): void {
+    const sec = parent.createDiv({ cls: "bt-area-filter-sec" });
+    const head = sec.createDiv({ cls: "bt-area-filter-sec-head" });
+    head.createSpan({ cls: "bt-area-filter-sec-label", text: tr("savedViews.tag") });
     if (selectedTags.length > 0) {
-      const clearTags = tagHead.createEl("button", { text: tr("savedViews.clearTags"), cls: "bt-area-filter-clear-tags" });
+      const clearTags = head.createEl("button", { text: tr("savedViews.clearTags"), cls: "bt-area-filter-clear-tags" });
       clearTags.addEventListener("click", () => this.setAreaWhen(areaIndex, { ...when, tags: [] }, rerenderControls));
     }
-    const tagRow = tagSec.createDiv({ cls: "bt-area-filter-tags" });
-    const tagOptions = this.collectTagOptions(selectedTags);
-    if (tagOptions.length === 0) {
-      tagRow.createDiv({ cls: "bt-area-filter-empty", text: tr("savedViews.tagEmpty") });
-    }
-    for (const opt of tagOptions) {
-      const lc = opt.tag.toLowerCase();
-      const checked = selectedTags.some((t) => t.toLowerCase() === lc);
-      const chip = tagRow.createEl("button", {
-        cls: "bt-area-filter-chip bt-area-filter-tag" + (checked ? " active" : ""),
-      });
-      chip.dataset.areaTag = opt.tag;
-      chip.createSpan({ text: opt.tag, cls: "bt-area-filter-tag-label" });
-      if (opt.count > 0) chip.createSpan({ text: String(opt.count), cls: "bt-area-filter-tag-count" });
-      chip.addEventListener("click", () => {
-        const next = checked
-          ? selectedTags.filter((t) => t.toLowerCase() !== lc)
-          : [...selectedTags, opt.tag];
-        this.setAreaWhen(areaIndex, { ...when, tags: next }, rerenderControls);
-      });
-    }
+    const searchInput = sec.createEl("input", { type: "text", cls: "bt-area-tag-search", placeholder: tr("savedViews.tagSearch") });
+    const list = sec.createDiv({ cls: "bt-area-tag-list" });
+    const options = this.collectTagOptions(selectedTags);
+    const CAP = 100;
+    const renderRows = (query: string) => {
+      list.empty();
+      const q = query.trim().toLowerCase();
+      const filtered = q ? options.filter((o) => o.tag.toLowerCase().includes(q)) : options;
+      if (filtered.length === 0) {
+        list.createDiv({ cls: "bt-area-filter-empty", text: tr("savedViews.tagEmpty") });
+        return;
+      }
+      for (const opt of filtered.slice(0, CAP)) {
+        const lc = opt.tag.toLowerCase();
+        const checked = selectedTags.some((t) => t.toLowerCase() === lc);
+        const row = list.createEl("button", {
+          cls: "bt-area-tag-row" + (checked ? " active" : ""),
+        });
+        row.dataset.areaTag = opt.tag;
+        const check = row.createSpan({ cls: "bt-area-tag-check" });
+        if (checked) setIcon(check, "check");
+        row.createSpan({ text: opt.tag, cls: "bt-area-tag-row-label" });
+        if (opt.count > 0) row.createSpan({ text: String(opt.count), cls: "bt-area-tag-row-count" });
+        row.addEventListener("click", () => {
+          const next = checked
+            ? selectedTags.filter((t) => t.toLowerCase() !== lc)
+            : [...selectedTags, opt.tag];
+          this.setAreaWhen(areaIndex, { ...when, tags: next }, rerenderControls);
+        });
+      }
+      if (filtered.length > CAP) {
+        list.createDiv({ cls: "bt-area-tag-more", text: tr("savedViews.tagMore", { n: filtered.length - CAP }) });
+      }
+    };
+    searchInput.addEventListener("input", () => renderRows(searchInput.value));
+    renderRows("");
   }
 
   private areaTags(when: QueryPresetFilters): string[] {

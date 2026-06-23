@@ -404,6 +404,9 @@ const EN = {
   "savedViews.viewWeek": "Week",
   "savedViews.viewMonth": "Month",
   "savedViews.queryEditorDsl": "DSL",
+  // US-109z2: area filter — searchable tag list + per-field date range.
+  "savedViews.tagMore": "{n} more — type to filter",
+  "savedViews.dateRangeTo": "to",
   // US-109p10 / US-109p11: two-panel Query editor + visual layout tree.
   "savedViews.areaTabAppearance": "Appearance",
   "savedViews.layout": "Layout",
@@ -836,6 +839,8 @@ const ZH: Partial<typeof EN> = {
   "savedViews.viewWeek": "周",
   "savedViews.viewMonth": "月",
   "savedViews.queryEditorDsl": "DSL",
+  "savedViews.tagMore": "还有 {n} 个，输入以筛选",
+  "savedViews.dateRangeTo": "至",
   "savedViews.areaTabAppearance": "外观",
   "savedViews.layout": "布局",
   "savedViews.layoutSummary": "{count} 个区域 · {dir}",
