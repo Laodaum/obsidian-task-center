@@ -18,7 +18,5 @@
       ]
     }
   },
-  "summary": [
-    { "type": "count" }
-  ]
+  "summary": []
 }

@@ -11,7 +11,5 @@
       "type": "list"
     }
   },
-  "summary": [
-    { "type": "count" }
-  ]
+  "summary": []
 }
