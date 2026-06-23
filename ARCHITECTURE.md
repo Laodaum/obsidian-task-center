@@ -90,6 +90,8 @@ interface EffectiveTask extends ParsedTask {
 
 ### 1.3 QueryPreset
 
+> 本节是 DSL 的 TypeScript 规格（架构事实源）。面向使用者、带配图与可运行示例的「怎么写」参考在 [`docs/dsl/zh.md`](docs/dsl/zh.md) / [`docs/dsl/en.md`](docs/dsl/en.md)；应用内「编辑 Query」的「DSL 文档」链接按 locale 指向对应语言页。
+
 ```ts
 type TaskStateFilter = "todo" | "done" | "dropped";
 

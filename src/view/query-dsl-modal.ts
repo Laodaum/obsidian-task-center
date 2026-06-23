@@ -1,12 +1,16 @@
 import { App, Modal } from "obsidian";
-import { t as tr } from "../i18n";
+import { t as tr, getLocale } from "../i18n";
 import { parseQueryDsl } from "../saved-views";
 
 export type QueryDslSubmitMode = "update" | "saveAs";
 
-// GitHub reference for the Query DSL schema (ARCHITECTURE.md §1.3).
-const DSL_DOCS_URL =
-  "https://github.com/CorrectRoadH/obsidian-task-center/blob/main/ARCHITECTURE.md#13-querypreset";
+// User-facing Query DSL reference, one file per language so each locale lands on
+// its own page. See docs/dsl/{zh,en}.md (TS schema stays in ARCHITECTURE.md §1.3).
+const DSL_DOCS_URL_BY_LOCALE: Record<string, string> = {
+  zh: "https://github.com/CorrectRoadH/obsidian-task-center/blob/main/docs/dsl/zh.md",
+  en: "https://github.com/CorrectRoadH/obsidian-task-center/blob/main/docs/dsl/en.md",
+};
+const dslDocsUrl = (): string => DSL_DOCS_URL_BY_LOCALE[getLocale()] ?? DSL_DOCS_URL_BY_LOCALE.en;
 
 interface DslValidation {
   ok: boolean;
@@ -43,7 +47,7 @@ export class QueryDslModal extends Modal {
     const docs = head.createEl("a", {
       text: tr("savedViews.dslDocs"),
       cls: "tc-dsl-docs",
-      href: DSL_DOCS_URL,
+      href: dslDocsUrl(),
     });
     docs.setAttr("target", "_blank");
     docs.setAttr("rel", "noopener");
