@@ -4086,3 +4086,242 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* ──────────────────────────────────────────────────────────────────────────
+   US-109p10 / US-109p11: two-panel view editor (Tab panel / Area panel) +
+   visual layout tree. Scoped to the bottom-sheet shell (desktop & mobile both
+   render the editor inside .task-center-bottom-sheet).
+   ────────────────────────────────────────────────────────────────────────── */
+
+/* Sections become lightly-carded groups instead of flat stacks, so 基础集 /
+   布局 / 保存与管理 / DSL read as distinct blocks. */
+.task-center-bottom-sheet .bt-query-controls-sheet .bt-query-editor-section,
+.task-center-bottom-sheet .bt-mobile-query-sheet .bt-query-editor-section {
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: var(--radius-m);
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+}
+/* The area-filter section inside the Area panel keeps its own popover reset,
+   so don't double-card it. */
+.task-center-bottom-sheet .bt-query-editor-panel > .bt-query-editor-section {
+  background: transparent;
+  border: none;
+  padding: 4px 0 0;
+}
+
+/* ── Breadcrumb (Area panel header) ── */
+.task-center-bottom-sheet .bt-query-editor-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0 12px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  font-size: 13px;
+  color: var(--text-muted);
+  min-width: 0;
+}
+.task-center-bottom-sheet .bt-query-editor-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 4px 8px;
+  border: none;
+  border-radius: var(--radius-s);
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+  font-size: 13px;
+  font-weight: var(--font-semibold);
+  cursor: pointer;
+  flex: 0 0 auto;
+  max-width: 50%;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.task-center-bottom-sheet .bt-query-editor-back:hover {
+  background: var(--background-modifier-active-hover);
+}
+.task-center-bottom-sheet .bt-query-editor-back-icon { display: inline-flex; }
+.task-center-bottom-sheet .bt-query-editor-back-icon svg { width: 15px; height: 15px; }
+.task-center-bottom-sheet .bt-query-editor-breadcrumb-sep { color: var(--text-faint); flex: 0 0 auto; }
+.task-center-bottom-sheet .bt-query-editor-breadcrumb-area {
+  color: var(--text-normal);
+  font-weight: var(--font-semibold);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+/* ── Layout tree (布局) ── */
+.task-center-bottom-sheet .bt-layout-tree {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.task-center-bottom-sheet .bt-layout-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px dashed var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  background: var(--background-primary);
+  min-width: 0;
+}
+.task-center-bottom-sheet .bt-layout-stack-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.task-center-bottom-sheet .bt-layout-stack-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.task-center-bottom-sheet .bt-layout-stack-dir {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.task-center-bottom-sheet .bt-layout-stack-dir:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+.task-center-bottom-sheet .bt-layout-stack-dir svg { width: 15px; height: 15px; }
+.task-center-bottom-sheet .bt-layout-stack-children {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+}
+.task-center-bottom-sheet .bt-layout-stack-col > .bt-layout-stack-children { flex-direction: column; }
+.task-center-bottom-sheet .bt-layout-stack-row > .bt-layout-stack-children { flex-direction: row; }
+.task-center-bottom-sheet .bt-layout-stack-children > * { flex: 1 1 0; min-width: 0; }
+
+/* Area row */
+.task-center-bottom-sheet .bt-layout-area {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: var(--radius-s);
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  min-width: 0;
+}
+.task-center-bottom-sheet .bt-layout-area:hover { background: var(--background-modifier-hover); }
+.task-center-bottom-sheet .bt-layout-area-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--text-muted);
+}
+.task-center-bottom-sheet .bt-layout-area-icon svg { width: 16px; height: 16px; }
+.task-center-bottom-sheet .bt-layout-area-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.task-center-bottom-sheet .bt-layout-area-title {
+  font-weight: var(--font-semibold);
+  color: var(--text-normal);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.task-center-bottom-sheet .bt-layout-area-when {
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.task-center-bottom-sheet .bt-layout-area-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+}
+.task-center-bottom-sheet .bt-layout-area-edit,
+.task-center-bottom-sheet .bt-layout-area-more {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.task-center-bottom-sheet .bt-layout-area-edit:hover,
+.task-center-bottom-sheet .bt-layout-area-more:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+.task-center-bottom-sheet .bt-layout-area-edit svg,
+.task-center-bottom-sheet .bt-layout-area-more svg { width: 16px; height: 16px; }
+
+/* Add-area button (per container) */
+.task-center-bottom-sheet .bt-layout-add {
+  align-self: flex-start;
+  margin-top: 2px;
+  padding: 5px 12px;
+  border: 1px dashed var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+.task-center-bottom-sheet .bt-layout-add:hover {
+  color: var(--text-normal);
+  border-color: var(--interactive-accent);
+}
+
+/* ── Base-set hint (Area panel footer) ── */
+.task-center-bottom-sheet .bt-query-editor-baseset-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  padding: 8px 12px;
+  border-radius: var(--radius-s);
+  background: var(--background-secondary);
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.task-center-bottom-sheet .bt-query-editor-baseset-text { min-width: 0; }
+.task-center-bottom-sheet .bt-query-editor-baseset-link {
+  padding: 2px 8px;
+  border: none;
+  border-radius: var(--radius-s);
+  background: var(--background-modifier-hover);
+  color: var(--text-accent);
+  font-size: 12px;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+.task-center-bottom-sheet .bt-query-editor-baseset-link:hover { color: var(--text-accent-hover); }
+
+/* Area-panel type buttons wrap nicely (5 options now: list/grid/week/month/drop) */
+.task-center-bottom-sheet .bt-query-editor-panel .bt-query-editor-view-row {
+  flex-wrap: wrap;
+  gap: 6px;
+}

@@ -9,7 +9,9 @@ import type {
   AreaBase,
   AreaConfig,
   AreaType,
+  GridAreaConfig,
   LayoutNode,
+  ListAreaConfig,
   StackConfig,
 } from "./types";
 import { isStackNode } from "./types";
@@ -58,7 +60,7 @@ function editAt(
       root.children[head] = replaced;
     }
   } else {
-    root.children[head] = editAt(child, rest, replacer) as LayoutNode;
+    root.children[head] = editAt(child, rest, replacer);
   }
   return collapse(root);
 }
@@ -120,7 +122,7 @@ export function setAreaType(layout: LayoutNode, areaIndex: number, type: AreaTyp
     switch (type) {
       case "list":
       case "grid": {
-        const next: AreaConfig = { ...base, type };
+        const next: ListAreaConfig | GridAreaConfig = { ...base, type };
         // Carry over list/grid-only fields when converting between the two.
         if (area.type === "list" || area.type === "grid") {
           if (area.when) next.when = area.when;
