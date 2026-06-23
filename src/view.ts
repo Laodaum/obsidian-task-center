@@ -3952,19 +3952,34 @@ export class TaskCenterView extends ItemView {
   // 取代过去 completed 视图里硬编码的统计面板。（US-303 / ARCHITECTURE §4.4）
   private renderSummaryArea(parent: HTMLElement, active: QueryPreset): void {
     const metrics = active.summary ?? [];
-    if (metrics.length === 0) return;
-    // Count over the same top-level cards the view shows, so summary count
-    // matches the tab badge / footer (not double-counting nested subtasks).
-    const filtered = recomputeTopLevelInQuery(this.getEffectiveTasks().filter(this.getTextFilter()))
-      .filter((t) => t.isTopLevelInQuery);
-    const items = computeSummary(filtered, metrics);
-    if (items.length === 0) return;
     const bar = parent.createDiv({ cls: "bt-summary-bar" });
     bar.dataset.summary = "true";
-    for (const item of items) {
-      const chip = bar.createDiv({ cls: `bt-summary-chip bt-summary-${item.type}` });
-      chip.createSpan({ text: this.summaryChipLabel(item), cls: "bt-summary-chip-text" });
+
+    if (metrics.length > 0) {
+      // Count over the same top-level cards the view shows, so summary count
+      // matches the tab badge / footer (not double-counting nested subtasks).
+      const filtered = recomputeTopLevelInQuery(this.getEffectiveTasks().filter(this.getTextFilter()))
+        .filter((t) => t.isTopLevelInQuery);
+      for (const item of computeSummary(filtered, metrics)) {
+        const chip = bar.createDiv({ cls: `bt-summary-chip bt-summary-${item.type}` });
+        chip.createSpan({ text: this.summaryChipLabel(item), cls: "bt-summary-chip-text" });
+      }
     }
+
+    // The summary is a customizable metric area. Make it editable in place:
+    // an ✎ when there are chips, or a discoverable "+ 统计" ghost when empty.
+    // Both open the visual Query editor (Summary section).
+    const edit = bar.createEl("button", { cls: "bt-summary-edit" });
+    edit.dataset.action = "edit-summary";
+    if (metrics.length > 0) {
+      setIcon(edit, "pencil");
+      edit.setAttr("aria-label", tr("savedViews.summaryEdit"));
+    } else {
+      edit.addClass("bt-summary-edit--empty");
+      setIcon(edit.createSpan({ cls: "bt-summary-edit-icon" }), "plus");
+      edit.createSpan({ text: tr("savedViews.summaryAdd") });
+    }
+    edit.addEventListener("click", () => this.openQueryControlsSheet());
   }
 
   private summaryChipLabel(item: SummaryResultItem): string {
