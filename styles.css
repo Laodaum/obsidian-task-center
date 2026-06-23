@@ -1165,7 +1165,7 @@
 /* ── Bento grid of features ── */
 .task-center-view .tc-migration-bento {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
   margin-bottom: 20px;
 }
@@ -1185,9 +1185,31 @@
   transform: translateY(-1px);
 }
 
-/* Varied bento sizing: wide tiles span both columns (banner), squares stay 1col. */
+/* Column spans give the bento its rhythm: 1 (square) / 2 / 3 (banner). */
+.task-center-view .tc-bento-cell--span2 {
+  grid-column: span 2;
+}
+.task-center-view .tc-bento-cell--span3 {
+  grid-column: span 3;
+}
+
+/* Wide tiles (span ≥ 2) lay out horizontally — art left, text right — so they
+   read as banners instead of half-empty boxes. */
 .task-center-view .tc-bento-cell--wide {
-  grid-column: 1 / -1;
+  flex-direction: row;
+  align-items: center;
+  gap: 18px;
+}
+.task-center-view .tc-bento-cell--wide .tc-bento-art {
+  flex: 0 0 clamp(150px, 32%, 280px);
+  height: 104px;
+  margin-bottom: 0;
+}
+.task-center-view .tc-bento-text {
+  min-width: 0;
+}
+.task-center-view .tc-bento-cell--wide .tc-bento-text {
+  flex: 1 1 auto;
 }
 
 .task-center-view .tc-bento-art {
@@ -1503,18 +1525,25 @@
   color: var(--text-muted);
 }
 
-/* ── Roadmap ── what's coming next (e.g. the data area replacing summary) */
+/* ── Roadmap ── rendered as bento tiles too (planned = dashed) */
 .task-center-view .tc-migration-roadmap {
   margin: 0 0 24px;
 }
-.task-center-view .tc-roadmap-item {
-  padding: 12px 14px;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: var(--radius-m);
-  background: var(--background-secondary);
+.task-center-view .tc-migration-roadmap-bento {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
 }
-.task-center-view .tc-roadmap-item + .tc-roadmap-item {
-  margin-top: 8px;
+.task-center-view .tc-roadmap-cell {
+  padding: 14px 16px;
+  border: 1px dashed var(--background-modifier-border);
+  border-radius: var(--radius-l, 12px);
+  background: var(--background-secondary);
+  transition: border-color 120ms ease, transform 120ms ease;
+}
+.task-center-view .tc-roadmap-cell:hover {
+  border-color: var(--interactive-accent);
+  transform: translateY(-1px);
 }
 .task-center-view .tc-roadmap-head {
   display: flex;
@@ -1540,6 +1569,28 @@
   color: var(--text-muted);
 }
 
+/* Scroll-down hint so the confirm button (below the tall bento) is findable. */
+.task-center-view .tc-migration-scrollhint {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 22px;
+  padding: 3px 12px;
+  border-radius: 999px;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  background: var(--background-modifier-hover);
+}
+.task-center-view .tc-migration-scrollhint-arrow {
+  font-weight: var(--font-bold);
+  color: var(--interactive-accent);
+  animation: tc-scrollhint-bounce 1.4s ease-in-out infinite;
+}
+@keyframes tc-scrollhint-bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(2px); }
+}
+
 .task-center-view .tc-migration-actions {
   display: flex;
   justify-content: center;
@@ -1554,8 +1605,24 @@
 }
 
 @media (max-width: 600px) {
-  .task-center-view .tc-migration-bento {
+  /* Narrow: single column; every tile spans 1 and stacks vertically again. */
+  .task-center-view .tc-migration-bento,
+  .task-center-view .tc-migration-roadmap-bento {
     grid-template-columns: 1fr;
+  }
+  .task-center-view .tc-bento-cell--span2,
+  .task-center-view .tc-bento-cell--span3 {
+    grid-column: auto;
+  }
+  .task-center-view .tc-bento-cell--wide {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+  }
+  .task-center-view .tc-bento-cell--wide .tc-bento-art {
+    flex: none;
+    height: 96px;
+    margin-bottom: 14px;
   }
   .task-center-view .tc-migration-actions .mod-cta {
     width: 100%;
