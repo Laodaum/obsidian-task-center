@@ -317,6 +317,33 @@
 }
 
 /* Enhanced query editor: DSL section */
+.bt-query-editor-dsl-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.bt-query-editor-dsl-docs {
+  flex: 0 0 auto;
+  font-size: 12px;
+  color: var(--text-accent);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.bt-query-editor-dsl-docs:hover {
+  color: var(--text-accent-hover);
+  text-decoration: underline;
+}
+.task-center-bottom-sheet .bt-query-editor-section > textarea[data-query-dsl-input] {
+  width: 100%;
+  min-height: 200px;
+  resize: vertical;
+  font-family: var(--font-monospace);
+  font-size: 12px;
+  line-height: 1.5;
+  border-radius: var(--radius-s);
+}
 .bt-query-editor-dsl-error {
   color: var(--text-error);
   font-size: 12px;
@@ -326,9 +353,10 @@
   border-radius: 4px;
 }
 .bt-query-editor-dsl-apply {
-  margin-top: 6px;
-  padding: 4px 12px;
-  font-size: 12px;
+  margin-top: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  font-size: 13px;
 }
 
 /* Enhanced empty states (VAL-GUI-010) — clean centered column, no banner */
@@ -4997,4 +5025,17 @@
   border-radius: var(--radius-s);
   padding: 6px;
   background: var(--background-primary);
+}
+/* Floating variant: overlays instead of growing the sheet (anchored via JS). */
+.task-center-bottom-sheet .bt-area-tag-popover--float {
+  position: fixed;
+  margin-top: 0;
+  z-index: var(--layer-menu, 100);
+  max-height: 320px;
+  overflow: hidden auto;
+  background: var(--background-primary);
+  box-shadow: var(--shadow-l);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }

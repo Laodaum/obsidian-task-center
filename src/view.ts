@@ -4206,7 +4206,33 @@ export class TaskCenterView extends ItemView {
     });
     if (!this.areaTagPopoverOpen) return;
 
-    const popover = sec.createDiv({ cls: "bt-area-tag-popover" });
+    // Float the popover (position:fixed anchored to the trigger) so opening it
+    // doesn't grow the sheet / push other controls — it overlays instead.
+    const popover = sec.createDiv({ cls: "bt-area-tag-popover bt-area-tag-popover--float" });
+    const placeFloat = () => {
+      const r = trigger.getBoundingClientRect();
+      popover.style.left = `${Math.round(r.left)}px`;
+      popover.style.width = `${Math.round(r.width)}px`;
+      // Open downward, but flip up if it would overflow the viewport bottom.
+      const popH = popover.offsetHeight || 280;
+      const below = window.innerHeight - r.bottom;
+      if (below < popH + 8 && r.top > popH + 8) popover.style.top = `${Math.round(r.top - popH - 4)}px`;
+      else popover.style.top = `${Math.round(r.bottom + 4)}px`;
+    };
+    // Position after it's measured; reposition on scroll/resize of the sheet.
+    window.requestAnimationFrame(placeFloat);
+    const scroller = trigger.closest<HTMLElement>(".modal-content, .bt-editor-page-body");
+    const reposition = () => placeFloat();
+    scroller?.addEventListener("scroll", reposition, { passive: true });
+    window.addEventListener("resize", reposition, { passive: true });
+    // Clean the listeners when this popover leaves the DOM (next rerender).
+    const cleanup = () => {
+      scroller?.removeEventListener("scroll", reposition);
+      window.removeEventListener("resize", reposition);
+    };
+    new MutationObserver((_m, obs) => {
+      if (!popover.isConnected) { cleanup(); obs.disconnect(); }
+    }).observe(sec, { childList: true, subtree: true });
     const searchInput = popover.createEl("input", { type: "text", cls: "bt-area-tag-search", placeholder: tr("savedViews.tagSearch") });
     const list = popover.createDiv({ cls: "bt-area-tag-list" });
     const options = this.collectTagOptions(selectedTags);
