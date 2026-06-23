@@ -211,10 +211,10 @@ describe("Task Center — 看板基础 (US-101/107/115)", function () {
 
     const todayCard = await browser.execute(() => {
       const card = document.querySelector('[data-view="today"] [data-task-id="Tasks/Inbox.md:L1"]')!;
-      const title = card.querySelector(".bt-today-card-title")!.getBoundingClientRect();
-      const tags = card.querySelector(".bt-today-card-tags")!.getBoundingClientRect();
+      const title = card.querySelector(".bt-card-title")!.getBoundingClientRect();
+      const tags = card.querySelector(".bt-card-tags")!.getBoundingClientRect();
       return {
-        tags: Array.from(card.querySelectorAll(".bt-today-card-tags .bt-task-tag")).map((e) => e.textContent),
+        tags: Array.from(card.querySelectorAll(".bt-card-tags .bt-task-tag")).map((e) => e.textContent),
         tagsAreBelowTitle: tags.top >= title.bottom,
       };
     });
