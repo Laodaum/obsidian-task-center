@@ -446,34 +446,35 @@ const EN = {
   "migration.badge": "Upgrade",
   "migration.title": "Task Center has been upgraded",
   "migration.lead":
-    "This version reworked how views and queries are stored. The {n} view(s) below will migrate to the new structure automatically — just confirm to continue.",
+    "This version refreshes how your views are set up. The {n} view(s) below upgrade automatically — just confirm to continue. Your tasks and notes are untouched.",
+  "migration.scrollHint": "Scroll down to confirm and enter",
   "migration.whatsNewTitle": "What's new",
-  "migration.feature1Title": "Composable layouts",
+  "migration.feature1Title": "Mix and match layouts",
   "migration.feature1Desc":
-    "Stack list / week / month areas freely inside one tab.",
-  "migration.feature2Title": "One query model",
+    "Put lists, a week and a month side by side in one tab.",
+  "migration.feature2Title": "Set it up once",
   "migration.feature2Desc":
-    "Filters and view share one QueryPreset and one JSON DSL — identical across the GUI and the CLI.",
-  "migration.feature3Title": "Editable presets",
+    "What you set up in the app works the same from the command line — one place, no surprises.",
+  "migration.feature3Title": "Built-in views are editable",
   "migration.feature3Desc":
-    "Built-in tabs become presets you can duplicate and tweak into your own views.",
-  "migration.feature5Title": "One edit entry per area",
+    "Copy a built-in view like Today or Week and tweak it into your own.",
+  "migration.feature5Title": "One edit button per section",
   "migration.feature5Desc":
-    "Every list / grid / week / month area carries the same edit button. It opens one panel where Filters, View (with title) and the full DSL live together — no more scattered funnels, pencils and chips.",
-  "migration.feature4Title": "Refreshed UI",
+    "Every list, week and month has the same edit button — open it to change what shows and how it looks. No more hunting for little icons.",
+  "migration.feature4Title": "A fresh look",
   "migration.feature4Desc":
-    "Cleaner board, tabs and editing panels.",
-  "migration.feature6Title": "Done cards linger",
+    "Cleaner board, tabs and edit panels.",
+  "migration.feature6Title": "Done tasks don't jump away",
   "migration.feature6Desc":
-    "Checking a task marks it done in place instead of vanishing — it only clears when you re-enter the view, so a mis-click is easy to undo.",
+    "Tick a task and it turns done right where it is instead of vanishing — it only clears when you reopen the view, so a mis-tap is easy to undo.",
   "migration.roadmapTitle": "On the roadmap",
   "migration.roadmapTag": "Planned",
-  "migration.roadmap1Title": "A customizable data area",
+  "migration.roadmap1Title": "Customizable stat cards",
   "migration.roadmap1Desc":
-    "The old summary chips are gone for now. They'll come back as a composable data area — pick exactly what to show (count, sum, ratio, charts) and arrange it like a board, instead of a fixed strip.",
-  "migration.roadmap2Title": "Graphical layout editing",
+    "The old summary chips are gone for now. They'll come back as stat cards you can arrange freely — pick the numbers you want (count, sum, ratio, charts) instead of a fixed strip.",
+  "migration.roadmap2Title": "More drag-to-edit",
   "migration.roadmap2Desc":
-    "Edit nesting, sections, sorting and limits visually — not only by hand in the DSL.",
+    "Grouping, sorting and limits will become drag-to-edit in the app too — no hand-written config.",
   "migration.viewsTitle": "Views migrating automatically ({n})",
   "migration.viewsBuiltin": "Built-in",
   "migration.viewsCustom": "Custom",
@@ -864,34 +865,35 @@ const ZH: Partial<typeof EN> = {
   "migration.badge": "升级",
   "migration.title": "Task Center 已升级",
   "migration.lead":
-    "这个版本重构了视图与查询的存储方式。下面 {n} 个视图会自动迁移到新结构，确认后即可继续。",
+    "这一版换了视图的配置方式。下面 {n} 个视图会自动升级，确认即可继续；你的任务和笔记不受影响。",
+  "migration.scrollHint": "向下滑动，到底部确认升级",
   "migration.whatsNewTitle": "新版变化",
-  "migration.feature1Title": "可组合布局",
+  "migration.feature1Title": "布局自由拼",
   "migration.feature1Desc":
-    "列表 / 周 / 月区域可在同一个 Tab 里自由堆叠。",
-  "migration.feature2Title": "统一查询模型",
+    "列表、周历、月历能拼在同一个标签页里。",
+  "migration.feature2Title": "配置只设一次",
   "migration.feature2Desc":
-    "过滤与视图共用一份 QueryPreset 与一份 JSON DSL，GUI 与 CLI 通用。",
-  "migration.feature3Title": "可编辑预设",
+    "在界面里配好的，在命令行里也照样用——一处设置，结果一致。",
+  "migration.feature3Title": "内置视图可改",
   "migration.feature3Desc":
-    "内置 Tab 成为预设，可复制后改成自己的视图。",
-  "migration.feature5Title": "每个 area 一个编辑入口",
+    "Today、本周这些内置视图都能复制一份，改成你自己的样子。",
+  "migration.feature5Title": "每块内容一个编辑入口",
   "migration.feature5Desc":
-    "list / grid / 周 / 月每个 area 都带同一个编辑按钮，点开是同一个面板——筛选、视图（含标题）、完整 DSL 都在里面，不再有散落的漏斗、铅笔和小标签。",
+    "每个列表、周历、月历都带同一个编辑按钮，点开就能改“显示什么”和“长什么样”，不用再到处找小按钮。",
   "migration.feature4Title": "界面焕新",
   "migration.feature4Desc":
-    "看板、Tab 与编辑面板更清爽。",
+    "看板、标签页和编辑面板都更清爽。",
   "migration.feature6Title": "完成不急着消失",
   "migration.feature6Desc":
-    "勾完一条任务，它原地变成完成态而不是立刻消失，重新进入视图才隐去——点错了随手就能撤。",
+    "勾完一条任务，它会原地变成完成态而不是立刻消失；重新打开这个视图时才隐去——点错了随手就能撤。",
   "migration.roadmapTitle": "接下来",
   "migration.roadmapTag": "计划中",
-  "migration.roadmap1Title": "可自定义的数据 area",
+  "migration.roadmap1Title": "可自定义的统计卡",
   "migration.roadmap1Desc":
-    "原来的统计小标签暂时下线，未来会以一个可组合的数据 area 回归——自己选要展示的数据（计数 / 求和 / 比率 / 图表），像搭看板一样自由排布，而不是固定一条。",
-  "migration.roadmap2Title": "图形化布局编辑",
+    "原来的统计小标签先下线，以后会以可自由摆放的统计卡回归——自己选要看的数字（计数 / 合计 / 比率 / 图表），像拼看板一样排，而不是固定一条。",
+  "migration.roadmap2Title": "更多拖拽编辑",
   "migration.roadmap2Desc":
-    "把嵌套布局、分组、排序、上限都做成图形可编辑，不必只在 DSL 里手写。",
+    "分组、排序、数量上限这些也会陆续做成界面里直接拖着改，不用手写配置。",
   "migration.viewsTitle": "将自动迁移的视图（{n}）",
   "migration.viewsBuiltin": "内置",
   "migration.viewsCustom": "自定义",
