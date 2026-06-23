@@ -22,11 +22,12 @@
   display: flex;
   gap: 2px;
   border-bottom: 1px solid var(--background-modifier-border);
-  /* US-109q: desktop overflow is width-driven (tabs collapse into "更多");
-     never scroll horizontally. Clipping covers the one frame between the
-     measure-all render and the collapsed render. Mobile re-enables pan below. */
+  /* US-109q: desktop overflow is width-driven — the measure pass collapses
+     extra tabs into "更多" so the row never needs to scroll. Do NOT clip here:
+     the "更多" dropdown is an absolutely-positioned child that hangs BELOW the
+     bar, and overflow:hidden would clip it away (the bug where 更多 opened but
+     showed nothing). nowrap keeps tabs on one line during the measure frame. */
   flex-wrap: nowrap;
-  overflow: hidden;
 }
 .task-center-view .bt-tab {
   padding: 6px 12px;
