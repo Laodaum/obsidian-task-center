@@ -346,4 +346,97 @@ describe("US-724 saved views / custom filters", function () {
     expect(JSON.stringify(options)).not.toContain("并通过");
     expect(JSON.stringify(options)).not.toContain("[[Spec#Heading");
   });
+
+  // US-109q: desktop "更多" overflow tabs open an in-place dropdown anchored
+  // under the button (not a bottom sheet / modal). Clicking a row switches to
+  // that tab and closes; outside click and Esc close it; the toggle re-opens.
+  it("US-109q: 更多 opens an in-place dropdown that switches tab and closes", async function () {
+    // Seed 12 custom presets so the tab bar overflows (MAX_VISIBLE_TABS = 9).
+    await browser.executeObsidian(async ({ app }) => {
+      // @ts-expect-error — runtime plugin
+      const plugin = (app as any).plugins.plugins["task-center"];
+      const mk = (n: number) => ({
+        id: `ovf-${n}`,
+        name: `溢出${n}`,
+        builtin: false,
+        hidden: false,
+        filters: {},
+        view: { layout: { type: "list" } },
+        summary: [],
+      });
+      plugin.settings.queryPresets = Array.from({ length: 12 }, (_, i) => mk(i + 1));
+      plugin.settings.defaultSavedViewId = "ovf-1";
+      await plugin.saveSettings();
+      await Promise.all(
+        app.workspace.getLeavesOfType("task-center-board").map((leaf) => leaf.detach()),
+      );
+    });
+
+    await browser.executeObsidianCommand("task-center:open");
+    await forFlush();
+    await $('[data-tab-id="__overflow__"]').waitForExist({ timeout: 5000 });
+
+    // 1. Click 更多 → an in-place dropdown appears anchored under the button,
+    //    and it is NOT a bottom sheet / modal.
+    await $('[data-tab-id="__overflow__"]').click();
+    await $('.bt-overflow-tabs-menu').waitForExist({ timeout: 2000 });
+    const openShape = await browser.execute(() => {
+      const menu = document.querySelector<HTMLElement>(".bt-overflow-tabs-menu");
+      const anchor = document.querySelector<HTMLElement>(".bt-tab-more");
+      const cs = menu ? getComputedStyle(menu) : null;
+      return {
+        nestedUnderMore: !!menu && !!anchor && anchor.contains(menu),
+        position: cs?.position ?? "",
+        rowCount: document.querySelectorAll(".bt-overflow-tabs-menu .bt-overflow-tab-row").length,
+        draggableRows: document.querySelectorAll(
+          '.bt-overflow-tabs-menu .bt-overflow-tab-row[draggable="true"]',
+        ).length,
+        isBottomSheet: !!document.querySelector(".task-center-bottom-sheet .bt-overflow-tabs-sheet"),
+        firstRowTabId: document
+          .querySelector<HTMLElement>(".bt-overflow-tabs-menu .bt-overflow-tab-row")
+          ?.dataset.queryTabId,
+      };
+    });
+    expect(openShape.nestedUnderMore).toBe(true);
+    expect(openShape.position).toBe("absolute");
+    expect(openShape.rowCount).toBeGreaterThan(0);
+    // No drag-to-reorder inside the narrow dropdown.
+    expect(openShape.draggableRows).toBe(0);
+    expect(openShape.isBottomSheet).toBe(false);
+
+    // 2. Clicking a row switches to that tab and closes the dropdown.
+    const targetId = openShape.firstRowTabId;
+    await $(`.bt-overflow-tabs-menu .bt-overflow-tab-row[data-query-tab-id="${targetId}"]`).click();
+    await browser.waitUntil(
+      async () => !(await $('.bt-overflow-tabs-menu').isExisting()),
+      { timeout: 2000 },
+    );
+    const activeId = await browser.executeObsidian(({ app }) => {
+      const leaf = app.workspace.getLeavesOfType("task-center-board")[0];
+      return (leaf?.view as any)?.state?.savedViewId as string | undefined;
+    });
+    expect(activeId).toBe(targetId);
+
+    // 3. Re-open, then an outside click closes it.
+    await $('[data-tab-id="__overflow__"]').click();
+    await $('.bt-overflow-tabs-menu').waitForExist({ timeout: 2000 });
+    await browser.execute(() => {
+      document.querySelector<HTMLElement>(".task-center-view")?.dispatchEvent(
+        new PointerEvent("pointerdown", { bubbles: true, composed: true }),
+      );
+    });
+    await browser.waitUntil(
+      async () => !(await $('.bt-overflow-tabs-menu').isExisting()),
+      { timeout: 2000 },
+    );
+
+    // 4. Re-open, then Esc closes it.
+    await $('[data-tab-id="__overflow__"]').click();
+    await $('.bt-overflow-tabs-menu').waitForExist({ timeout: 2000 });
+    await browser.keys(["Escape"]);
+    await browser.waitUntil(
+      async () => !(await $('.bt-overflow-tabs-menu').isExisting()),
+      { timeout: 2000 },
+    );
+  });
 });
