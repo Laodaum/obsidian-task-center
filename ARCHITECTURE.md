@@ -11,6 +11,7 @@
 3. **一份 Query DSL**：filters、view、summary、tab preset、GUI 可视化编辑、GUI DSL 直编、CLI query 管理共用同一份 schema 与校验。（US-109t / US-219）
 4. **Tab 是持久 Query**：不存在独立持久化的“current query”。运行时只有 tab saved query、tab draft、effective query。（US-109u）
 5. **View 不拥有业务集合**：list / grid / week / month 只消费 Query 结果并提供对应操作；TODO、今日、未排期、已完成等都是 QueryPreset。（US-100 / US-109k）
+5a. **过滤归属 area，不是全局 live state**：没有一份作用于整个 tab 的全局过滤运行时状态。每个 `list`/`grid` area 的过滤就是它自己的 `when`；图形过滤入口直接编辑该 area 的 `when`（落进 tab draft），与 DSL 直编同一份数据。tab 级只有一个程序化应用的共享基础集 `preset.filters`。（US-109w / US-109x / US-109y / US-109z）
 6. **GUI 与 CLI 共用业务层**：解析、筛选、summary、写回、嵌套、QueryPreset CRUD 都必须通过同一服务层，不允许 CLI 和 GUI 各自实现。（US-201~219）
 7. **缓存是唯一读入口**：状态栏、看板、CLI 不直接扫 vault；所有任务读取经 TaskCache。（US-404）
 8. **事件增量优先**：文件变更只重解析该文件；打开看板 / list / stats / hash disambiguation 才允许显式全量 ensure。（US-404）
@@ -433,11 +434,17 @@ Obsidian vault/metadata event
 TaskCache.flatten()
   → parse-level ParsedTask[]
   → deriveEffectiveTasks()
-  → applyQueryFilters(filters)
-  → applyViewProjection(view)
+  → applyQueryFilters(preset.filters)        // tab 级共享基础集（程序化，无全局过滤 UI）
+  → applyViewProjection(view)                // 每个 list/grid area 再用自己的 when 收窄
   → computeSummary(summary)
   → render surface / CLI format
 ```
+
+过滤分两层、各有归属：
+
+- **基础集 `preset.filters`**：`applyQueryFilters` 在投影前对全集生效，决定"这个 tab 整体看哪些任务"。它没有全局过滤 chip UI，只在 DSL / 编辑 Query 面板里改。
+- **per-area `when`**：在 `applyViewProjection` 里，每个 `list`/`grid` area 用自己的 `when` 在基础集上再收窄。area header 的过滤入口编辑的就是这个 `when`，写进 tab draft（`draftByTabId`），与 DSL 直编同一份数据。
+- **不存在第三层全局 live filter**：渲染层不再有 `getTextFilter()` 式的、读一份全局 tag/time/status/search 运行时状态再套在所有 area 上的逻辑。空状态由各 area 自己按 `when` 归因。（US-109w / US-109b1）
 
 ### 4.2 Filter 语义
 
