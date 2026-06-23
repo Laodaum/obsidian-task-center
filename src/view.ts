@@ -259,6 +259,9 @@ export class TaskCenterView extends ItemView {
   // Render-time DFS area counter, reset at the start of renderViewLayout so each
   // rendered area's index matches collectAreas(layout) order (for setAreaWhen).
   private renderAreaCounter = 0;
+  // Whether the query summary has been placed in an area header this render
+  // pass (it shows once, on the first content area's title row).
+  private summaryPlaced = false;
   private dateCalendarAnchorISO = startOfMonth(todayISO());
   private pendingDateRangeStart: string | null = null;
   private viewResizeObserver: ResizeObserver | null = null;
@@ -3939,21 +3942,28 @@ export class TaskCenterView extends ItemView {
   // 对应组件。没有 today / completed / unscheduled 专属渲染分支。
   private renderViewLayout(parent: HTMLElement): void {
     const active = this.activeSavedView();
-    this.renderSummaryArea(parent, active);
     const layout: LayoutNode = active.view?.layout ?? { type: "list" };
     const root = parent.createDiv({ cls: "bt-view-root" });
     // Reset the DFS area counter so each rendered area's index lines up with
     // collectAreas(layout) order — setAreaWhen uses it to address the draft.
     this.renderAreaCounter = 0;
+    // Summary is shown inline on the first content area's title row (not a
+    // separate bar). Reset the per-pass guard before walking the layout.
+    this.summaryPlaced = false;
     this.renderLayoutNode(root, layout);
   }
 
   // 通用 summary 区：顶层 summary 指标在标准位置渲染，对任何 view 都一样。
   // 取代过去 completed 视图里硬编码的统计面板。（US-303 / ARCHITECTURE §4.4）
-  private renderSummaryArea(parent: HTMLElement, active: QueryPreset): void {
+  // Query summary, rendered inline on the first content area's title row (right
+  // side). A customizable metric area: chips + an ✎ edit when metrics exist, or
+  // a discoverable "+ 添加指标" ghost when empty. Both open the visual Query
+  // editor (Summary section). Week/month-only views show no inline summary — it
+  // is edited via 编辑 Query, alongside filters. (US-303 / ARCHITECTURE §4.4)
+  private renderSummaryInto(host: HTMLElement, active: QueryPreset): void {
     const metrics = active.summary ?? [];
-    const bar = parent.createDiv({ cls: "bt-summary-bar" });
-    bar.dataset.summary = "true";
+    const group = host.createDiv({ cls: "bt-area-summary" });
+    group.dataset.summary = "true";
 
     if (metrics.length > 0) {
       // Count over the same top-level cards the view shows, so summary count
@@ -3961,15 +3971,12 @@ export class TaskCenterView extends ItemView {
       const filtered = recomputeTopLevelInQuery(this.getEffectiveTasks().filter(this.getTextFilter()))
         .filter((t) => t.isTopLevelInQuery);
       for (const item of computeSummary(filtered, metrics)) {
-        const chip = bar.createDiv({ cls: `bt-summary-chip bt-summary-${item.type}` });
+        const chip = group.createDiv({ cls: `bt-summary-chip bt-summary-${item.type}` });
         chip.createSpan({ text: this.summaryChipLabel(item), cls: "bt-summary-chip-text" });
       }
     }
 
-    // The summary is a customizable metric area. Make it editable in place:
-    // an ✎ when there are chips, or a discoverable "+ 统计" ghost when empty.
-    // Both open the visual Query editor (Summary section).
-    const edit = bar.createEl("button", { cls: "bt-summary-edit" });
+    const edit = group.createEl("button", { cls: "bt-summary-edit" });
     edit.dataset.action = "edit-summary";
     if (metrics.length > 0) {
       setIcon(edit, "pencil");
@@ -4083,14 +4090,22 @@ export class TaskCenterView extends ItemView {
     // US-109w: filtering belongs to the area. drop / tray areas (onDrop) are
     // action surfaces, not query content, so they don't get a filter entry.
     const filterable = !area.onDrop;
-    const areaTitle = this.localizeBuiltinTitle(area.id, area.title);
+    // The summary sits on the first content area's title row; that area also
+    // gets a title fallback (the tab name) so the header is never a bare count.
+    const isFirstContent = filterable && !this.summaryPlaced;
+    const rawTitle = this.localizeBuiltinTitle(area.id, area.title);
+    const areaTitle = rawTitle || (isFirstContent ? this.activeSavedView().name : "");
     if (areaTitle || filterable) {
       parent.addClass("bt-has-head");
-      const total = model.sections.reduce((s, sec) => s + sec.tasks.filter((t) => t.isTopLevelInQuery).length, 0);
       const head = parent.createDiv({ cls: "bt-list-area-head" });
-      if (areaTitle) head.createSpan({ cls: "bt-list-area-head-title", text: `${areaTitle} (${total})` });
-      else head.createSpan({ cls: "bt-list-area-head-title bt-list-area-head-count", text: `(${total})` });
-      if (filterable) this.renderAreaFilter(head, areaIndex, area.when ?? {});
+      // Title only — no "(N)" count (the user reads counts in cards, not headers).
+      if (areaTitle) head.createSpan({ cls: "bt-list-area-head-title", text: areaTitle });
+      const headRight = head.createDiv({ cls: "bt-list-area-head-right" });
+      if (isFirstContent) {
+        this.summaryPlaced = true;
+        this.renderSummaryInto(headRight, this.activeSavedView());
+      }
+      if (filterable) this.renderAreaFilter(headRight, areaIndex, area.when ?? {});
     }
 
     if (model.grouped) {

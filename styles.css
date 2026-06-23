@@ -1583,6 +1583,21 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-weight: var(--font-semibold);
+}
+/* Right side of the area title row: summary chips + filter entry. */
+.task-center-view .bt-list-area-head-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  min-width: 0;
+}
+.task-center-view .bt-area-summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
 }
 .task-center-view .bt-area-filter {
   position: relative;
@@ -1593,29 +1608,32 @@
   align-items: center;
   gap: 4px;
   max-width: 220px;
-  padding: 2px 6px;
-  font-size: 11px;
+  min-height: 26px;
+  padding: 2px 8px;
+  font-size: var(--font-ui-smaller);
   color: var(--text-muted);
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 6px;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
   cursor: pointer;
   box-shadow: none;
 }
 .task-center-view .bt-area-filter-trigger:hover {
   background: var(--background-modifier-hover);
+  border-color: var(--interactive-accent);
+  color: var(--text-normal);
 }
 .task-center-view .bt-area-filter-trigger.active {
-  color: var(--text-normal);
-  border-color: var(--background-modifier-border);
-  background: var(--background-secondary);
+  color: var(--text-on-accent);
+  border-color: transparent;
+  background: var(--interactive-accent);
 }
 .task-center-view .bt-area-filter-icon {
   display: inline-flex;
 }
 .task-center-view .bt-area-filter-icon svg {
-  width: 13px;
-  height: 13px;
+  width: 15px;
+  height: 15px;
 }
 .task-center-view .bt-area-filter-summary {
   overflow: hidden;
