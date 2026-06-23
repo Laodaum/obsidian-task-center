@@ -2915,53 +2915,30 @@
   color: var(--text-normal);
 }
 
-/* DESIGN §5.0: toolbar action overflow (⋯ + popover of low-frequency actions) */
-.task-center-view .bt-overflow {
-  position: relative;
-  display: inline-flex;
+/* DESIGN §5.0: Tab Strip trailing controls — manage tabs + settings (app chrome) */
+.task-center-view .bt-tabbar-tail {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  padding-left: 6px;
 }
-.task-center-view .bt-overflow-trigger {
+.task-center-view .bt-tabbar-tail-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
+  width: 28px;
+  height: 28px;
   padding: 0;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: var(--radius-s);
-  background: var(--background-secondary);
-  color: var(--text-muted);
-  cursor: pointer;
-}
-.task-center-view .bt-overflow-trigger:hover {
-  background: var(--background-modifier-hover);
-  color: var(--text-normal);
-}
-.task-center-view .bt-overflow-menu {
-  position: absolute;
-  top: calc(100% + 4px);
-  right: 0;
-  z-index: 30;
-  display: flex;
-  flex-direction: column;
-  min-width: 168px;
-  padding: 4px;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: var(--radius-m);
-  background: var(--background-secondary);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
-}
-.task-center-view .bt-overflow-item {
-  text-align: left;
-  padding: 6px 10px;
   border: none;
   border-radius: var(--radius-s);
   background: transparent;
-  color: var(--text-normal);
+  color: var(--text-muted);
   cursor: pointer;
 }
-.task-center-view .bt-overflow-item:hover {
+.task-center-view .bt-tabbar-tail-btn:hover {
   background: var(--background-modifier-hover);
+  color: var(--text-normal);
 }
 
 /* Manage tab rows drag-to-reorder */

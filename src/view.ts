@@ -860,6 +860,20 @@ export class TaskCenterView extends ItemView {
         this.openOverflowTabsSheet(overflowTabs);
       });
     }
+
+    // DESIGN §5.0: tab-collection management belongs to the Tab Strip (the tabs'
+    // home), not the per-query toolbar. Settings is app chrome — a standalone
+    // gear in the top strip, not buried in a query action drawer.
+    const tail = bar.createDiv({ cls: "bt-tabbar-tail" });
+    const manageBtn = tail.createEl("button", { cls: "bt-tabbar-tail-btn" });
+    setIcon(manageBtn, "list");
+    manageBtn.setAttr("aria-label", tr("savedViews.manage"));
+    manageBtn.dataset.action = "manage-query-tabs";
+    manageBtn.addEventListener("click", () => this.openManageTabsSheet());
+    const gearBtn = tail.createEl("button", { cls: "bt-tabbar-tail-btn" });
+    setIcon(gearBtn, "settings");
+    gearBtn.setAttr("aria-label", tr("toolbar.settings"));
+    gearBtn.addEventListener("click", () => this.openPluginSettings());
   }
 
   private renderTabButton(bar: HTMLElement, view: QueryPreset, index: number, mobileLayout: boolean): void {
@@ -1308,14 +1322,7 @@ export class TaskCenterView extends ItemView {
     const add = utility.createEl("button", { text: tr("toolbar.add") });
     add.addClass("bt-add-btn");
     add.addEventListener("click", () => this.openQuickAdd());
-
-    // Settings: desktop folds it into the action overflow (§5.0); mobile has no
-    // overflow there, so keep a dedicated gear.
-    if (mobileLayout) {
-      const gear = utility.createEl("button", { text: "⚙" });
-      gear.addClass("bt-gear");
-      gear.addEventListener("click", () => this.openPluginSettings());
-    }
+    // Settings moved out of the query toolbar to the Tab Strip gear (DESIGN §5.0).
   }
 
   private renderSavedViewsToolbar(parent: HTMLElement, rerenderControls?: FilterControlsRerender) {
@@ -1326,11 +1333,13 @@ export class TaskCenterView extends ItemView {
     const actions = wrap.createDiv({ cls: "bt-saved-view-actions" });
 
     this.renderSavedViewsFilterControls(filters, rerenderControls);
+    // DESIGN §5.0: query toolbar only carries current-query actions. Tab
+    // management lives on the Tab Strip; settings is app chrome (gear there).
     this.renderSavedViewsActionControls(actions, rerenderControls, {
       includeSaveAs: true,
+      contextualSaveAs: true,
       includeDsl: true,
-      includeManage: true,
-      overflow: true,
+      includeManage: false,
     });
   }
 
@@ -1419,13 +1428,7 @@ export class TaskCenterView extends ItemView {
         this.render();
       });
     }
-
-    const manage = actions.createEl("button", {
-      text: tr("savedViews.manage"),
-      cls: "bt-saved-view-save",
-    });
-    manage.dataset.action = "manage-query-tabs";
-    manage.addEventListener("click", () => this.openManageTabsSheet());
+    // Tab management moved to the Tab Strip (DESIGN §5.0) — not here.
   }
 
   private renderSavedViewsFilterControls(parent: HTMLElement, rerenderControls?: FilterControlsRerender): void {
@@ -1438,10 +1441,23 @@ export class TaskCenterView extends ItemView {
   private renderSavedViewsActionControls(
     parent: HTMLElement,
     rerenderControls?: FilterControlsRerender,
-    options: { includeSaveAs?: boolean; includeDsl?: boolean; includeManage?: boolean; overflow?: boolean } = {},
+    options: { includeSaveAs?: boolean; includeDsl?: boolean; includeManage?: boolean; contextualSaveAs?: boolean } = {},
   ): void {
     const selectedView = this.activeSavedView();
     const dirty = this.isSelectedSavedViewDirty(selectedView);
+
+    const makeSaveAs = () => {
+      const save = parent.createEl("button", { text: tr("savedViews.save"), cls: "bt-saved-view-save" });
+      save.dataset.action = "save-current-view";
+      save.addEventListener("click", () => {
+        void (async () => {
+          const name = await this.askSavedViewName(`${selectedView.name} Copy`);
+          if (!name || !name.trim()) return;
+          await this.saveCurrentView(name.trim());
+          this.refreshFilterControls(rerenderControls);
+        })();
+      });
+    };
 
     if (dirty) {
       const update = parent.createEl("button", {
@@ -1456,6 +1472,10 @@ export class TaskCenterView extends ItemView {
         })();
       });
 
+      // DESIGN §5.0: "另存为新 tab" is a current-query action — surface it only
+      // when there is a draft to save (Office-style contextual command).
+      if (options.includeSaveAs && options.contextualSaveAs) makeSaveAs();
+
       const discard = parent.createEl("button", {
         text: tr("savedViews.discard"),
         cls: "bt-saved-view-save",
@@ -1467,88 +1487,27 @@ export class TaskCenterView extends ItemView {
       });
     }
 
-    // DESIGN §5.0: collect the low-frequency actions. In `overflow` mode they
-    // collapse into a single ⋯ popover; otherwise they stay as flat buttons.
-    // Each keeps its `data-action` so e2e selectors hold either way.
-    const secondary: { label: string; action: string; run: () => void }[] = [];
-    if (options.includeSaveAs) {
-      secondary.push({
-        label: tr("savedViews.save"),
-        action: "save-current-view",
-        run: () => {
-          void (async () => {
-            const name = await this.askSavedViewName(`${selectedView.name} Copy`);
-            if (!name || !name.trim()) return;
-            await this.saveCurrentView(name.trim());
-            this.refreshFilterControls(rerenderControls);
-          })();
-        },
-      });
-    }
+    // Non-contextual save-as (the full Query Editor panel) stays always visible.
+    if (options.includeSaveAs && !options.contextualSaveAs) makeSaveAs();
+
     if (options.includeDsl) {
-      secondary.push({
-        label: tr("savedViews.editDsl"),
-        action: "edit-current-view-dsl",
-        run: () => this.openQueryDslModal(rerenderControls),
+      // The current-query editor entry. Labelled "编辑 Query" (not "…DSL"); the
+      // modal it opens is where DSL / save-as / rename live (§3.2).
+      const dsl = parent.createEl("button", {
+        text: tr("savedViews.editQuery"),
+        cls: "bt-saved-view-save",
       });
+      dsl.dataset.action = "edit-current-view-dsl";
+      dsl.addEventListener("click", () => this.openQueryDslModal(rerenderControls));
     }
+
     if (options.includeManage) {
-      secondary.push({
-        label: tr("savedViews.manage"),
-        action: "manage-query-tabs",
-        run: () => this.openManageTabsSheet(),
+      const manage = parent.createEl("button", {
+        text: tr("savedViews.manage"),
+        cls: "bt-saved-view-save",
       });
-    }
-    if (options.overflow) {
-      secondary.push({
-        label: tr("toolbar.settings"),
-        action: "open-settings",
-        run: () => this.openPluginSettings(),
-      });
-      this.renderActionOverflow(parent, secondary);
-    } else {
-      for (const item of secondary) {
-        const btn = parent.createEl("button", { text: item.label, cls: "bt-saved-view-save" });
-        btn.dataset.action = item.action;
-        btn.addEventListener("click", item.run);
-      }
-    }
-  }
-
-  /**
-   * DESIGN §5.0: a single ⋯ button that toggles a popover of the low-frequency
-   * actions. Items stay real `<button data-action>` (not an Obsidian Menu) so
-   * e2e selectors keep working; the popover just hides them until opened.
-   */
-  private renderActionOverflow(
-    parent: HTMLElement,
-    items: { label: string; action: string; run: () => void }[],
-  ): void {
-    const wrap = parent.createDiv({ cls: "bt-overflow" });
-    const trigger = wrap.createEl("button", { cls: "bt-overflow-trigger" });
-    setIcon(trigger, "more-horizontal");
-    trigger.setAttr("aria-label", tr("savedViews.more"));
-    const menu = wrap.createDiv({ cls: "bt-overflow-menu" });
-    menu.hide();
-
-    const close = () => {
-      menu.hide();
-      document.removeEventListener("click", onDocClick, true);
-    };
-    const onDocClick = (e: MouseEvent) => {
-      if (!wrap.contains(e.target as Node)) close();
-    };
-    trigger.addEventListener("click", (e) => {
-      e.stopPropagation();
-      if (menu.isShown()) { close(); return; }
-      menu.show();
-      document.addEventListener("click", onDocClick, true);
-    });
-
-    for (const item of items) {
-      const btn = menu.createEl("button", { text: item.label, cls: "bt-overflow-item" });
-      btn.dataset.action = item.action;
-      btn.addEventListener("click", () => { close(); item.run(); });
+      manage.dataset.action = "manage-query-tabs";
+      manage.addEventListener("click", () => this.openManageTabsSheet());
     }
   }
 
