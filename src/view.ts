@@ -282,6 +282,11 @@ export class TaskCenterView extends ItemView {
   // Whether the query summary has been placed in an area header this render
   // pass (it shows once, on the first content area's title row).
   private summaryPlaced = false;
+  // US-109p7: DFS index of the area that carries the summary bar + pencil this
+  // render pass (the `isFirstContent` area), or null if none. That area no
+  // longer renders its own filter funnel; its `when` is edited in the Query
+  // editor's Filters tab "本视图过滤" section instead.
+  private summaryAreaIndex: number | null = null;
   // US-109p6: which Tab the Query editor panel is showing. Persisted across
   // re-renders of the open sheet so switching tabs / editing controls does not
   // reset back to the first tab.
@@ -2765,12 +2770,45 @@ export class TaskCenterView extends ItemView {
     });
   }
 
-  // US-109p6: Filters tab — edits the shared base filter set `preset.filters`.
+  // US-109p7/US-109p8: Filters tab — two sections editing two filter layers:
+  //  1. "本视图过滤" (data-filter-section="area"): the summary-bar area's `when`
+  //     (the controls that used to live in that area's funnel popover). Only
+  //     shown when this render pass placed the summary bar on a filterable area.
+  //  2. "基础集" (data-filter-section="base"): the tab-level shared base set
+  //     `preset.filters`, applied to every area in the tab.
   private renderFiltersTab(parent: HTMLElement, rerenderControls?: FilterControlsRerender): void {
+    // ── Section 1: this view's area `when` (summary-bar area) ──────────────
+    const areaIndex = this.summaryAreaIndex;
+    if (areaIndex !== null) {
+      const areaWhen = this.summaryAreaWhen(areaIndex);
+      const areaSection = parent.createDiv({ cls: "bt-query-editor-section" });
+      areaSection.dataset.filterSection = "area";
+      areaSection.createDiv({
+        cls: "bt-query-editor-section-title",
+        text: tr("savedViews.queryEditorAreaFilters"),
+      });
+      const areaControls = areaSection.createDiv({ cls: "bt-area-filter-popover bt-query-editor-area-filters" });
+      this.renderAreaFilterControls(areaControls, areaIndex, areaWhen, rerenderControls);
+    }
+
+    // ── Section 2: shared base set `preset.filters` ────────────────────────
     const filtersSection = parent.createDiv({ cls: "bt-query-editor-section" });
-    filtersSection.createDiv({ cls: "bt-query-editor-section-title", text: tr("savedViews.queryEditorFilters") });
+    filtersSection.dataset.filterSection = "base";
+    filtersSection.createDiv({ cls: "bt-query-editor-section-title", text: tr("savedViews.queryEditorBaseFilters") });
     const filters = filtersSection.createDiv({ cls: "bt-saved-view-filters" });
     this.renderSavedViewsFilterControls(filters, rerenderControls);
+  }
+
+  // US-109p8: resolve the current `when` of the summary-bar area (by DFS index)
+  // from the live tab draft, so the Filters tab edits the same object the DSL
+  // and the per-area funnel edit.
+  private summaryAreaWhen(areaIndex: number): QueryPresetFilters {
+    const snapshot = this.currentQuerySnapshot(this.activeSavedView());
+    const target = collectAreas(snapshot.view.layout)[areaIndex];
+    if (target && (target.type === "list" || target.type === "grid")) {
+      return (target as ListAreaConfig).when ?? {};
+    }
+    return {};
   }
 
   // US-109p6: View tab — view type + (future) layout editing.
@@ -4152,6 +4190,7 @@ export class TaskCenterView extends ItemView {
     // Summary is shown inline on the first content area's title row (not a
     // separate bar). Reset the per-pass guard before walking the layout.
     this.summaryPlaced = false;
+    this.summaryAreaIndex = null;
     this.renderLayoutNode(root, layout);
   }
 
@@ -4306,9 +4345,14 @@ export class TaskCenterView extends ItemView {
       const headRight = head.createDiv({ cls: "bt-list-area-head-right" });
       if (isFirstContent) {
         this.summaryPlaced = true;
+        // US-109p7: this area carries the summary bar + pencil; remember its
+        // index so the Filters tab can edit its `when`, and skip the in-place
+        // funnel here so we don't render a pencil + funnel side-by-side.
+        this.summaryAreaIndex = areaIndex;
         this.renderSummaryInto(headRight, this.effectiveSavedView());
       }
-      if (filterable) this.renderAreaFilter(headRight, areaIndex, area.when ?? {});
+      // Non-summary content areas keep their in-place filter funnel popover.
+      if (filterable && !isFirstContent) this.renderAreaFilter(headRight, areaIndex, area.when ?? {});
     }
 
     if (model.grouped) {
@@ -4371,7 +4415,10 @@ export class TaskCenterView extends ItemView {
 
   // US-109x: write a list/grid area's `when` into the current tab draft, keyed
   // by its DFS index (collectAreas order). Same data the DSL editor edits.
-  private setAreaWhen(areaIndex: number, when: QueryPresetFilters): void {
+  // `rerenderControls` lets a host (e.g. the Query editor sheet) rebuild its own
+  // body after the edit; the in-place popover passes none and just re-renders
+  // the view. (US-109p8)
+  private setAreaWhen(areaIndex: number, when: QueryPresetFilters, rerenderControls?: FilterControlsRerender): void {
     const active = this.activeSavedView();
     const snapshot = this.currentQuerySnapshot(active);
     const layout = JSON.parse(JSON.stringify(snapshot.view.layout)) as LayoutNode;
@@ -4380,7 +4427,7 @@ export class TaskCenterView extends ItemView {
       (target as ListAreaConfig).when = when;
     }
     this.tabDrafts.set(active.id, normalizeQueryPreset({ ...snapshot, view: { layout } }));
-    this.render();
+    this.refreshFilterControls(rerenderControls);
   }
 
   // US-109w/US-109y: per-area filter affordance. One trigger per list/grid area
@@ -4406,12 +4453,29 @@ export class TaskCenterView extends ItemView {
     if (!open) return;
 
     const pop = wrap.createDiv({ cls: "bt-area-filter-popover" });
+    // US-109p7/US-109p8: the area `when` controls (search / status / scheduled /
+    // tags) are shared between this in-place popover and the unified Query
+    // editor's Filters tab ("本视图过滤" section). Render them via the extracted
+    // helper so both paths edit the same `when` with identical behavior.
+    this.renderAreaFilterControls(pop, areaIndex, when);
+  }
+
+  // US-109p7/US-109p8: pure area-`when` filter controls (search / status /
+  // scheduled / tags), reused by the in-place popover (renderAreaFilter) and the
+  // Query editor's Filters tab "本视图过滤" section. All edits go through
+  // setAreaWhen so they land in the tab draft and rerender, same as DSL editing.
+  private renderAreaFilterControls(
+    parent: HTMLElement,
+    areaIndex: number,
+    when: QueryPresetFilters,
+    rerenderControls?: FilterControlsRerender,
+  ): void {
     const selectedTags = this.areaTags(when);
     const status = normalizeSavedViewStatus(when.status);
     const scheduled = when.time?.scheduled?.trim() ?? "";
 
     // Search (applied on change to avoid losing focus on every keystroke).
-    const search = pop.createEl("input", {
+    const search = parent.createEl("input", {
       type: "text",
       cls: "bt-area-search",
       placeholder: tr("toolbar.filter"),
@@ -4419,11 +4483,11 @@ export class TaskCenterView extends ItemView {
     search.value = when.search ?? "";
     search.addEventListener("change", () => {
       const val = search.value.trim();
-      this.setAreaWhen(areaIndex, { ...when, search: val || undefined });
+      this.setAreaWhen(areaIndex, { ...when, search: val || undefined }, rerenderControls);
     });
 
     // Status
-    const statusSec = pop.createDiv({ cls: "bt-area-filter-sec" });
+    const statusSec = parent.createDiv({ cls: "bt-area-filter-sec" });
     statusSec.createDiv({ cls: "bt-area-filter-sec-label", text: tr("savedViews.statusAll") });
     const statusRow = statusSec.createDiv({ cls: "bt-area-filter-chips" });
     for (const opt of this.statusFilterOptions()) {
@@ -4437,12 +4501,12 @@ export class TaskCenterView extends ItemView {
       chip.dataset.areaStatus = opt.value;
       chip.addEventListener("click", () => {
         const next = this.toggledStatus(status, opt.value);
-        this.setAreaWhen(areaIndex, { ...when, status: next });
+        this.setAreaWhen(areaIndex, { ...when, status: next }, rerenderControls);
       });
     }
 
     // Scheduled (quick tokens)
-    const schedSec = pop.createDiv({ cls: "bt-area-filter-sec" });
+    const schedSec = parent.createDiv({ cls: "bt-area-filter-sec" });
     schedSec.createDiv({ cls: "bt-area-filter-sec-label", text: tr("savedViews.timeScheduled") });
     const schedRow = schedSec.createDiv({ cls: "bt-area-filter-chips" });
     const schedOptions: Array<readonly [string, string]> = [
@@ -4460,17 +4524,17 @@ export class TaskCenterView extends ItemView {
         const nextTime = { ...(when.time ?? {}) };
         if (token) nextTime.scheduled = token;
         else delete nextTime.scheduled;
-        this.setAreaWhen(areaIndex, { ...when, time: nextTime });
+        this.setAreaWhen(areaIndex, { ...when, time: nextTime }, rerenderControls);
       });
     }
 
     // Tags
-    const tagSec = pop.createDiv({ cls: "bt-area-filter-sec" });
+    const tagSec = parent.createDiv({ cls: "bt-area-filter-sec" });
     const tagHead = tagSec.createDiv({ cls: "bt-area-filter-sec-head" });
     tagHead.createSpan({ cls: "bt-area-filter-sec-label", text: tr("savedViews.tag") });
     if (selectedTags.length > 0) {
       const clearTags = tagHead.createEl("button", { text: tr("savedViews.clearTags"), cls: "bt-area-filter-clear-tags" });
-      clearTags.addEventListener("click", () => this.setAreaWhen(areaIndex, { ...when, tags: [] }));
+      clearTags.addEventListener("click", () => this.setAreaWhen(areaIndex, { ...when, tags: [] }, rerenderControls));
     }
     const tagRow = tagSec.createDiv({ cls: "bt-area-filter-tags" });
     const tagOptions = this.collectTagOptions(selectedTags);
@@ -4490,21 +4554,9 @@ export class TaskCenterView extends ItemView {
         const next = checked
           ? selectedTags.filter((t) => t.toLowerCase() !== lc)
           : [...selectedTags, opt.tag];
-        this.setAreaWhen(areaIndex, { ...when, tags: next });
+        this.setAreaWhen(areaIndex, { ...when, tags: next }, rerenderControls);
       });
     }
-
-    // US-109p6: the per-area popover edits this area's `when`. A footer link
-    // opens the unified Query editor on the Filter tab, which edits the shared
-    // base set `preset.filters` (a different object, US-109z). Both paths
-    // coexist; this does not replace per-area `when`.
-    const footer = pop.createDiv({ cls: "bt-area-filter-footer" });
-    const baseLink = footer.createEl("button", {
-      text: tr("savedViews.editBaseFilters"),
-      cls: "bt-area-filter-base-link",
-    });
-    baseLink.dataset.queryTabEntry = "filter";
-    baseLink.addEventListener("click", () => this.openQueryControlsSheet("filter"));
   }
 
   private areaTags(when: QueryPresetFilters): string[] {

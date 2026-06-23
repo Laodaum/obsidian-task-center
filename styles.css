@@ -3793,27 +3793,21 @@
   padding-top: 4px;
 }
 
-/* US-109p6: per-area 过滤 popover 底部进入「编辑基础集」的链接。 */
-.task-center-bottom-sheet .bt-area-filter-footer,
-.bt-area-filter-popover .bt-area-filter-footer {
-  margin-top: 8px;
-  padding-top: 6px;
-  border-top: 1px solid var(--background-modifier-border);
-}
-
-.bt-area-filter-base-link {
-  width: 100%;
-  padding: 4px 8px;
+/* US-109p7/US-109p8: 摘要栏 area 的 `when` 过滤控件搬进「编辑 Query」面板的
+   「筛选」Tab 的"本视图过滤"小节。复用 popover 的内部控件样式
+   (.bt-area-search / .bt-area-filter-sec / chips)，但取消 popover 的浮层定位，
+   让它作为 Tab 内的常驻区块自然排布。 */
+.task-center-view .bt-query-editor-area-filters.bt-area-filter-popover,
+.task-center-bottom-sheet .bt-query-editor-area-filters.bt-area-filter-popover {
+  position: static;
+  width: auto;
+  max-height: none;
+  overflow: visible;
+  padding: 0;
+  z-index: auto;
   background: transparent;
   border: none;
-  color: var(--text-accent);
-  font-size: 12px;
-  text-align: left;
-  cursor: pointer;
-}
-
-.bt-area-filter-base-link:hover {
-  text-decoration: underline;
+  box-shadow: none;
 }
 
 .task-center-bottom-sheet .bt-mobile-query-sheet .bt-saved-view-filters {
