@@ -7,6 +7,7 @@ import {
   Notice,
   Platform,
   TFile,
+  setIcon,
 } from "obsidian";
 import { ParsedTask, VIEW_TYPE_TASK_CENTER } from "./types";
 import { formatMinutes } from "./parser";
@@ -1202,48 +1203,61 @@ export class TaskCenterView extends ItemView {
     }
   }
 
+  // UX.md §3.0: the time-range selector belongs to the time-axis views
+  // (week / month), not the global toolbar. On desktop it is rendered by the
+  // week / month component itself (see renderWeek / renderMonth) so the
+  // toolbar can collapse to a single row (search + filter chips). On mobile
+  // the two-row rule (§6.2) keeps the date nav in the toolbar's first row.
+  // `data-action="nav-*"` is the stable e2e selector regardless of where the
+  // nav lives in the DOM.
+  private renderRangeNav(parent: HTMLElement) {
+    if (this.state.tab !== "week" && this.state.tab !== "month") return;
+    const nav = parent.createDiv({ cls: "bt-nav" });
+    const prev = nav.createEl("button", { text: "◀" });
+    prev.dataset.action = "nav-prev";
+    const todayLabel =
+      this.state.tab === "week"
+        ? tr("toolbar.weekNo", { n: isoWeekNumber(this.state.anchorISO) })
+        : tr("toolbar.today");
+    const today = nav.createEl("button", { text: todayLabel });
+    today.dataset.action = "nav-today";
+    const next = nav.createEl("button", { text: "▶" });
+    next.dataset.action = "nav-next";
+    const label = nav.createSpan({ cls: "bt-nav-label" });
+    label.setText(this.navLabel());
+    prev.addEventListener("click", () => {
+      this.state.anchorISO =
+        this.state.tab === "week"
+          ? addDays(this.state.anchorISO, -7)
+          : shiftMonth(this.state.anchorISO, -1);
+      this.render();
+    });
+    next.addEventListener("click", () => {
+      this.state.anchorISO =
+        this.state.tab === "week"
+          ? addDays(this.state.anchorISO, 7)
+          : shiftMonth(this.state.anchorISO, 1);
+      this.render();
+    });
+    today.addEventListener("click", () => {
+      this.state.anchorISO = todayISO();
+      this.render();
+    });
+  }
+
   private renderToolbar(parent: HTMLElement) {
     const bar = parent.createDiv({ cls: "bt-toolbar" });
     const mainRow = bar.createDiv({ cls: "bt-toolbar-row bt-toolbar-main" });
     const mobileLayout = this.contentEl.dataset.mobileLayout === "true";
-    const subRow = mobileLayout ? mainRow : bar.createDiv({ cls: "bt-toolbar-row bt-toolbar-sub" });
+    // §3.0: with the date nav lowered into the week / month component, the
+    // desktop toolbar collapses to a single row — search + filter chips live
+    // together in mainRow instead of a separate sub-row.
+    const subRow = mainRow;
 
-    // Navigation arrows for week/month
-    if (this.state.tab === "week" || this.state.tab === "month") {
-      const nav = mainRow.createDiv({ cls: "bt-nav" });
-      const prev = nav.createEl("button", { text: "◀" });
-      // Stable e2e selector — the visible label changes (in week tab the
-      // "today" button shows the week number; in month tab it shows
-      // localized "Today"). Tests select via `[data-action="nav-*"]`.
-      prev.dataset.action = "nav-prev";
-      const todayLabel =
-        this.state.tab === "week"
-          ? tr("toolbar.weekNo", { n: isoWeekNumber(this.state.anchorISO) })
-          : tr("toolbar.today");
-      const today = nav.createEl("button", { text: todayLabel });
-      today.dataset.action = "nav-today";
-      const next = nav.createEl("button", { text: "▶" });
-      next.dataset.action = "nav-next";
-      const label = nav.createSpan({ cls: "bt-nav-label" });
-      label.setText(this.navLabel());
-      prev.addEventListener("click", () => {
-        this.state.anchorISO =
-          this.state.tab === "week"
-            ? addDays(this.state.anchorISO, -7)
-            : shiftMonth(this.state.anchorISO, -1);
-        this.render();
-      });
-      next.addEventListener("click", () => {
-        this.state.anchorISO =
-          this.state.tab === "week"
-            ? addDays(this.state.anchorISO, 7)
-            : shiftMonth(this.state.anchorISO, 1);
-        this.render();
-      });
-      today.addEventListener("click", () => {
-        this.state.anchorISO = todayISO();
-        this.render();
-      });
+    // Mobile keeps the date nav in the toolbar (§6.2 two-row rule). On desktop
+    // it is owned by the week / month component itself (§3.0).
+    if (mobileLayout) {
+      this.renderRangeNav(mainRow);
     }
 
     if (!mobileLayout) {
@@ -2844,6 +2858,11 @@ export class TaskCenterView extends ItemView {
   // is no touch drop target (US-503 / US-507).
   // see USER_STORIES.md
   private renderWeek(parent: HTMLElement) {
+    // §3.0: desktop week component owns its own range nav (mobile keeps it in
+    // the toolbar's first row per §6.2, so it is rendered there instead).
+    if (this.contentEl.dataset.mobileLayout !== "true") {
+      this.renderRangeNav(parent.createDiv({ cls: "bt-area-nav" }));
+    }
     const today = todayISO();
     const weekStart = startOfWeek(this.state.anchorISO, this.plugin.settings.weekStartsOn);
     const days: string[] = [];
@@ -3011,6 +3030,11 @@ export class TaskCenterView extends ItemView {
   // the day's bottom sheet instead (US-504 / US-507).
   // see USER_STORIES.md
   private renderMonth(parent: HTMLElement) {
+    // §3.0: desktop month component owns its own range nav (mobile keeps it in
+    // the toolbar's first row per §6.2, so it is rendered there instead).
+    if (this.contentEl.dataset.mobileLayout !== "true") {
+      this.renderRangeNav(parent.createDiv({ cls: "bt-area-nav" }));
+    }
     const today = todayISO();
     const weekStart = this.plugin.settings.weekStartsOn;
     const first = startOfMonth(this.state.anchorISO);
@@ -3793,7 +3817,10 @@ export class TaskCenterView extends ItemView {
     // visible icon / label / theme. Desktop-only; mobile abandon is handled
     // by swipe / action sheet.
     trash.dataset.dropZone = "abandon";
-    trash.createDiv({ cls: "bt-trash-icon", text: "⏹" });
+    // D1: linear lucide icon (inherits currentColor → follows the danger
+    // state) instead of the platform-inconsistent `⏹` emoji.
+    const icon = trash.createDiv({ cls: "bt-trash-icon" });
+    setIcon(icon, "circle-slash");
     const label = trash.createDiv({ cls: "bt-trash-label" });
     label.createSpan({ text: tr("trash.title"), cls: "bt-trash-title" });
     label.createSpan({
