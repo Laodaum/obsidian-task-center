@@ -3959,6 +3959,11 @@ export class TaskCenterView extends ItemView {
     const active = this.effectiveSavedView();
     const layout: LayoutNode = active.view?.layout ?? { type: "list" };
     const root = parent.createDiv({ cls: "bt-view-root" });
+    // Tag the view root with the legacy tab name (today/week/month/…) so stable
+    // e2e selectors like `[data-view="today"]` keep resolving after the layout
+    // refactor moved per-tab rendering into the generic area tree.
+    const legacyTab = this.legacyTabForSavedView(active);
+    if (legacyTab) root.dataset.view = legacyTab;
     // Reset the DFS area counter so each rendered area's index lines up with
     // collectAreas(layout) order — setAreaWhen uses it to address the draft.
     this.renderAreaCounter = 0;
