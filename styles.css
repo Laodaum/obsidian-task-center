@@ -132,6 +132,13 @@
   color: var(--text-muted);
   background: var(--background-modifier-border);
 }
+/* The per-tab task-count badge next to each tab name added noise without being
+   actionable — hide it. The "更多 N" chip (.bt-tab-more) keeps its count since N
+   tells the user how many tabs are collapsed. Hiding (not un-rendering) keeps the
+   DOM stable for e2e/width-measure and just makes tabs narrower. */
+.task-center-view .bt-tab:not(.bt-tab-more) .bt-tab-count {
+  display: none;
+}
 .task-center-view .bt-hotkey {
   font-size: var(--font-ui-smaller);
   color: var(--text-faint);
