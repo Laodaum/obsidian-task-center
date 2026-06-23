@@ -470,7 +470,7 @@ TaskCache.flatten()
 - 语义：若 `task.id ∈ exemptStatusIds`，该任务**跳过 status 过滤**（其它过滤——search / tags / time——照常生效）。这让一条 `done` 任务能临时留在一个 `status: todo` 的集合里，而不破坏其它筛选条件。
 - 纯函数：豁免集合作为入参传入，`applyQueryFilters` / `projectListArea` 不持有任何会话状态；不传时退化为原行为，CLI / summary / badge 计数一律不传，因此完全不受影响。
 - 会话状态归属 view 层：`TaskCenterView` 维护 `justCompletedIds: Set<string>`（仅当前 view 会话）。它同时喂给两层过滤——tab 级共享基础集 `preset.filters`（`getTextFilter`）与 per-area `when`（`projectListArea`）——因为内置单 area tab（今日 / TODO）的 `status: todo` 落在基础集里。
-- 加入时机：用户在卡片上点 ✔ 把一条 `todo` 任务标记为 `done` 时，把它的 id 加入集合，并走"原地变完成态"的局部重渲（不播放 animateOut、不移除卡片）。取消完成（done → todo）时把 id 从集合移除。
+- 加入时机：用户在卡片上点 ✔ **切换任意方向的状态**（todo → done 或 done → todo）时，把它的 id 加入集合，并走"原地变切换后状态"的局部重渲（不播放 animateOut、不移除卡片）。两个方向都加入、都不移除，因此对称——无论变 done 还是变 todo，卡片都跳过该次过滤而停留（一条刚 undone 的 `todo` 任务也能临时留在 `status: done` 的"已完成"集合里）。
 - 清空时机（= "重新进入 view"）：`onOpen`（整页加载）、`applySavedView`（切 tab / 激活 saved view）、`scheduleRefresh`（cache changed 触发的整表刷新）三处清空 `justCompletedIds`。**注意**：完成切换自身触发的局部重渲不清空集合，否则刚完成的卡又会立即被过滤掉。
 
 ### 4.3 View Projection

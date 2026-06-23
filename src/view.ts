@@ -537,32 +537,35 @@ export class TaskCenterView extends ItemView {
 
   /**
    * US-153: toggle a card's done state from the ✔ check. Unlike
-   * `runWithRemoveAnim`, the card does NOT fade out and vanish:
+   * `runWithRemoveAnim`, the card does NOT fade out and vanish. The toggle is
+   * symmetric in BOTH directions — whichever way the status flips, the card
+   * lingers in place until the next genuine view re-entry:
    *
-   *  - todo → done: register the id in `justCompletedIds` so the status-filter
-   *    exemption keeps the card in place, then re-render in place. The card
-   *    re-renders in its done state (US-152), still interactive.
-   *  - done → todo (undone): drop the id from the exemption set; the task is a
-   *    plain todo again and stays via the normal filter.
+   *  - todo → done: in a TODO view the now-done card would normally be filtered
+   *    out; the exemption keeps it visible (in its done state, US-152).
+   *  - done → todo (undone): in a Completed view the now-todo card would
+   *    normally be filtered out; the exemption keeps it visible too, so the user
+   *    can re-toggle or act on it.
    *
-   * The in-place reload+render here deliberately does NOT clear
-   * `justCompletedIds` (only genuine view re-entry does — see `applySavedView`,
-   * `scheduleRefresh`, `onOpen`), otherwise the card would be filtered out the
-   * instant we re-render it.
+   * So `justCompletedIds` holds every id whose status was just toggled here
+   * (either direction) — it is a "recently toggled, exempt from status filter"
+   * set, cleared only on real view re-entry (see `applySavedView`,
+   * `scheduleRefresh`, `onOpen`). The in-place reload+render below deliberately
+   * does NOT clear it, otherwise the card would vanish the instant we re-render.
    */
   private async toggleDone(t: EffectiveTask): Promise<void> {
     const wasDone = t.effectiveStatus === "done";
     if (wasDone) {
       await this.api.undone(t.id);
-      this.justCompletedIds.delete(t.id);
     } else {
       await this.api.done(t.id);
-      this.justCompletedIds.add(t.id);
     }
+    // Exempt this id from status filtering regardless of direction, so the card
+    // stays put after either done or undone.
+    this.justCompletedIds.add(t.id);
     // The file write above echoes back as a cache `changed` → debounced
     // scheduleRefresh. Tell that one refresh not to clear the exemption set,
-    // so the just-completed card keeps lingering. (undone also writes, but its
-    // id is already gone from the set, so the skip is harmless there.)
+    // so the just-toggled card keeps lingering.
     this.skipNextRefreshClear = true;
     if (this.refreshTimer !== null) {
       window.clearTimeout(this.refreshTimer);
