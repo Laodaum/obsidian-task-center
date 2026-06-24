@@ -674,18 +674,31 @@ Undo 栈：
 
 ## 7. GUI 架构
 
-### 7.1 TaskCenterView
+### 7.1 外壳职责收敛（TaskCenterView 拆解后保留什么）
 
-`TaskCenterView` 负责：
+`TaskCenterView`（`src/view.ts`）拆解后**只**保留三类不可外抽的职责，对应 REFACTOR.md shell-core 核验结论 `extractability: hard-keep-in-shell`——它就是外壳本身，不是某个可独立单测的纯逻辑簇，把它"搬出去"会把 ItemView 生命周期 / cache 订阅 / DOM 反向倒挂，是负收益。
 
-- 读取 active tab id 与 draft。
-- 调用 `api.evaluateQuery(tabId)` 得到 view model + summary。
-- 渲染 Header、Tab Strip、Toolbar、Summary、View Body。
-- 路由卡片 click、context menu、drag、mobile actions。
-- 维护 per-tab view cursor：weekStart、month、scroll、expanded、mobile selected month day。
-- 暴露测试属性 `data-test-cache-version`。
+**(1) per-tab cursor 状态的唯一持有与持久化。** 这些字段是外壳独占的状态真相源，外部子模块**绝不**直接读写，只能经 §7.6 的 Port 间接访问：
 
-不允许 View 直接解析 vault 或手写 writer mutation。
+- `state: ViewState`（`view/state.ts:6`）：`tab / anchorISO / filter / savedViewId / savedViewTag / savedViewTime / savedViewStatus / expandedDays / selectedMonthDay / collapsedWeeks / showUnscheduledPool / selectedTaskId`。
+- `tabDrafts: Map<string, QueryPreset>`（per-tab 草稿，§1.4 `draftByTabId` 的运行时实现）。
+- `justCompletedIds: Set<string>` + `skipNextRefreshClear`（US-153 linger 状态机，§4.2.1）。
+- `tasks / _effectiveTasks / _taskIndex`（数据基线与派生缓存）。
+
+**(2) 生命周期与 cache 事件接线。** 强绑 `ItemView` / `contentEl` / `leaf`，外壳独占，无可抽的窄接口：
+
+- `onOpen`（`view.ts:349`）：建占位 → `reloadTasks` → `bumpCacheVersion` → `render`；订阅 cache `'changed'` / keydown / pointerdown(capture) / `window.resize` / `ResizeObserver` / css-change；会话开始清 `justCompletedIds`。
+- `onClose`（`view.ts:418`）：拆线（`refreshTimer` / `cacheUnsub` / `ResizeObserver` / `dwellTracker`）。
+- `scheduleRefresh`（`view.ts:432`）：400ms 防抖全量刷新，cache `'changed'` 的唯一落点。
+- `reloadTasks`（`view.ts:623`）/ `getEffectiveTasks`（`view.ts:647`）/ `waitForCacheUpdate` / `bumpCacheVersion` / `__forFlush`：数据-渲染-缓存闭环。
+
+**(3) 组合根（Composition Root）。** 这是本次重构给外壳新增的核心定位：外壳**实现**各 Port（§7.6–§7.9），把 Port 实现**注入**各 view/ 子模块，并路由顶层事件。具体三件：
+
+- **渲染调度根**：`render`（`view.ts:686`）→ 迁移门 gate → 建 `_taskIndex` → `applyMobileLayoutAttr` → `renderTabBar` / `renderMobileStatusRow` / `renderToolbar` / `renderViewLayout`（`view.ts:3024`）→ `renderLayoutNode`（`view.ts:3042`，layout 树 DFS 分派 area）→ Footer / `renderMobileActionBar`。这些**调用**各子模块，不被子模块调用，没有可抽的窄接口，按定义留外壳。
+- **注入点**：渲染调度时把 `CalendarRenderPort` / `CardRenderPort` / `SavedViewMutationPort` / `TaskActionsPort` / `PresentationCtx`（§7.7）的实例传给对应子模块函数，取代现在传 `this`。
+- **api / projectArea 调用**：所有 mutation 经 `this.api.*`（done/undone/schedule/drop/nest/tag），所有投影经 `query/projection.ts` 的 `projectArea`。外壳不直接解析 vault、不手写 writer mutation（§2.1）。
+
+> **判据**：一个方法若"被各 area/card 子模块调用、且不绑 ItemView 生命周期"，它应收成 Port 成员暴露；若"调用子模块、或绑 contentEl/leaf/cache 订阅"，它留外壳。`render` / `onOpen` / `reloadTasks` 属后者；`getEffectiveTasks` 的**结果**经 Port 暴露但**所有权**留外壳。
 
 ### 7.2 Query Editor
 
@@ -767,6 +780,415 @@ E2E 和 UI 自动化依赖稳定 `data-*`，不依赖 CSS 类名或文案：
 | `[data-test-cache-version="n"]` | cache 刷新版本 |
 
 变更这些契约必须同步改 e2e。
+
+### 7.6 view/ 目标模块树与 Port 归属
+
+剩余大簇按真实核验切分落点如下。**关键纠偏**（来自核验）：manage-tabs 表面依赖 ~20 个内部方法是"切错了边界"——那 20 个里大半是 saved-view CRUD **动词**，属另一个内聚簇；manage-tabs UI 本身只需 ~7 个窄成员。因此先抽 `saved-view-actions`，再抽 `manage-tabs` 让它依赖前者的 Port，避免被迫把 11 个动作临时改 public（= 把耦合挪到类外）。
+
+| 模块（落点） | 职责 | 依赖的 Port | 状态 | 主要符号（view.ts 行号） |
+| --- | --- | --- | --- | --- |
+| `view/render/calendar.ts` | week/month 时间轴渲染、范围导航、移动端选中日 panel | `CalendarRenderPort`（§7.7）+ `PresentationCtx` | 待抽 needs-port | `renderWeek` 2262 / `renderMonth` 2438 / `renderRangeNav` 1324 / `renderMobileMonthDayPanel` 2556 / `scopeTasksToArea` 2256 |
+| `view/render/calendar-grid.ts` | **纯逻辑**：`buildWeekDays(anchorISO,weekStartsOn)` / `buildMonthGrid(...)` / `columnStats` | 无（纯函数，禁 DOM，§2.1） | 可立即抽 **clean** | `columnStats` 2367（已纯，仅 import `formatMinutes`）；网格计算现内联于 `renderWeek`/`renderMonth` |
+| `view/render/card.ts` | 卡片/子卡 DOM 结构、父子展开、事件 wiring、移动手势接线 | `CardRenderPort`（§7.7）+ `PresentationCtx` | 待抽 needs-port | `renderCard` 3311 / `renderSubcard` 3499 / `wireCardEvents` 3661 / `renderTaskTags` 3573 |
+| `view/saved-view-actions.ts` | saved-view CRUD 编排（创建/复制/重命名/删除/隐藏/默认/恢复/激活/重排/保存当前） | `SavedViewMutationPort`（§7.8）+ `SavedViewPromptsPort` | 待抽 needs-port | `copySavedView` 1902 / `setDefaultSavedView` 1913 / `reorderQueryTab` 1930 / `renameSavedView` 1936 / `toggleSavedViewHidden` 1960 / `deleteSavedViewWithConfirm` 2003 / `restoreBuiltinSavedView` 2127 / `saveCurrentView` 3990 |
+| `view/manage-tabs.ts` | Manage Tabs 面板 UI（行渲染 + kebab 菜单 + 拖拽重排路由） | `SavedViewPanelPort`（§7.8，是 `SavedViewMutationPort` 的 UI 投影） | 待抽 needs-port（依赖前者先抽） | `renderManageTabsSheet` 1741 / `openManageTabRowMenu` 1864；容器 `openManageTabsSheet` 1718 留外壳 |
+| `view/tabbar.ts` | tab 条 + tab 按钮渲染 + 溢出入口 | `TabBarPort`（§7.9） | 待抽 needs-port | `renderTabBar` 804 / `renderTabButton` 987 |
+| `view/tab-overflow.ts` | **几乎自洽**：tab 溢出几何测量 | 无（持 4 个私有字段 + 纯函数 `fitTabCountFromWidths`） | 可优先抽 **clean** | `scheduleTabOverflowMeasure` 915 / `handleTabbarOverflowResize` 977 |
+| `view/toolbar.ts` | 查询工具条 + saved-view 动作按钮组 | `SavedViewMutationPort`（与 manage-tabs 共享）+ `PresentationCtx` | 待抽 needs-port | `renderToolbar` 1363 / `renderSavedViewsActionControls` 1468；`renderMobileStatusRow` 746 / `renderMobileActionBar` 765（无状态展示，独立小函数） |
+| `view/source-actions.ts` | 源编辑入口分流 + 移动动作派发 + context menu + date prompt | `TaskActionsPort`（§7.10） | 待抽 needs-port | `openSourceEditShell` 464 / `openContextMenu` 4313 / `openDatePrompt` 4358 / `nestFromMobile` 2679 / `applyTagEditResult` 2913 |
+| `view/parent-picker.ts` | 移动端父任务选择器（防环/分组/搜索/resolve） | `TaskActionsPort` 的只读子集（`getEffectiveTasks`/`resolveTask`/`visibleTaskIds`）+ `PresentationCtx` | 待抽 **clean once port exists** | `openParentPickerForTask` 2722（~190 行，自包含 BottomSheet） |
+
+**已抽出的子模块（一并列入，本次将其依赖从 `v: TaskCenterView` 改窄为对应 Port）**：
+
+| 已抽模块 | 当前依赖 | 目标依赖（本次改窄） |
+| --- | --- | --- |
+| `view/area-filter-model.ts` | 纯助手，无 view 依赖 | 不变 |
+| `view/area-filter-controls.ts` | `v: TaskCenterView`（`:27/107/170`） | `SavedViewMutationPort.setAreaWhen` 子集 |
+| `view/query-editor.ts` | `import type { TaskCenterView }`（`:33`），`constructor(private v: TaskCenterView)`（`:48`） | `QueryEditorHostPort`（= `currentQuerySnapshot` + `setTabDraft` + `refresh`，§7.8 子集）——这是打断概念耦合的标志性一改 |
+| `view/dnd.ts` | 桌面拖拽状态机 | `TaskActionsPort`（落点写经 `onNest`/`afterMutation`） |
+| `view/touch.ts` | `attachCardGestures` / `attachLongPress` | 不变（已是参数化适配器，由 card 模块按 `PresentationCtx.modality` 装配） |
+| `view/undo.ts` | UndoStack | 不变（经 `TaskActionsPort.pushUndo` 暴露） |
+| `view/mobile-task-sheet.ts` | 已"刻意解耦 TaskCenterView"（`:10`），收显式回调 | 承接 `openMobileTaskDetailSheet`(2592)/`openSubtreeSheet`，靠 `TaskActionsPort` 驱动 |
+| `view/source-dialog.ts` / `view/source-open-state.ts` | `openTaskSourceEditShell` | 外壳经 `TaskActionsPort.openSourceEditor` 反向提供 |
+| `view/bottom-sheet.ts` / `view/filter-popover.ts` / `view/saved-view-name-modal.ts` / `view/query-dsl-modal.ts` / `view/migration-gate.ts` / `view/state.ts` | UI/类型基元 | 不变 |
+
+---
+
+### 7.7 渲染 Ports（calendar / card）
+
+渲染 Port 的设计原则：**子模块只依赖它真正消费的几个只读数据 + 意图回调**，不依赖整个 `TaskCenterView`。核验显示这两簇本体都很薄，"显得耦合重"是因为内联调了三类不属于自己的东西——数据管线、共享外壳组件、提交编排——全部下沉为回调后 Port 即收敛。
+
+#### CalendarRenderPort
+
+calendar 簇真正属于自己的只有"把 anchor 摊成 7 天/42 格网格、按 today/expanded/selected 上 class、放 `data-date` 容器、算 `columnStats`"。其余（`scopeTasksToArea` 数据管线、`renderCard`/`renderMiniCard` 卡片、`renderAreaHead`/`makeDropZone` 共享组件）作回调注入。
+
+```ts
+// src/view/render/calendar.ts
+import type { EffectiveTask } from "../../types";
+import type { QueryPresetFilters, ParsedTask, Area } from "../../types";
+import type { PresentationCtx } from "../presentation";
+
+export interface CalendarRenderPort {
+  // ── 只读数据（簇唯一消费的时间游标 + 设置快照）──
+  readonly anchorISO: string;                 // week 算 7 天起点 / month 算 42 格 / 周号月号
+  readonly weekStartsOn: 0 | 1;               // 网格对齐 + 喂 applyQueryFilters
+
+  // ── 数据管线下沉（取代 scopeTasksToArea + getTextFilter + getEffectiveTasks）──
+  scopedTasks(when: QueryPresetFilters | undefined): EffectiveTask[]; // 该 area 该显示的任务（含 justCompletedIds 豁免）
+  textFilter(): (t: EffectiveTask) => boolean;                        // 全局文本/标签/时间/状态谓词
+
+  // ── 共享外壳组件（list/grid/week/month 共用，不属日历簇）──
+  renderAreaHead(parent: HTMLElement, areaIndex: number, area: Area,
+                 opts: { title: string; renderNav?: (host: HTMLElement) => void }): void;
+  renderCard(parent: HTMLElement, t: EffectiveTask, contextDate?: string): void;     // 卡片大簇容器
+  renderMiniCard(parent: HTMLElement, t: EffectiveTask, day: string): void;          // month chip，与 renderCard 同源
+  makeDropZone(el: HTMLElement, day: string | null): void;                           // dnd 簇落点
+
+  // ── 语义化状态读写（取代直接写 state.* + this.render()）──
+  setAnchor(iso: string): void;               // 取代 renderRangeNav 直写 state.anchorISO + render
+  readonly weekExpanded: { has(day: string): boolean; toggle(day: string): void };   // week 移动端折叠（持久于 state.expandedDays）
+  readonly monthSelection: { day: string | null; select(day: string): void };        // month 选中日（select 内清 selectedTaskId 并重渲）
+}
+```
+
+**为什么这样切能真解耦**：簇内现直接读写 4 个 `state` 字段（`anchorISO`/`expandedDays`/`selectedMonthDay`/`selectedTaskId`）并直接 `this.render()`。换成 `setAnchor`/`weekExpanded.toggle`/`monthSelection.select` 语义回调后，外壳保留状态所有权与 `render` 节奏，**不必把 state 改 public**。`renderRangeNav`(1324) 与 `renderMobileMonthDayPanel`(2556) 作 calendar 模块**私有函数**，靠同一 Port 驱动，桌面经 areaHead、移动经 toolbar 两条注入路径由外壳装配（`renderRangeNav` 作 `opts.renderNav` 回调传入），使 week/month 不依赖装配顺序。
+
+**先可抽的 clean 子集**：`columnStats`(2367) 已纯，连同新增 `buildWeekDays` / `buildMonthGrid` 一起进 `view/render/calendar-grid.ts`（纯逻辑禁 DOM，§2.1），让带 Port 的渲染壳变薄。
+
+> **风险点（核验）**：`renderMiniCard` 现内联于 `renderMonth`(约 2519)，与 `renderCard` 不同源。抽取时必须让 month chip 走 card 模块的精简渲染器（`CardRenderPort.renderMiniCard` 由 card 模块提供），否则日历簇被迫直接 `import wireCardEvents`，等于把 card 事件耦合留在日历里。
+
+#### CardRenderPort
+
+card 簇本体是 DOM 结构构建 + 事件 wiring；其耦合面看似宽（13 方法/9 状态），但绝大多数是"提交类编排"（nest/swipe/toggle/subtree/contextmenu/primary）——这些**不搬**，收成少数几类**用户意图回调**。Port 因此收敛到 ~11 个成员：5 个只读数据 + 6 个意图回调。
+
+```ts
+// src/view/render/card.ts
+import type { EffectiveTask, ParsedTask } from "../../types";
+import type { PresentationCtx } from "../presentation";
+
+export interface CardRenderPort {
+  // ── 只读数据 ──
+  effectiveTasks(): EffectiveTask[];          // 按 renderParentId 过滤 inline 子/孙卡，纯读
+  selectedId(): string | null;               // selected class
+  isJustCompleted(id: string): boolean;       // US-153 linger 标记（集合本身留外壳）
+  gestureConfig(): { longPressMs: number; swipeEnabled: boolean }; // 取代 plugin.settings 直读
+
+  // ── 意图回调（提交编排留外壳）──
+  onPrimary(t: EffectiveTask): void;          // 移动→detail sheet / 桌面→source edit（收口两个内部方法）
+  onToggleDone(t: EffectiveTask): void;       // 封装 toggleDone 的 justCompleted + linger 编排
+  onContextMenu(e: MouseEvent, t: EffectiveTask): void;
+  onNest(droppedId: string, targetId: string): Promise<void>; // api.nest + undoStack + runWithRemoveAnim 整段收外壳
+  onSwipe(t: EffectiveTask, kind: "done" | "drop"): void;      // US-508
+  onOpenSubtree(root: ParsedTask): void;      // 移动 +N chip：_taskIndex 遍历 + BottomSheet 留外壳
+}
+```
+
+**为什么比 manage-tabs 窄得多**：card 簇的"动作"天然能归并成少数用户意图（主动作/完成/右键/嵌套/滑动/展开子树），而非 20 个散开的内部方法引用。
+
+**先可抽的 clean 子集**：`renderTaskTags`(3573) 已是零 `this` 依赖的纯 DOM 函数，可立即无 Port 抽出。`countDescendants`(约 3583) 只依赖 `_taskIndex`，移入 `task-tree.ts` 作纯函数（传 index/tasks）。
+
+> **风险点（核验）**：`toggleDone`(567) 的 linger 语义（US-153）与 `scheduleRefresh` 的 `skipNextRefreshClear` 强耦合，**绝不能**下放到簇——必须经 `onToggleDone` 单向回调，否则 linger 状态机泄漏到类外，重蹈"把耦合挪到类外"覆辙。`attachCardGestures` 的 `onSwipeProgress` 直写 `el.dataset.swipe*` 是纯 DOM 反馈，可随簇走。
+
+---
+
+### 7.8 saved-view Ports（共享 Mutation + 两个 UI 投影）
+
+saved-view 相关有三个不同关注点，**必须分三个 Port**——这是核验最强的纠偏点。三者共享 `SavedViewMutationPort`（CRUD 编排底座），`SavedViewPanelPort`（manage-tabs UI）与 toolbar 动作组都是它的 UI 投影；交互对话框单列 `SavedViewPromptsPort`。
+
+#### SavedViewMutationPort（共享底座）
+
+去重后，14 个 CRUD 方法真正依赖只有"一个列表 + 一个草稿动作 + 三个标量 + 四个动作 + 一份 labels"。绝大多数方法是 `读 presets → 调 saved-views.ts 纯函数 → writePresets → dropDraft → apply → persist → refresh` 同一形状——这正是窄 Port 成立的证据。
+
+```ts
+// src/view/saved-view-actions.ts
+import type { QueryPreset } from "../types";
+
+export interface SavedViewMutationPort {
+  // ── 数据（一个列表 + 写回 + 三标量）──
+  presets(): QueryPreset[];
+  writePresets(next: QueryPreset[]): void;                  // 所有 CRUD 的最终落点
+  defaultId(): string | null;  setDefaultId(id: string | null): void;
+  deletedBuiltinIds(): string[];  setDeletedBuiltinIds(ids: string[]): void; // US-109l tombstone
+  activeViewId(): string;                                   // 判断被操作的是不是当前 active
+
+  // ── 草稿 / 状态写口（簇不持有 tabDrafts，也不直接写 state）──
+  dropDraft(id: string): void;                              // 取代 tabDrafts.delete(id)
+  apply(view: QueryPreset): void;                           // = applySavedView，写 state 的唯一授权入口
+  snapshotCurrent(existing?: QueryPreset | null, name?: string): QueryPreset; // 当前草稿态凝固成 preset
+
+  // ── 收尾 ──
+  refresh(): void;                                          // = render()，统一在编排末端调用
+  persist(): Promise<void>;                                 // = plugin.saveSettings()
+  labels(): Record<"today" | "week" | "month" | "completed" | "unscheduled", string>; // 仅 restoreBuiltin 需要
+}
+```
+
+> **易错点（核验）**：`saveCurrentView`(3990) 自身**不**调 render（由调用方 render），其它 CRUD 自带 render。抽 Port 时统一由 `refresh()` 在编排末端调用、方法内部不各自 refresh，否则 `createSavedViewFromCurrent` 链路双重重绘。校验散点（`throw "至少保留一个可见 Tab"` / `"不能把已隐藏的 Tab 设为默认"`）建议下沉为 `saved-views.ts` 纯校验返回 `ok/err`，Port 只负责报错呈现。
+
+#### SavedViewPromptsPort（交互对话框，单列）
+
+```ts
+export interface SavedViewPromptsPort {
+  promptName(defaultName: string): Promise<string | null>; // = askSavedViewName（包 SavedViewNameModal）
+  confirmDelete(view: QueryPreset): Promise<boolean>;       // delete 的 BottomSheet 确认
+  switchTabConfirm(): Promise<"save" | "discard" | "cancel">; // activateSavedView 的脏检查弹窗
+}
+```
+
+UI 留视图层；`activateSavedView`(约 1621) 的 `SwitchTabConfirmModal` 编排跨"草稿脏态"与"CRUD"两簇，是外壳的视图切换路由，宜留外壳，仅复用 `SavedViewMutationPort.apply`。
+
+#### SavedViewPanelPort（manage-tabs UI 投影）
+
+manage-tabs 真正职责只有两件：(1) BottomSheet 容器生命周期（`openManageTabsSheet` 1718 留外壳，把 `rerender`/`closeSheet` 闭包传入）；(2) 把 preset 列表渲染成行 + 路由用户意图到动作集合。因此它依赖的不是整个 `TaskCenterView`，而是这个 ~6 成员 + 一个 7 项 `rowActions` 表的窄 Port，全部是 `SavedViewMutationPort` 已有动作的引用，无需把任何状态改 public。
+
+```ts
+// src/view/manage-tabs.ts
+import type { QueryPreset } from "../types";
+
+export interface SavedViewPanelPort {
+  listPresets(): QueryPreset[];               // 已归一化，UI 只消费
+  isActive(view: QueryPreset): boolean;       // 行高亮，封掉 state.savedViewId
+  activate(view: QueryPreset): void;          // 点击行/菜单 open（含脏 tab 确认）
+  reorder(draggedId: string, insertAt: number): Promise<void>; // insertAt 由 UI 用 listPresets() 下标算
+  createFromCurrent(): Promise<void>;
+  restoreAllBuiltins(): Promise<void>;
+  // 7 项行级动作打包成动作表（菜单 = title/icon → 调某 action 的装配）
+  rowActions: {
+    editDsl(v: QueryPreset): void;            // = activate + openQueryControlsSheet，外壳组合
+    rename(v: QueryPreset): Promise<void>;
+    copy(v: QueryPreset): Promise<void>;
+    setDefault(v: QueryPreset): Promise<void>;
+    toggleHidden(v: QueryPreset, hidden: boolean): Promise<void>;
+    restoreBuiltin(v: QueryPreset): Promise<void>;
+    deleteWithConfirm(v: QueryPreset): Promise<void>;
+  };
+}
+```
+
+**动作表 vs 散开回调**：把 7 个行级动作收进 `rowActions` 对象而非 7 个顶层成员，让 Port 表面"少而精"，与菜单项集合一一对应，未来增删菜单项只改一处。
+
+> **两步走（核验强制次序）**：先抽 `saved-view-actions`（CRUD 动词聚成模块，实现 `SavedViewMutationPort`），再抽 `manage-tabs` UI 依赖 `SavedViewPanelPort`。反过来先抽 UI 会被迫把 11 个动作临时变 public，正是要避免的"把耦合挪到类外"。`setActiveTabName`(1949) 严格说不属 manage-tabs（是 tab 条 toolbar 的 inline rename），归 `toolbar.ts`。
+
+#### QueryEditorHostPort（query-editor.ts 改窄）
+
+`query-editor.ts:33 import type { TaskCenterView }` + `:48 constructor(private v: TaskCenterView)` 是报告点名的概念耦合。它实际只需草稿态三件：
+
+```ts
+// src/view/query-editor.ts
+export interface QueryEditorHostPort {
+  currentQuerySnapshot(existing?: QueryPreset | null, name?: string): QueryPreset; // 与 state 唯一合法接触面
+  setTabDraft(presetId: string, draft: QueryPreset | null): void;  // null = 删（setAreaWhen/setAreaTitle 底座）
+  refresh(rerenderControls?: () => void): void;                    // = refreshFilterControls(4164)
+}
+```
+
+`setAreaWhen`(3200，**已 public**) / `setAreaTitle` 改为基于 `currentQuerySnapshot` + `setTabDraft` 实现，不再要外壳开 `collectAreas` 级别的口。
+
+---
+
+### 7.9 TabBarPort（tab 条）与 TabOverflowMeasure（几何）
+
+原"tab 条 + toolbar"被切成三个关注点，强行整簇外迁会逼出 ~20 回调（= 现状直接耦合面）。正确切法按子关注点拆，难度递增：
+
+#### TabOverflowMeasure（clean，优先抽）
+
+溢出几何几乎自洽：只读 DOM `offsetWidth` + 4 个私有状态，核心算法 `fitTabCountFromWidths` 已是模块级纯函数。把 4 个状态搬进独立实例，`renderTabBar` 只问"现在该显示几个"。**零回调进 view**，view 只在结果变化时 `render()`。
+
+```ts
+// src/view/tab-overflow.ts
+import type { QueryPreset } from "../types";
+
+export interface TabOverflowMeasure {
+  measure(bar: HTMLElement, tabs: QueryPreset[]): number | null; // widthChanged 才重算；返回 fittedVisibleTabCount
+  reset(): void;
+}
+// 内部持 fittedVisibleTabCount / lastTabbarMeasureWidth / tabWidthCache / moreChipWidth
+// 纯部分 fitTabCountFromWidths 已隔离且无 DOM（§2.1 满足）；DOM 量宽属视图层，不破坏"纯逻辑禁 DOM"
+```
+
+#### TabBarPort（needs-port）
+
+耦合压成 ~7 个窄成员。**关键技巧**：用单一 `meta(v)` 回调把 `isSavedViewDirty + savedViewBadges + countForSavedView + legacyTabForSavedView + defaultSavedViewId` 这 5 个领域读折叠成一个"展示元数据"结果——这些计算依赖 effectiveTasks/drafts/settings，属外壳领域逻辑，视图只需结果。
+
+```ts
+// src/view/tabbar.ts
+import type { QueryPreset } from "../types";
+import type { TabKey } from "./state";
+
+export interface TabBarPort {
+  tabs(): QueryPreset[];                       // = visibleQueryTabs()
+  activeId(): string | undefined;              // = state.savedViewId（dwellTracker 源 tab）
+  meta(v: QueryPreset): {                      // 5 个领域读折成一个展示元数据
+    dirty: boolean; badges: string[]; count: number; isDefault: boolean; legacyTab: TabKey | null;
+  };
+  renderOverflow(host: HTMLElement, overflowTabs: QueryPreset[], close: () => void,
+                 opts: { mobile: boolean }): void; // 「更多」dropdown/sheet，黑盒回调注入
+  // 交互意图路由（背后是 saved-view CRUD，留外壳）
+  onActivate(v: QueryPreset): void;
+  onRename(v: QueryPreset): void;
+  onReorder(id: string, insertAt: number): Promise<void>;
+  onContextMenu(e: MouseEvent, v: QueryPreset): void;
+  onManage(): void;
+  onSettings(): void;
+}
+```
+
+`dwellTracker`（跨 tab 拖卡片落点）**不进 Port**——属 dnd 簇，由已抽的 `view/dnd.ts` 或 `onTabDragHover` 承接，`renderTabButton`(987) 只触发。
+
+#### toolbar / saved-view 动作（不进 TabBarPort）
+
+`renderToolbar`(1363) / `renderSavedViewsActionControls`(1468) 本质是 saved-view CRUD 编排，与 tab 条只共享"saved-view"名词、不共享渲染上下文。它们复用 **§7.8 的 `SavedViewMutationPort`**（`snapshotCurrent`/`apply`/`refresh` + `SavedViewPromptsPort.promptName`）。`renderMobileStatusRow`(746) / `renderMobileActionBar`(765) 是无状态展示，各自一个 clean 小函数，收 `{ effectiveTasks }` / `{ onUnscheduled, onQuickAdd }` 即可。
+
+---
+
+### 7.10 TaskActionsPort（源编辑 + 移动动作 + 父选择器）
+
+这一簇是"窄 Port 范例"：动作全部经 `api.*` 单一出口，刷新全部经一个 `afterMutation` 语义收敛。**关键洞察**：把 `runWithRemoveAnim`(525) / `toggleDone`(567) 尾部 / `refreshAfterAction`(约 3293) 三种刷新统一成 `afterMutation(opts)` 后，簇对 view 内部状态（`refreshTimer`/`justCompletedIds`/`findCardEl`/`bumpCacheVersion`/`waitForCacheUpdate`）的耦合从 ~7 个降到 0——这是切对边界的标志。
+
+```ts
+// src/view/source-actions.ts
+import type { EffectiveTask, ParsedTask, TaskCenterApi, UndoOp } from "../types";
+import type { PresentationCtx } from "./presentation";
+
+export interface TaskActionsPort {
+  api: TaskCenterApi;                          // 所有 mutation 唯一出口（已窄，直接透传，不逐动词包回调）
+
+  // ── 统一刷新契约（写进 §7.1 外壳"路由事件→维护 cursor→渲染"）──
+  afterMutation(opts?: {                       // 收敛 runWithRemoveAnim + toggleDone 尾部 + refreshAfterAction
+    animateOutId?: string;                     // 淡出某卡
+    awaitCachePaths?: string[];                // 等缓存路径（跨文件 nest 用）
+    lingerId?: string;                         // US-153 linger（justCompletedIds + skipNextRefreshClear）
+  }): Promise<void>;
+  scheduleRefresh(): void;                     // no-op/错误回退的去抖刷新（带 400ms 去抖 + linger 清理）
+
+  // ── 状态窄接口（不暴露 state / _taskIndex / contentEl）──
+  select(taskId: string): void;               // 取代写 state.selectedTaskId + contentEl.focus
+  getEffectiveTasks(): EffectiveTask[];        // 父选择器枚举 / tag 建议
+  resolveTask(id: string): ParsedTask | undefined; // 取代 _taskIndex.get / tasks.find（含 childrenLines）
+  visibleTaskIds(): string[];                  // 封装 contentEl.querySelectorAll[data-task-id]，DOM 留外壳
+
+  // ── undo（不交给簇持有 UndoStack 实例）──
+  pushUndo(entry: { label: string; ops: UndoOp[] }): void;
+  showUndoableNotice(message: string): void;   // 封装 Notice + undoStack.pop
+
+  // ── 外壳反向提供的能力 ──
+  openSourceEditor(task: ParsedTask): Promise<void>; // 桌面 shell / 移动 native 分流 + onSave 刷新（持 leaf/app/缓存）
+  ctx: PresentationCtx;                        // isMobile / weekStartsOn 等适配轴
+}
+```
+
+**切分建议（避免一锅端）**：
+
+1. `TaskActionsPort` 覆盖 `toggleDone`/`openContextMenu`(4313)/`openDatePrompt`(4358)/`nestFromMobile`(2679)/`applyTagEditResult`(2913)/卡片 drop 处理器——纯动作派发，**clean once port exists**。
+2. 父选择器 `openParentPickerForTask`(2722，~190 行) 单独成 `view/parent-picker.ts`：自包含 BottomSheet，只依赖 `getEffectiveTasks`/`resolveTask`/`visibleTaskIds` 三个只读 + `ctx`，提交交回外壳 `nestFromMobile`。几乎不碰外壳可变状态，**clean**。
+3. `openMobileTaskDetailSheet`(2592)/`openSubtreeSheet` 归 `view/mobile-task-sheet.ts`（已存在），靠 `TaskActionsPort` + `openSourceEditor` + `openParentPicker` 回调驱动。
+4. `openSourceEditShell`(464)/`openNativeSourceEditor`(481) **不抽**——它们是外壳提供给簇的能力（`Port.openSourceEditor`），反向依赖。
+
+> **依赖规则符合 §2.1**：Port 把所有 DOM（`contentEl` 查询、`findCardEl`）和缓存调度留在外壳，抽出的父选择器/动作派发只读 `EffectiveTask` 数据 + 调 `api`，不触 `metadataCache`、不直接操作 view 私有 DOM。
+
+---
+
+### 7.11 依赖倒置：为什么窄 Port 能真解耦
+
+**问题（核验点名）**：现有"搬出去 + 收 `v: TaskCenterView`"模式（`area-filter-controls.ts:27`、`query-editor.ts:48`）只是把耦合**挪到类外**——子模块依赖具体类 `TaskCenterView`，编译期就钉死了对 god class 全部 public 表面的依赖；要抽 manage-tabs 就得把 ~20 个内部方法改 public，god class 反而更大。
+
+**解法（依赖倒置 DIP）**：
+
+1. **子模块依赖 Port 接口，不依赖具体类**。`renderCard(parent, t, ctx: CardRenderPort, contextDate?)` 只知道 `CardRenderPort` 这个**抽象**，不知道 `TaskCenterView` 存在。打断 `import type { TaskCenterView }` 那条概念耦合边——`view/render/card.ts` 的 import 图里不再有 `../view`。
+2. **外壳实现 Port、注入实现**。`TaskCenterView` 在组合根（§7.1(3)）`implements` 各 Port（或现场用对象字面量构造 Port 实例传入），把 `this.renderCard` 改成 `renderCard(parent, t, this.cardPort, ...)`。每改一个子模块，对应的内部方法就能从 public 收回 private——耦合面**单调收缩**，与"收 `v`"模式的单调膨胀相反。
+3. **Port 成员窄到"恰好够用"**。证据：manage-tabs 从"依赖 ~20 个内部方法"降到 `SavedViewPanelPort` 的 6 成员 + 1 个 7 项动作表；card 从 13 方法/9 状态降到 11 成员；source-mobile 把 ~7 个刷新耦合降到 0（统一 `afterMutation`）。窄 Port 让"哪 20 个依赖是哪个簇的"显形——它们大多根本不是同一个簇要的。
+4. **共享能力抽成共享 Port**。`SavedViewMutationPort` 同时被 `saved-view-actions` / `manage-tabs`（经 `SavedViewPanelPort` 投影）/ `toolbar` 三处复用，CRUD 编排只实现一遍。
+
+---
+
+### 7.12 PresentationCtx 注入（复用 REFACTOR.md §5）
+
+各渲染 Port 都收一个 `PresentationCtx`，取代散落 ~30 处的 `contentEl.dataset.mobileLayout === "true"` 字符串比对与裸 `Platform.isMobile`（绕过测试钩子 `__testForceMobile`，导致 e2e force-mobile 测不到）。两条**正交轴**收成一个注入对象：
+
+```ts
+// src/view/presentation.ts
+export interface PresentationCtx {
+  modality: "touch" | "pointer"; // 输入模态：取代 isMobileMode()/裸 Platform.isMobile，单一来源（底层走 __testForceMobile）
+  width: "narrow" | "wide";      // 布局宽度：取代 dataset.mobileLayout 字符串
+}
+```
+
+- **外壳算一次、注入给渲染器**。`render`(686) 起点由 `applyMobileLayoutAttr` + `isMobileMode()` 算出 `PresentationCtx`，传给 `CalendarRenderPort` / `CardRenderPort` / `TaskActionsPort.ctx`。渲染器不再读 dataset 字符串。
+- **calendar 收 `ctx.width`**：week 桌面 7 列 vs 窄屏单日、month 移动端 panel、mini-card draggable、cell 点击行为——现 `renderWeek`/`renderMonth` 里的 `desktop`/`isMobileLayout` 分叉收进各自一个文件按 `ctx.width` 分支（取代 `CalendarRenderPort.isMobile` 布尔的临时形态，最终统一到 `PresentationCtx`）。
+- **card 收 `ctx.modality`**：draggable / click 路由 / 子树折叠 +N 按 `ctx.modality`；手势适配器 `attachCardGestures`（`touch.ts`）由 card 模块在 `modality === "touch"` 时装配，取代每个 `renderCard` 里 `if (Platform.isMobile)`。
+- **交互能力按模态门控**：拖拽/dwell/hover/快捷键 ∈ `pointer`；long-press/swipe/bottom-sheet ∈ `touch`（正是 §0 原则 9 清单）。做成 `PointerInteractions`/`TouchInteractions` 适配器，外壳按 `ctx.modality` 装一个。
+- **sheet vs popover**：`query-editor.ts` 已按 `mobileLayout` 选 class（对的雏形），推广成统一收 `ctx.width`。
+- 顺带修裸 `Platform.isMobile` 的测试盲区：全部收口 `ctx.modality`。
+
+---
+
+### 7.13 与 AreaSpec / AreaView 的关系（复用 REFACTOR.md §4）
+
+area 渲染走**注册表**而非 `switch(area.type)`（现 `view.ts:renderLayoutNode`(3042) / `query/projection.ts` 的 `switch`，`default→list` 会把新 type 静默当 list）。分两组 strategy + 全量注册表：
+
+- **纯核心** `src/query/areas/`：`AreaSpec` = `{ type, capabilities: AreaHandler, projector: AreaProjector, validate }`，`AREA_SPECS: Record<AreaType|"unknown", AreaSpec>`。CLI `query-run` 与 GUI 共用，`projector.project(area, tasks, ctx)` 只吃 `EffectiveTask[] + AreaProjectionCtx`（`today` 显式注入），可单测、无 DOM。
+- **视图层** `src/view/render/areas/`：`AreaView.mount(host, vm, area, ctx: PresentationCtx, ports: AreaViewPorts)`，`AREA_VIEWS: Record<AreaType|"unknown", AreaView>`。
+
+**`AreaViewPorts` 是本节渲染 Port 的统一上层**——area 渲染器需要的窄回调，不是整个 `TaskCenterView`：
+
+```ts
+// src/view/render/areas/ports.ts
+export interface AreaViewPorts {
+  onCardAction(taskId: string, action: CardAction): void;          // 卡片动作
+  onEditWhen(areaIndex: number, when: QueryPresetFilters): void;   // → setAreaWhen(3200)
+  openSource(taskId: string): void;
+}
+```
+
+`list`/`grid` 的 `AreaView` 内部组合 `CardRenderPort`（§7.7）；`week`/`month` 的 `AreaView` 内部组合 `CalendarRenderPort`（§7.7）。外壳壳循环零 switch（REFACTOR §4.4）：
+
+```ts
+for (const [i, area] of collectAreas(layout).entries()) {
+  const spec = AREA_SPECS[area.type];
+  const tasks = spec.capabilities.filterable()
+    ? applyQueryFilters(all, (area as FilterableAreaConfig).when, ctx) // capability 门控，过滤统一于此
+    : all;
+  const vm = spec.projector.project(area, tasks, ctx);
+  AREA_VIEWS[area.type].mount(host, vm, area, presentation, ports);
+}
+```
+
+`drop` 的 `onDrop` 是**实例级**数据（tray 清 ⏳ vs 放弃区 setStatus），留 data 不进类：**type 级行为进 strategy，实例级差异留 data**。
+
+---
+
+### 7.14 增量落地次序（风险/收益排序）
+
+总原则（核验一致）：**先定 Port 接口（本文档 §7.6–§7.10）→ 外壳实现 Port → 一簇一簇迁移 → 子模块改依赖 Port 而非 `TaskCenterView`**。每步：补 characterization 测试 → 搬一组逻辑/改 import → 测试仍绿 = 一次独立小 commit。禁用 reset/rebase/amend/checkout/restore/stash/clean；只 `git add` 自己改的文件。
+
+| 步 | 抽取项 | 风险/收益 | 兜底测试 | 可独立提交 |
+| --- | --- | --- | --- | --- |
+| 1 | `view/render/calendar-grid.ts`（`columnStats` + `buildWeekDays` + `buildMonthGrid`，纯逻辑） | **最低风险/立竿见影**：零 DOM、零 state、无 Port | 新增 `calendar-grid.test.mjs`（网格边界/周月号/columnStats 求和） | ✅ |
+| 2 | `view/tab-overflow.ts`（`TabOverflowMeasure`，几何 clean） | 低风险：核心 `fitTabCountFromWidths` 已纯，零回调进 view | 既有几何单测 + e2e tab 溢出 | ✅ |
+| 3 | `renderTaskTags` / `countDescendants`（card 纯子集） | 低风险：零 `this`（前者）/ 仅 `_taskIndex`（后者，移 `task-tree.ts`） | parser/task-tree 单测 | ✅ |
+| 4 | **定义全部 Port 接口 + 外壳 `implements`**（§7.6–§7.10） | 无行为变更，纯类型 + 适配方法 | typecheck 绿 | ✅ |
+| 5 | `view/saved-view-actions.ts`（`SavedViewMutationPort` + `SavedViewPromptsPort`） | 中风险：CRUD 编排，先于 manage-tabs（次序强制） | `saved-views.test.mjs`(2041 行) + e2e saved-views CRUD/隐藏/恢复/默认 | ✅ |
+| 6 | `view/manage-tabs.ts`（依赖 `SavedViewPanelPort`） | 中：依赖第 5 步，收回 11 个 public→private | e2e manage-tabs（行点击切换/高亮/kebab 重命名/拖拽重排，§7.9 UX 不变量） | ✅ |
+| 7 | `view/source-actions.ts` + `view/parent-picker.ts`（`TaskActionsPort`） | 中：父选择器 clean，动作派发 clean once port | e2e 父选择器/移动详情 sheet/swipe/context menu/嵌套/undo | ✅（两个 commit） |
+| 8 | `view/render/card.ts`（`CardRenderPort` + `PresentationCtx`） | 中高：linger/手势/拖拽，必须经回调不下放 state | e2e 卡片完成 linger(US-153)/拖拽嵌套/移动 swipe + 新增 cardViewModel 纯单测 | ✅（先 projector 纯单测） |
+| 9 | `view/render/calendar.ts`（`CalendarRenderPort` + `PresentationCtx`） | 中高：week/month 桌面/移动分叉收进文件 | e2e week row/month inline panel/改期/清空 tray | ✅ |
+| 10 | `view/tabbar.ts` + `view/toolbar.ts`（`TabBarPort`，toolbar 复用 `SavedViewMutationPort`） | 中：`meta()` 折叠 5 个领域读 | e2e tab CRUD/更多/隐藏/默认 + i18n 热切换 | ✅ |
+| 11 | `query-editor.ts` / `area-filter-controls.ts` 改窄签名 `(host: QueryEditorHostPort)` | 收尾：打断最后的 `import type { TaskCenterView }` | e2e Query 编辑器可视化/DSL 往返 + area when live 刷新 | ✅ |
+| 12 | 外壳改名 `view/task-center-view.ts`（动文件名风险最高，放最后且确认无人在途） | 高：文件名 | 全量 e2e | ✅（最后） |
+
+落地伴随 REFACTOR §4 的 `AreaSpec`/`AreaView` 注册表（消两处 `switch(area.type)`）与 §5 `PresentationCtx`（收 ~30 处分叉），与第 8/9 步同批——它们是同一内聚单元（REFACTOR §6 "最小一起改集合"）。
+
+---
+
+### 7.15 不变量与边界
+
+每个抽取必须守住：
+
+1. **§2.1 依赖规则**：`view` 只依赖 `api` / `i18n` / `Obsidian UI`，不直接解析 vault、不手写 writer mutation。所有 mutation 经 `TaskActionsPort.api` / `SavedViewMutationPort.persist`，所有任务读取经 `getEffectiveTasks()`（外壳经 `TaskCache` 派生）。
+2. **Port 不得泄漏 DOM 给纯逻辑层**：Port 成员只暴露 `api` 结果 / `QueryPreset` 数据 / `EffectiveTask[]` / settings 快照 / 意图回调，**不**暴露 DOM 节点（`contentEl` 不进任何 Port）。需要 DOM 真相的（`visibleTaskIds`、`makeDropZone`、溢出量宽）由外壳/视图层实现并经回调暴露结果；`calendar-grid.ts` / `cardViewModel` / `fitTabCountFromWidths` 纯部分禁 DOM（§0 原则 10）。
+3. **状态所有权不外放**：`state` / `tabDrafts` / `justCompletedIds` / `skipNextRefreshClear` / `_taskIndex` / `undoStack` 字段留外壳，子模块只经 Port 谓词/回调访问。linger 状态机（US-153）只经 `onToggleDone`/`afterMutation({lingerId})` 单向回调，绝不下放。
+4. **每个抽取可回溯到 US**：calendar（US-116 columnStats / US-149 独立日期子任务 / US-117 移动适配）；card（US-115 overdue / US-143–149 父子树 / US-153 linger / US-508 swipe / US-506 长按详情）；saved-view-actions（US-109l tombstone / US-216–219 CRUD）；manage-tabs（US-109q 溢出 / §2.3 UX 不变量）；tabbar（US-109q）；source-actions（US-125/228 嵌套 / US-168f-h 源编辑 / US-506b tag / US-507b 父选择器）。
+5. **§7.5 DOM 选择器契约不变**：抽取是纯结构重构，不改变用户可见行为与 `data-*` 契约；改契约必须同步改 e2e。
 
 ## 8. CLI 架构
 
