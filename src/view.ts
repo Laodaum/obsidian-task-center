@@ -585,6 +585,12 @@ export class TaskCenterView extends ItemView {
       window.clearTimeout(this.refreshTimer);
       this.refreshTimer = null;
     }
+    // US-153: the file write echoes back as an ASYNC cache reparse. Wait for it
+    // before reload+render — otherwise the in-place re-render can read pre-reparse
+    // state, so the lingering card (kept by the id-based justCompletedIds
+    // exemption) renders its OLD status: it stays put but without the done class.
+    // Mirrors runWithRemoveAnim / nestFromMobile, which already await the cache.
+    await this.waitForCacheUpdate([t.path]);
     await this.reloadTasks();
     this.render();
   }
@@ -3594,7 +3600,12 @@ export class TaskCenterView extends ItemView {
       target.when = when;
     }
     this.tabDrafts.set(active.id, normalizeQueryPreset({ ...snapshot, view: { layout } }));
-    this.refreshFilterControls(rerenderControls);
+    // US-109x: editing an area's `when` live-updates the board, not just the
+    // sheet's own controls. The editor sheet is a separate Obsidian Modal, so
+    // re-rendering the board in contentEl does not close it; refresh the sheet's
+    // own controls too when it is open.
+    this.render();
+    rerenderControls?.();
   }
 
   // US-109p9: read the raw (non-localized) title of an area by DFS index from the
