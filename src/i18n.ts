@@ -491,6 +491,11 @@ const EN = {
   "migration.untitledView": "Untitled view",
   "migration.note":
     "Both your built-in views (rename / hide / order) and your custom views migrate automatically and are kept. This only updates local settings — no task files are touched.",
+  "migration.flavorTitle": "Pick your task format",
+  "migration.flavorDesc":
+    "Task Center reads both. New task metadata is written in the format you choose here.",
+  "migration.flavorDataviewTitle": "Dataview inline fields",
+  "migration.flavorTasksTitle": "Tasks emoji",
   "migration.aiTipTitle": "Manage tasks with AI? Update the skill",
   "migration.aiTipDesc":
     "This release changed the query DSL shape. If you read or write tasks through Task Center's AI skill / CLI, update the skill after upgrading — otherwise the agent will keep emitting the old DSL:",
@@ -921,6 +926,11 @@ const ZH: Partial<typeof EN> = {
   "migration.untitledView": "未命名视图",
   "migration.note":
     "你的内置视图（重命名 / 隐藏 / 排序）和自定义视图都会自动迁移并保留。本次只更新本地配置，不会改动任何任务文件。",
+  "migration.flavorTitle": "选择任务格式",
+  "migration.flavorDesc":
+    "读取时两种格式都兼容。新写入的任务元数据使用你在这里选择的格式。",
+  "migration.flavorDataviewTitle": "Dataview inline fields",
+  "migration.flavorTasksTitle": "Tasks emoji",
   "migration.aiTipTitle": "用 AI 管理任务？记得更新 skill",
   "migration.aiTipDesc":
     "这次升级改了查询 DSL 的结构。如果你通过 Task Center 的 AI skill / CLI 读写任务，升级后请运行下面的命令更新 skill，否则 AI 还会按旧结构生成 DSL：",

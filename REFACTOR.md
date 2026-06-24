@@ -151,6 +151,184 @@ for (const [i, area] of collectAreas(layout).entries()) {
 
 > `drop` 的 `onDrop` 是**实例级**数据（tray 清 ⏳ vs 放弃区设 dropped），areas.ts 已正确留在 data 里。守住边界：**type 级行为进 strategy，实例级差异留 data。**
 
+### 4.7 修订：AreaKind 是一个完整组件定义，render 是 View 的方法
+
+上面的 `AreaSpec + AreaView` 方向是对的，但还不够优雅：它容易滑向三张并列表（projector / renderer / settings），让一个 area type 的概念被拆散。更好的表达是：**area type 是一个完整的 component definition；config 仍是纯 JSON；render 属于 view instance；settings 从 config spec 长出来。**
+
+核心对象收敛为四个词：
+
+| 对象 | 职责 | 约束 |
+|---|---|---|
+| `AreaConfig` | DSL 里的纯数据，可保存、迁移、CLI 读写 | 不能有方法，不能引用 DOM / Obsidian |
+| `AreaKind` | 某个 area type 的定义：默认值、normalize、capabilities、project、settings、createView | 一个 type 一处注册，闭合 union 穷尽 |
+| `AreaView` | 有生命周期的 DOM 视图对象，`render()` 是它的方法 | 只依赖窄 `AreaViewDeps`，不依赖整个 `TaskCenterView` |
+| `AreaSettingsSpec` | 从 config 字段声明编辑器如何渲染设置 | editor 读 spec 自动生成表单，不手写 list/week/month 分支 |
+
+建议接口：
+
+```ts
+interface AreaKind<C extends AreaConfig, VM> {
+  readonly type: C["type"];
+  readonly icon: string;
+  readonly labelKey: string;
+
+  defaults(): C;
+  normalize(raw: unknown): C;
+  capabilities(config: C): AreaCapabilities;
+
+  project(config: C, tasks: EffectiveTask[], ctx: QueryCtx): VM;
+  createView(deps: AreaViewDeps): AreaView<C, VM>;
+
+  readonly settings: AreaSettingsSpec<C>;
+}
+
+interface AreaView<C extends AreaConfig, VM> {
+  render(host: HTMLElement, props: AreaRenderProps<C, VM>): void;
+  destroy?(): void;
+}
+```
+
+`list` 不是一组散函数，而是一整个定义：
+
+```ts
+export const ListArea: AreaKind<ListAreaConfig, ListViewModel> = {
+  type: "list",
+  icon: "list",
+  labelKey: "savedViews.viewList",
+
+  defaults: () => ({
+    type: "list",
+    when: { status: ["todo"] },
+    orderBy: ["scheduled_asc"],
+  }),
+
+  normalize: normalizeListArea,
+
+  capabilities: () => ({
+    rendersTasks: true,
+    filterable: true,
+    editable: true,
+    acceptsDrop: false,
+  }),
+
+  project: projectListArea,
+  createView: (deps) => new ListAreaView(deps),
+  settings: listAreaSettings,
+};
+```
+
+`render` 可以、也应该是 view 的成员方法：
+
+```ts
+class WeekAreaView implements AreaView<WeekAreaConfig, WeekViewModel> {
+  constructor(private readonly deps: AreaViewDeps) {}
+
+  render(host: HTMLElement, props: AreaRenderProps<WeekAreaConfig, WeekViewModel>): void {
+    this.deps.renderAreaHead(host, props);
+    // render week grid / day columns / drop targets
+  }
+}
+```
+
+注意边界：**不是把 `WeekAreaConfig` 变成 class，也不是让 DSL 对象长方法。** DSL 数据还是 `{ type:"week", when, firstDayOfWeek }`；行为挂在 `WeekArea` 这个 kind 上；DOM 生命周期挂在 `WeekAreaView` 上。
+
+Settings 也不应再散落在 editor 里。TypeScript `interface` 运行时不存在，所以不能真的“从 interface 反射 UI”。可行做法是：用 `AreaSettingsSpec<C>` 作为运行时事实源，再用泛型 / `satisfies` 让它和 config 类型对齐。
+
+```ts
+interface WeekAreaConfig extends AreaBase<"week"> {
+  when?: QueryPresetFilters;
+  firstDayOfWeek?: "monday" | "sunday";
+}
+
+const weekAreaSettings = defineAreaSettings<WeekAreaConfig>({
+  when: filterField(),
+  firstDayOfWeek: selectField({
+    labelKey: "settings.firstDayOfWeek",
+    options: ["monday", "sunday"],
+  }),
+});
+```
+
+Area 面板因此只需要一条通用路径：
+
+```ts
+const kind = areaKinds.get(area.type);
+renderSettingsForm(parent, kind.settings, area, onPatchArea);
+```
+
+`TaskCenterView` 的 area 循环也只剩编排：
+
+```ts
+const kind = areaKinds.get(area.type);
+const config = kind.normalize(area);
+const model = kind.project(config, tasks, queryCtx);
+const view = kind.createView(areaViewDeps);
+
+view.render(host, {
+  area: config,
+  model,
+  areaIndex,
+  presentation,
+});
+```
+
+#### 4.7.1 为什么这比 split projector / renderer 更好
+
+- **概念内聚更强**：新增一个 `timeline` area 时，开发者打开 `areas/timeline.ts` 就能看到 default / normalize / capability / projection / settings / view 入口，不用在 5 个目录里找注册点。
+- **render 的归属更自然**：`render()` 属于 `AreaView` 实例，能持有局部 DOM 状态和 cleanup；同时不污染纯 `AreaConfig`。
+- **settings 不再复制类型知识**：字段能不能编辑、用什么控件编辑，由 `AreaSettingsSpec` 声明；`query-editor.ts` 不再知道 week 有 `firstDayOfWeek`、month 有 `density`。
+- **`TaskCenterView` 变薄**：外壳只算 `QueryCtx` / `PresentationCtx` / ports，然后把 area 交给 kind/view；不再拥有 `renderWeek`、`renderMonth`、`renderListArea`、`renderAreaAppearance` 里的类型分支。
+- **测试点更准**：`kind.project()` 纯单测；`settings` 可测“字段生成 patch”；`AreaView.render()` 可用窄 DOM fixture 测，不必启动整个 Obsidian view。
+
+#### 4.7.2 预期代码量变化
+
+这是重构，不是删功能；总行数不会线性下降，但**高风险集中区会明显缩小**。
+
+当前粗略基线：
+
+- `src/view.ts`：约 3790 行。
+- `src/saved-views.ts`：约 1248 行。
+- area 相关渲染 / 过滤 / 编辑 / drop / 移动端分支散在 `view.ts`、`query-editor.ts`、`projection.ts`、`saved-views.ts`。
+
+保守估计：
+
+| 项 | 变化 |
+|---|---|
+| `TaskCenterView` | 减少约 700-1000 行，主要移走 `renderListArea` / `renderWeek` / `renderMonth` / area head / area settings / per-type switch |
+| `query-editor.ts` | 减少约 80-150 行 per-area 表单分支，改为 settings spec 驱动 |
+| `saved-views.ts` | 后续拆 `normalize/validate/presets` 后减少约 500-800 行；area per-type 校验转进 kind |
+| 新增 `areas/*` / `view/render/areas/*` | 增加约 600-900 行小文件 |
+| 净行数 | 可能只减少约 300-700 行；真正收益是 god class 缩小、重复判断减少、改动定位更短 |
+
+更重要的“少代码”不是总行数，而是**少写同一种分支**。现在加一个 area type 需要碰：
+
+1. `types.ts` union / config。
+2. `saved-views.ts` normalize / validate。
+3. `query/projection.ts` switch。
+4. `view.ts` render switch。
+5. `query-editor.ts` 设置 UI。
+6. icon / label / capability。
+7. 移动端差异和 drop 行为。
+
+目标结构下变成：
+
+1. 写一个 `AreaKind` 文件。
+2. 写一个 `AreaView` 文件。
+3. 在闭合注册表加一行。
+4. 补 projector / settings / render 测试。
+
+从“7 个散点 + 容易漏”降到“2 个文件 + 1 个注册点”。这比净删几百行更有价值。
+
+#### 4.7.3 继承只放在 View 层的窄公共行为
+
+不要把 area kind 做成深继承树。推荐：
+
+- `BaseTaskAreaView`：公共 header、empty state、card list。
+- `CalendarAreaView`：week/month 共享日期格、drop target、日期统计。
+- `ListAreaView` / `GridAreaView` / `WeekAreaView` / `MonthAreaView`：具体布局。
+
+也就是说：**kind 用组合，view 可少量继承。** 继承只服务 DOM 复用，不参与 DSL 数据模型。
+
 ---
 
 ## 5. 移动端 / 桌面端 UI

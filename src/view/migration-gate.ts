@@ -1,5 +1,6 @@
 import { setIcon } from "obsidian";
 import { t as tr } from "../i18n";
+import type { TaskFormatFlavor } from "../types";
 import type TaskCenterPlugin from "../main";
 
 // One CSS-drawn illustration per "what's new" tile. Kept self-contained here so
@@ -47,6 +48,14 @@ export function renderMigrationGate(el: HTMLElement, plugin: TaskCenterPlugin): 
     { art: "done", span: 3, title: "migration.feature6Title", desc: "migration.feature6Desc" },
   ];
   for (const c of cells) renderBentoCell(bento, c.art, c.span, c.title, c.desc);
+
+  // Flavor picker — let users choose dataview vs tasks-emoji format right inside
+  // the migration gate, so they don't have to hunt for it in Settings afterwards.
+  card.createEl("h3", { cls: "tc-migration-subhead", text: tr("migration.flavorTitle") });
+  card.createEl("p", { cls: "tc-migration-lead", text: tr("migration.flavorDesc") });
+  const flavorPicker = card.createDiv({ cls: "tc-flavor-picker" });
+  renderFlavorCard(flavorPicker, "dataview", plugin);
+  renderFlavorCard(flavorPicker, "tasks", plugin);
 
   // Heads-up for AI users: the query DSL shape changed in 1.0, so the CLI skill
   // must be updated or the agent keeps emitting the old flat DSL.
@@ -111,6 +120,59 @@ export function renderMigrationGate(el: HTMLElement, plugin: TaskCenterPlugin): 
   }
 
   window.setTimeout(() => cta.focus(), 10);
+}
+
+/**
+ * One flavor picker card: a CSS-drawn illustration of the format + title + label.
+ * Clicking immediately writes `plugin.settings.taskFormatFlavor`; the CTA's
+ * `completeMigration` persists it to disk alongside the migrated presets.
+ */
+function renderFlavorCard(picker: HTMLElement, flavor: TaskFormatFlavor, plugin: TaskCenterPlugin): void {
+  const isSelected = plugin.settings.taskFormatFlavor === flavor;
+  const card = picker.createDiv({
+    cls: `tc-flavor-card${isSelected ? " is-selected" : ""}`,
+  });
+  card.dataset.flavor = flavor;
+  card.tabIndex = 0;
+  card.setAttribute("role", "button");
+
+  const art = card.createDiv({ cls: "tc-flavor-art" });
+  // Direct children — same pattern as working .tc-bento-art cells.
+  art.createSpan({ cls: "tc-flav-check" });
+  art.createSpan({ cls: "tc-flav-stub" });
+  if (flavor === "dataview") {
+    art.createEl("code", { cls: "tc-flav-tag", text: "[scheduled::]" });
+    art.createEl("code", { cls: "tc-flav-tag", text: "[due::]" });
+  } else {
+    const h = art.createSpan({ cls: "tc-flav-icon" });
+    setIcon(h, "hourglass");
+    art.createEl("code", { cls: "tc-flav-datestr", text: "2026-06-24" });
+    const c = art.createSpan({ cls: "tc-flav-icon" });
+    setIcon(c, "calendar");
+    art.createEl("code", { cls: "tc-flav-datestr", text: "2026-12-31" });
+  }
+
+  const text = card.createDiv({ cls: "tc-flavor-text" });
+  text.createEl("h4", {
+    cls: "tc-flavor-title",
+    text: tr(flavor === "dataview" ? "migration.flavorDataviewTitle" : "migration.flavorTasksTitle"),
+  });
+  text.createEl("p", {
+    cls: "tc-flavor-label",
+    text: tr(flavor === "dataview" ? "settings.taskFormatFlavor.dataview" : "settings.taskFormatFlavor.tasks"),
+  });
+
+  card.addEventListener("click", () => {
+    picker.querySelectorAll<HTMLElement>(".tc-flavor-card").forEach((c) => c.classList.remove("is-selected"));
+    card.classList.add("is-selected");
+    plugin.settings.taskFormatFlavor = flavor;
+  });
+  card.addEventListener("keydown", (e: KeyboardEvent) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      card.click();
+    }
+  });
 }
 
 /**
