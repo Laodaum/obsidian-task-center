@@ -99,6 +99,18 @@ describe("US-109x/z2 area filter model", function () {
     await resetSavedViewTestState();
   });
 
+  // US-109h/z2 open the area-editor sheet (an Obsidian Modal) and may not
+  // dismiss it; a leftover full-window `.modal-bg` backdrop would then intercept
+  // the next test's first click (the `.bt-area-edit` / overflow-tab "element
+  // click intercepted" failures). Press Escape until no modal remains (mirrors
+  // the in-test Escape idiom used before the save-as step).
+  afterEach(async function () {
+    for (let i = 0; i < 5 && (await $(".modal-bg").isExisting()); i++) {
+      await browser.keys(["Escape"]);
+      await $(".modal-bg").waitForExist({ reverse: true, timeout: 1000 }).catch(() => undefined);
+    }
+  });
+
   it("US-109x: editing an area's `when` (tag) filters its cards and saves into a new tab", async function () {
     const today = todayISO();
     await writeAndWait(
