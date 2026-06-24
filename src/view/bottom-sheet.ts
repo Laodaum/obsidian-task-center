@@ -44,9 +44,10 @@ export class BottomSheet extends Modal {
     contentEl.empty();
     contentEl.addClass("bt-sheet-content");
 
-    // Drag handle at the top so users see the sheet is dismissible.
-    const handle = contentEl.createDiv({ cls: "bt-sheet-handle" });
-    handle.setAttr("aria-hidden", "true");
+    if (Platform.isMobile) {
+      const handle = contentEl.createDiv({ cls: "bt-sheet-handle" });
+      handle.setAttr("aria-hidden", "true");
+    }
 
     contentEl.createEl("h3", { cls: "bt-sheet-title", text: this.opts.title });
 
