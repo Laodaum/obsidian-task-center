@@ -345,3 +345,22 @@ export function recomputeTopLevelInQuery(
     return t;
   });
 }
+
+// Count all descendants (children + grandchildren + …) of a task, resolving
+// each child line through a `path:Lnnn → ParsedTask` index. Pure (no DOM/App).
+export function countDescendants(c: ParsedTask, index: Map<string, ParsedTask>): number {
+  let count = 0;
+  const queue: number[] = [...c.childrenLines];
+  const seen = new Set<number>();
+  while (queue.length > 0) {
+    const line = queue.shift()!;
+    if (seen.has(line)) continue;
+    seen.add(line);
+    const child = index.get(`${c.path}:L${line + 1}`);
+    if (child) {
+      count++;
+      queue.push(...child.childrenLines);
+    }
+  }
+  return count;
+}

@@ -46,8 +46,9 @@ import { renderMigrationGate } from "./view/migration-gate";
 import type { FilterPopoverKey, TabKey, ViewState } from "./view/state";
 import { taskDisplayTags } from "./tags";
 import { taskMatchesTimeToken, timeTokenAppliesToField } from "./time-filter";
-import { deriveEffectiveTasks, countTopLevel, recomputeTopLevelInQuery } from "./task-tree";
+import { deriveEffectiveTasks, countTopLevel, recomputeTopLevelInQuery, countDescendants } from "./task-tree";
 import type { EffectiveTask } from "./task-tree";
+import { renderTaskTags } from "./view/render/card-bits";
 import { projectListArea } from "./query/projection";
 import { applyQueryFilters, queryFilterHasActiveConditions } from "./query/filter";
 import { columnStats, buildWeekDays, buildMonthGrid } from "./view/render/calendar-grid";
@@ -3226,7 +3227,7 @@ export class TaskCenterView extends ItemView {
     // are not flagged.
     if (this.justCompletedIds.has(t.id)) card.dataset.justCompleted = "true";
 
-    this.renderTaskTags(card, t.tags, "bt-card-tags");
+    renderTaskTags(card, t.tags, "bt-card-tags");
 
     // Meta row
     const meta = card.createDiv({ cls: "bt-card-meta" });
@@ -3420,7 +3421,7 @@ export class TaskCenterView extends ItemView {
     if (grand.length > 0) {
       if (Platform.isMobile) {
         // US-505: mobile collapses to 1 level.
-        const total = this.countDescendants(c);
+        const total = countDescendants(c, this._taskIndex);
         const more = subCard.createDiv({ cls: "bt-subcard-more" });
         more.setText(`+${total}`);
         more.addEventListener("click", (e) => {
@@ -3433,34 +3434,6 @@ export class TaskCenterView extends ItemView {
         for (const g of grand) this.renderSubcard(sub, g, inheritedDown);
       }
     }
-  }
-
-  private renderTaskTags(parent: HTMLElement, tags: string[], extraClass: string) {
-    const displayTags = taskDisplayTags(tags);
-    if (displayTags.length === 0) return;
-
-    const row = parent.createDiv({ cls: `bt-task-tags ${extraClass}` });
-    for (const tag of displayTags) {
-      row.createSpan({ cls: "bt-task-tag", text: tag });
-    }
-  }
-
-  /** Count all descendants (children + grandchildren + …) of a task. */
-  private countDescendants(c: ParsedTask): number {
-    let count = 0;
-    const queue: number[] = [...c.childrenLines];
-    const seen = new Set<number>();
-    while (queue.length > 0) {
-      const line = queue.shift()!;
-      if (seen.has(line)) continue;
-      seen.add(line);
-      const child = this._taskIndex.get(`${c.path}:L${line + 1}`);
-      if (child) {
-        count++;
-        queue.push(...child.childrenLines);
-      }
-    }
-    return count;
   }
 
   /**
