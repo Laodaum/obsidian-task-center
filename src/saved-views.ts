@@ -19,8 +19,11 @@ import type {
   TaskStatus,
 } from "./types";
 import { BUILTIN_VIEW_DATA } from "./builtin-views/index";
-
-const KNOWN_STATUS_VALUES: TaskStatus[] = ["todo", "done", "dropped", "in_progress", "cancelled", "custom"];
+// US-109z2 / REFACTOR.md D5: status schema lives in the query layer so the pure
+// query pipeline (filter / projection) never imports up into saved-views.
+// Re-exported here for the view layer's existing import sites.
+import { KNOWN_STATUS_VALUES, normalizeSavedViewStatus } from "./query/schema";
+export { normalizeSavedViewStatus };
 const BUILTIN_QUERY_TABS = ["today", "week", "month", "todo", "unscheduled", "completed", "dropped"] as const;
 type BuiltinQueryTab = typeof BUILTIN_QUERY_TABS[number];
 
@@ -73,19 +76,6 @@ export function builtinSavedViewKind(id: string): BuiltinQueryTab | null {
   return BUILTIN_QUERY_TABS.find((tab) => BUILTIN_SAVED_VIEW_IDS[tab] === id) ?? null;
 }
 
-export function normalizeSavedViewStatus(status: unknown): "all" | TaskStatus[] {
-  if (!status || status === "all") return "all";
-  const raw: unknown[] = Array.isArray(status) ? status : [status];
-  const seen = new Set<TaskStatus>();
-  const out: TaskStatus[] = [];
-  for (const value of raw) {
-    if (!isKnownTaskStatus(value) || seen.has(value)) continue;
-    seen.add(value);
-    out.push(value);
-  }
-  return out.length > 0 ? out : "all";
-}
-
 export function createSavedViewId(): string {
   return defaultSavedViewId();
 }
@@ -105,9 +95,6 @@ function normalizeTimeFilters(time: unknown): SavedViewTimeFilters {
   return out;
 }
 
-function isKnownTaskStatus(value: unknown): value is TaskStatus {
-  return typeof value === "string" && (KNOWN_STATUS_VALUES as readonly string[]).includes(value);
-}
 
 function defaultSavedViewId(): string {
   return `sv-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;

@@ -16,7 +16,7 @@ import type {
   SavedViewTimeField,
   SavedViewTimeFilters,
 } from "../types";
-import { normalizeSavedViewStatus } from "../saved-views";
+import { normalizeSavedViewStatus } from "./schema";
 import { taskMatchesTimeToken, timeTokenAppliesToField } from "../time-filter";
 import { todayISO } from "../dates";
 
