@@ -50,6 +50,7 @@ import { openSourceEditShell, openQuickAdd } from "./view/source-actions";
 import { renderCard } from "./view/render/card";
 import { renderWeek, renderMonth } from "./view/render/calendar";
 import { renderTabBar } from "./view/tabbar";
+import { renderToolbar } from "./view/toolbar";
 import { statusFilterLabel } from "./view/area-filter-model";
 import {
   applyQueryPresetFilters,
@@ -617,7 +618,7 @@ export class TaskCenterView extends ItemView {
     const header = el.createDiv({ cls: "bt-header" });
     renderTabBar(this, header);
     this.renderMobileStatusRow(header);
-    this.renderToolbar(header);
+    renderToolbar(this, header);
 
     const body = el.createDiv({ cls: "bt-body" });
     if (this.tasks.length === 0) {
@@ -750,111 +751,6 @@ export class TaskCenterView extends ItemView {
       this.state.anchorISO = todayISO();
       this.render();
     });
-  }
-
-  private renderToolbar(parent: HTMLElement) {
-    const bar = parent.createDiv({ cls: "bt-toolbar" });
-    const mainRow = bar.createDiv({ cls: "bt-toolbar-row bt-toolbar-main" });
-    const mobileLayout = this.contentEl.dataset.mobileLayout === "true";
-    // §3.0: with the date nav lowered into the week / month component, the
-    // desktop toolbar collapses to a single row — search + filter chips live
-    // together in mainRow instead of a separate sub-row.
-    const subRow = mainRow;
-
-    // Mobile keeps the date nav in the toolbar (§6.2 two-row rule). On desktop
-    // it is owned by the week / month component itself (§3.0).
-    if (mobileLayout) {
-      this.renderRangeNav(mainRow);
-    }
-
-    // US-109w/US-109z: the global filter (search box + tag/schedule/time/status
-    // chips) is gone from the toolbar — filtering belongs to each list/grid area
-    // (renderAreaFilter). The shared base `preset.filters` is still applied
-    // programmatically and editable via the Query editor, not via a global chip.
-
-    if (mobileLayout) {
-      const mobileFilters = mainRow.createEl("button", {
-        text: tr("savedViews.editQuery"),
-        cls: "bt-mobile-filter-btn",
-      });
-      mobileFilters.dataset.mobileAction = "filters";
-      mobileFilters.addEventListener("click", () => this.openQueryControlsSheet());
-    } else {
-      this.renderSavedViewsToolbar(subRow);
-    }
-
-    const utility = mainRow.createDiv({ cls: "bt-toolbar-utility" });
-
-    // US-163: toolbar `+` opens Quick Add, which writes the new line to
-    // today's daily-note tail (the only entry point — see writer.addTask
-    // resolution order). Default scheduled = unset; user adds ⏳ inline
-    // via Quick Add tokens or schedules later via drag.
-    // see USER_STORIES.md
-    const add = utility.createEl("button", { text: tr("toolbar.add") });
-    add.addClass("bt-add-btn");
-    add.addEventListener("click", () => openQuickAdd(this));
-    // Settings moved out of the query toolbar to the Tab Strip gear (DESIGN §5.0).
-  }
-
-  private renderSavedViewsToolbar(parent: HTMLElement, rerenderControls?: FilterControlsRerender) {
-    const wrap = parent.createDiv({ cls: "bt-saved-views" });
-    wrap.dataset.savedViews = "true";
-
-    const actions = wrap.createDiv({ cls: "bt-saved-view-actions" });
-
-    // US-109z: no global filter chips in the toolbar anymore — only current-query
-    // actions. Filter controls live per-area (renderAreaFilter) and in the Query
-    // editor / mobile sheet (which still call renderSavedViewsFilterControls for
-    // the shared base `preset.filters`).
-    // DESIGN §5.0: query toolbar only carries current-query actions. Tab
-    // management lives on the Tab Strip; settings is app chrome (gear there).
-    this.renderSavedViewsActionControls(actions, rerenderControls, {
-      includeSaveAs: true,
-      contextualSaveAs: true,
-      includeDsl: true,
-      includeManage: false,
-    });
-  }
-
-  /**
-   * VAL-GUI-010: Render a readable summary of current filter conditions.
-   * Example: "tag:#alpha,#beta · 排期:本周 · 状态:TODO · view:周"
-   */
-  private renderSavedViewsCompactBar(parent: HTMLElement) {
-    const wrap = parent.createDiv({ cls: "bt-saved-views" });
-    wrap.dataset.savedViews = "true";
-    const actions = wrap.createDiv({ cls: "bt-saved-view-actions" });
-    const selectedView = this.activeSavedView();
-    const dirty = this.isSelectedSavedViewDirty(selectedView);
-
-    const filters = actions.createEl("button", {
-      text: tr("savedViews.editQuery"),
-      cls: "bt-saved-view-save",
-    });
-    filters.dataset.action = "open-query-controls";
-    filters.addEventListener("click", () => this.openQueryControlsSheet());
-
-    if (dirty) {
-      const update = actions.createEl("button", {
-        text: tr("savedViews.update"),
-        cls: "bt-saved-view-save bt-saved-view-save--primary",
-      });
-      update.dataset.action = "update-current-view";
-      update.addEventListener("click", () => {
-        void this.updateCurrentSavedView(selectedView);
-      });
-
-      const discard = actions.createEl("button", {
-        text: tr("savedViews.discard"),
-        cls: "bt-saved-view-save",
-      });
-      discard.dataset.action = "discard-current-view";
-      discard.addEventListener("click", () => {
-        this.discardCurrentDraft();
-        this.render();
-      });
-    }
-    // Tab management moved to the Tab Strip (DESIGN §5.0) — not here.
   }
 
   renderSavedViewsActionControls(
