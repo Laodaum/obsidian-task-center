@@ -66,7 +66,6 @@ import {
   parseQueryDsl,
   sameQueryPresetContent,
   stringifyQueryPreset,
-  hasQueryPresetFilters,
   duplicateQueryPreset,
   moveQueryPresetById,
   reorderQueryPresetById,
@@ -101,16 +100,6 @@ import type {
 } from "./types";
 import { isStackNode } from "./types";
 import { areaSupportsWhen, areaHandler } from "./areas";
-import {
-  setAreaType as layoutSetAreaType,
-  appendArea as layoutAppendArea,
-  insertNode as layoutInsertNode,
-  removeNode as layoutRemoveNode,
-  wrapInStack as layoutWrapInStack,
-  setStackDir as layoutSetStackDir,
-  reorderChild as layoutReorderChild,
-  type LayoutPath,
-} from "./layout-ops";
 import type { SavedViewTimeField, SavedViewTimeFilters } from "./types";
 import type TaskCenterPlugin from "./main";
 

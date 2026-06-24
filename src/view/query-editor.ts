@@ -339,7 +339,7 @@ export class QueryEditorView {
 
   private newAreaOfType(type: AreaType): LayoutNode {
     if (type === "drop") return { type: "drop", onDrop: { setStatus: "dropped" } };
-    return { type } as LayoutNode;
+    return { type };
   }
 
   private draftLayout(): LayoutNode {
