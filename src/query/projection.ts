@@ -13,6 +13,7 @@
 import type { EffectiveTask } from "../task-tree";
 import type {
   AreaConfig,
+  AreaType,
   GridAreaConfig,
   ListAreaConfig,
   MonthAreaConfig,
@@ -59,6 +60,37 @@ export interface MonthViewModel {
 
 export type ViewModel = ListViewModel | WeekViewModel | MonthViewModel;
 
+// Per-area projection dispatch as a total registry. A `Record<AreaType, …>`
+// (not a `switch` with a `default`) makes the table exhaustive: adding an
+// AreaType to the union fails to compile until a projector is registered here,
+// instead of silently falling through to the list projector. The per-type
+// argument shapes are normalized behind one `AreaProjector` signature, removing
+// the projectWeekArea / projectMonthArea parameter-order mismatch at the call
+// site. (US-109z2 — see REFACTOR.md §4: AreaSpec / AreaView.)
+type AreaProjector = (
+  tasks: EffectiveTask[],
+  area: AreaConfig,
+  weekStartsOn: 0 | 1,
+  anchorISO: string,
+) => ViewModel;
+
+const emptyListModel = (): ListViewModel => ({
+  type: "list",
+  grouped: false,
+  sections: [{ title: "", tasks: [] }],
+});
+
+const AREA_PROJECTORS: Record<AreaType | "unknown", AreaProjector> = {
+  list: (tasks, area, weekStartsOn) => projectListArea(tasks, area as ListAreaConfig, weekStartsOn),
+  grid: (tasks, area, weekStartsOn) => projectListArea(tasks, area as GridAreaConfig, weekStartsOn),
+  week: (tasks, area, weekStartsOn, anchorISO) =>
+    projectWeekArea(tasks, area as WeekAreaConfig, weekStartsOn, anchorISO),
+  month: (tasks, area, weekStartsOn, anchorISO) =>
+    projectMonthArea(tasks, area as MonthAreaConfig, anchorISO, weekStartsOn),
+  drop: emptyListModel,
+  unknown: emptyListModel,
+};
+
 /**
  * Project a single area into its ViewModel. Used by the CLI / API query-run,
  * which represents a preset's result via its primary content area. A `drop`
@@ -70,19 +102,7 @@ export function projectArea(
   weekStartsOn: 0 | 1,
   anchorISO: string = todayISO(),
 ): ViewModel {
-  switch (area.type) {
-    case "week":
-      return projectWeekArea(tasks, area, weekStartsOn, anchorISO);
-    case "month":
-      return projectMonthArea(tasks, area, anchorISO, weekStartsOn);
-    case "drop":
-    case "unknown":
-      return { type: "list", grouped: false, sections: [{ title: "", tasks: [] }] };
-    case "grid":
-    case "list":
-    default:
-      return projectListArea(tasks, area, weekStartsOn);
-  }
+  return AREA_PROJECTORS[area.type](tasks, area, weekStartsOn, anchorISO);
 }
 
 // ── Sorting ──
