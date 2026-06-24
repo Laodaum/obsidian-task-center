@@ -29,6 +29,7 @@ import { isStackNode } from "../types";
 import type { AreaType, LayoutNode } from "../types";
 import { areaHandler, SELECTABLE_AREA_TYPES } from "../areas";
 import { BottomSheet } from "./bottom-sheet";
+import { renderAreaFilterControls } from "./area-filter-controls";
 import type { TaskCenterView } from "../view";
 
 type Rerender = () => void;
@@ -185,7 +186,7 @@ export class QueryEditorView {
       const sec = panel.createDiv({ cls: "bt-query-editor-section" });
       sec.dataset.filterSection = "area";
       const controls = sec.createDiv({ cls: "bt-area-filter-popover bt-query-editor-area-filters" });
-      this.v.renderAreaFilterControls(controls, areaIndex, areaWhen, rerender);
+      renderAreaFilterControls(this.v, controls, areaIndex, areaWhen, rerender);
     } else {
       this.renderAreaAppearance(panel, areaIndex, rerender);
     }

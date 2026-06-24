@@ -6,6 +6,11 @@
 import { t as tr } from "../i18n";
 import type { SavedViewStatus, SavedViewTimeField, TaskStatus } from "../types";
 
+// The scheduled field is always shown; the rest are progressive (added on
+// demand). Shared by the area filter controls and the legacy filter popovers.
+export const PRIMARY_TIME_FIELD: SavedViewTimeField = "scheduled";
+export const SECONDARY_TIME_FIELDS: SavedViewTimeField[] = ["deadline", "completed", "created"];
+
 export function statusFilterOptions(): Array<{ value: "all" | TaskStatus; label: string }> {
   return [
     { value: "all", label: tr("savedViews.statusAny") },

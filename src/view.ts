@@ -52,12 +52,13 @@ import type { EffectiveTask } from "./task-tree";
 import { projectListArea } from "./query/projection";
 import { applyQueryFilters, queryFilterHasActiveConditions } from "./query/filter";
 import {
+  PRIMARY_TIME_FIELD,
+  SECONDARY_TIME_FIELDS,
   statusFilterOptions,
   statusFilterLabel,
   timeFieldLabel,
   timeFilterOptions,
   tagFilterSummary,
-  toggledStatus,
 } from "./view/area-filter-model";
 import {
   applyQueryPresetFilters,
@@ -112,8 +113,6 @@ import { areaSupportsWhen, areaHandler } from "./areas";
 import type { SavedViewTimeField, SavedViewTimeFilters } from "./types";
 import type TaskCenterPlugin from "./main";
 
-const PRIMARY_TIME_FIELD: SavedViewTimeField = "scheduled";
-const SECONDARY_TIME_FIELDS: SavedViewTimeField[] = ["deadline", "completed", "created"];
 type FilterControlsRerender = () => void;
 // `UndoOp` and `UndoEntry` re-exported from `./view/undo` (the canonical
 // definitions). Local re-export so existing usage in this file compiles.
@@ -297,10 +296,10 @@ export class TaskCenterView extends ItemView {
   // US-109z2: secondary time fields (deadline/completed/created) the user has
   // progressively added in the area filter this session (scheduled is always
   // shown). Transient UI state — fields with a value show regardless.
-  private readonly areaFilterExtraFields = new Set<SavedViewTimeField>();
+  readonly areaFilterExtraFields = new Set<SavedViewTimeField>();
   // US-109z2: whether the area filter's tag select popover is open. A click-to-
   // open dropdown keeps the panel short when there are many tags.
-  private areaTagPopoverOpen = false;
+  areaTagPopoverOpen = false;
   private dateCalendarAnchorISO = startOfMonth(todayISO());
   private pendingDateRangeStart: string | null = null;
   private viewResizeObserver: ResizeObserver | null = null;
@@ -3562,7 +3561,7 @@ export class TaskCenterView extends ItemView {
   // `rerenderControls` lets a host (e.g. the Query editor sheet) rebuild its own
   // body after the edit; the in-place popover passes none and just re-renders
   // the view. (US-109p8)
-  private setAreaWhen(areaIndex: number, when: QueryPresetFilters, rerenderControls?: FilterControlsRerender): void {
+  setAreaWhen(areaIndex: number, when: QueryPresetFilters, rerenderControls?: FilterControlsRerender): void {
     const active = this.activeSavedView();
     const snapshot = this.currentQuerySnapshot(active);
     const layout = JSON.parse(JSON.stringify(snapshot.view.layout)) as LayoutNode;
@@ -3636,249 +3635,7 @@ export class TaskCenterView extends ItemView {
     edit.addEventListener("click", () => this.openQueryControlsSheet({ scope: "area", areaIndex, areaTab: "filter" }));
   }
 
-  // US-109p9: pure area-`when` filter controls (search / status / scheduled /
-  // tags), rendered inside the Query editor's Filters tab "本视图过滤" section.
-  // All edits go through setAreaWhen so they land in the tab draft and rerender,
-  // same as DSL editing.
-  renderAreaFilterControls(
-    parent: HTMLElement,
-    areaIndex: number,
-    when: QueryPresetFilters,
-    rerenderControls?: FilterControlsRerender,
-  ): void {
-    const selectedTags = this.areaTags(when);
-    const status = normalizeSavedViewStatus(when.status);
-    const scheduled = when.time?.scheduled?.trim() ?? "";
-
-    // Search — matches task title text. Placeholder reads as "task text
-    // contains …" so it's clear it's a substring match, not a command.
-    const search = parent.createEl("input", {
-      type: "text",
-      cls: "bt-area-search",
-      placeholder: tr("savedViews.searchContains"),
-    });
-    search.value = when.search ?? "";
-    search.addEventListener("change", () => {
-      const val = search.value.trim();
-      this.setAreaWhen(areaIndex, { ...when, search: val || undefined }, rerenderControls);
-    });
-
-    // Status
-    const statusSec = parent.createDiv({ cls: "bt-area-filter-sec" });
-    statusSec.createDiv({ cls: "bt-area-filter-sec-label", text: tr("savedViews.statusAll") });
-    const statusRow = statusSec.createDiv({ cls: "bt-area-filter-chips" });
-    for (const opt of statusFilterOptions()) {
-      const checked = opt.value === "all"
-        ? status === "all"
-        : status !== "all" && status.includes(opt.value);
-      const chip = statusRow.createEl("button", {
-        text: opt.label,
-        cls: "bt-area-filter-chip" + (checked ? " active" : ""),
-      });
-      chip.dataset.areaStatus = opt.value;
-      chip.addEventListener("click", () => {
-        const next = toggledStatus(status, opt.value);
-        this.setAreaWhen(areaIndex, { ...when, status: next }, rerenderControls);
-      });
-    }
-
-    // US-109z2: time fields are progressive. Scheduled (the primary one) always
-    // shows; deadline / completed / created only show once they have a value or
-    // the user adds them via "添加日期筛选" — keeps the common panel short.
-    void scheduled;
-    this.renderAreaTimeField(parent, areaIndex, when, PRIMARY_TIME_FIELD, rerenderControls);
-    const shownSecondary = SECONDARY_TIME_FIELDS.filter(
-      (f) => (when.time?.[f]?.trim()) || this.areaFilterExtraFields.has(f),
-    );
-    for (const field of shownSecondary) {
-      this.renderAreaTimeField(parent, areaIndex, when, field, rerenderControls);
-    }
-    // Show the addable date fields directly as inline chips (not a dropdown) so
-    // the user can see what's available at a glance.
-    const addable = SECONDARY_TIME_FIELDS.filter((f) => !shownSecondary.includes(f));
-    if (addable.length > 0) {
-      const addRow = parent.createDiv({ cls: "bt-area-add-field-row" });
-      addRow.createSpan({ cls: "bt-area-add-field-label", text: tr("savedViews.addTimeField") });
-      for (const f of addable) {
-        const chip = addRow.createEl("button", {
-          cls: "bt-area-add-field",
-          text: `＋ ${timeFieldLabel(f)}`,
-        });
-        chip.dataset.action = "add-time-field";
-        chip.dataset.timeField = f;
-        chip.addEventListener("click", () => {
-          this.areaFilterExtraFields.add(f);
-          this.refreshFilterControls(rerenderControls);
-        });
-      }
-    }
-
-    // Tags — a searchable, scrollable list (scales to thousands of tags).
-    this.renderAreaTagList(parent, areaIndex, when, selectedTags, rerenderControls);
-  }
-
-  // US-109z2: one time field's area controls — quick tokens + a date-range
-  // picker (two native date inputs writing a `START..END` range token).
-  private renderAreaTimeField(
-    parent: HTMLElement,
-    areaIndex: number,
-    when: QueryPresetFilters,
-    field: SavedViewTimeField,
-    rerenderControls?: FilterControlsRerender,
-  ): void {
-    const token = when.time?.[field]?.trim() ?? "";
-    const isRange = token.includes("..");
-    const sec = parent.createDiv({ cls: "bt-area-filter-sec" });
-    sec.dataset.areaTimeField = field;
-    sec.createDiv({ cls: "bt-area-filter-sec-label", text: timeFieldLabel(field) });
-
-    const setToken = (next: string | undefined) => {
-      const nextTime = { ...(when.time ?? {}) };
-      if (next) nextTime[field] = next;
-      else delete nextTime[field];
-      this.setAreaWhen(areaIndex, { ...when, time: nextTime }, rerenderControls);
-    };
-
-    const chips = sec.createDiv({ cls: "bt-area-filter-chips" });
-    const opts: Array<readonly [string, string]> = field === "scheduled"
-      ? [...timeFilterOptions("scheduled"), ["unscheduled", tr("pool.unscheduled")]]
-      : timeFilterOptions(field);
-    for (const [t, label] of opts) {
-      const checked = !isRange && token === t;
-      const chip = chips.createEl("button", {
-        text: label,
-        cls: "bt-area-filter-chip" + (checked ? " active" : ""),
-      });
-      if (field === "scheduled") chip.dataset.areaScheduled = t || "all";
-      chip.addEventListener("click", () => setToken(t || undefined));
-    }
-
-    // US-109z2: two distinct semantics for one field — the chips above are
-    // RELATIVE (今天 / 本周 / 未来7天 …, resolved against "now"); the inputs below
-    // are an ABSOLUTE date range. They're mutually exclusive (picking one clears
-    // the other); the "或自定义范围" separator makes that explicit, and the active
-    // chip highlights only when no range is set (isRange gates `checked` above).
-    const sep = sec.createDiv({ cls: "bt-area-date-or" });
-    sep.setText(tr("savedViews.dateOrRange"));
-    // Custom date range (a real date picker via native inputs).
-    const range = sec.createDiv({ cls: "bt-area-date-range" });
-    const [from, to] = isRange ? token.split("..", 2) : ["", ""];
-    const fromIn = range.createEl("input", { type: "date", cls: "bt-area-date-input" });
-    fromIn.value = from ?? "";
-    range.createSpan({ cls: "bt-area-date-sep", text: tr("savedViews.dateRangeTo") });
-    const toIn = range.createEl("input", { type: "date", cls: "bt-area-date-input" });
-    toIn.value = to ?? "";
-    const applyRange = () => {
-      const f = fromIn.value.trim();
-      const t = toIn.value.trim();
-      if (!f && !t) { setToken(undefined); return; }
-      setToken(`${f || t}..${t || f}`);
-    };
-    fromIn.addEventListener("change", applyRange);
-    toIn.addEventListener("change", applyRange);
-  }
-
-  // US-109z2: searchable, scrollable tag list. Renders selected-first + filtered
-  // candidates, capped so thousands of tags don't blow up the DOM; the search
-  // box re-renders rows locally (no sheet rerender, keeps focus).
-  private renderAreaTagList(
-    parent: HTMLElement,
-    areaIndex: number,
-    when: QueryPresetFilters,
-    selectedTags: string[],
-    rerenderControls?: FilterControlsRerender,
-  ): void {
-    const sec = parent.createDiv({ cls: "bt-area-filter-sec" });
-    const head = sec.createDiv({ cls: "bt-area-filter-sec-head" });
-    head.createSpan({ cls: "bt-area-filter-sec-label", text: tr("savedViews.tag") });
-    if (selectedTags.length > 0) {
-      const clearTags = head.createEl("button", { text: tr("savedViews.clearTags"), cls: "bt-area-filter-clear-tags" });
-      clearTags.addEventListener("click", () => this.setAreaWhen(areaIndex, { ...when, tags: [] }, rerenderControls));
-    }
-
-    // Click-to-open select: a trigger showing the selection summary; the
-    // searchable list only renders when open, so many tags don't lengthen the
-    // panel. Open state persists across rerenders so multi-select keeps it open.
-    const trigger = sec.createEl("button", { cls: "bt-area-tag-trigger" });
-    trigger.dataset.action = "tag-select";
-    const summary = trigger.createSpan({
-      cls: "bt-area-tag-trigger-summary" + (selectedTags.length ? "" : " is-empty"),
-      text: selectedTags.length ? tagFilterSummary(selectedTags) : tr("savedViews.tagSearch"),
-    });
-    void summary;
-    setIcon(trigger.createSpan({ cls: "bt-area-tag-caret" }), this.areaTagPopoverOpen ? "chevron-up" : "chevron-down");
-    trigger.addEventListener("click", () => {
-      this.areaTagPopoverOpen = !this.areaTagPopoverOpen;
-      this.refreshFilterControls(rerenderControls);
-    });
-    if (!this.areaTagPopoverOpen) return;
-
-    // Float the popover (position:fixed anchored to the trigger) so opening it
-    // doesn't grow the sheet / push other controls — it overlays instead.
-    const popover = sec.createDiv({ cls: "bt-area-tag-popover bt-area-tag-popover--float" });
-    const placeFloat = () => {
-      const r = trigger.getBoundingClientRect();
-      popover.style.left = `${Math.round(r.left)}px`;
-      popover.style.width = `${Math.round(r.width)}px`;
-      // Open downward, but flip up if it would overflow the viewport bottom.
-      const popH = popover.offsetHeight || 280;
-      const below = window.innerHeight - r.bottom;
-      if (below < popH + 8 && r.top > popH + 8) popover.style.top = `${Math.round(r.top - popH - 4)}px`;
-      else popover.style.top = `${Math.round(r.bottom + 4)}px`;
-    };
-    // Position after it's measured; reposition on scroll/resize of the sheet.
-    window.requestAnimationFrame(placeFloat);
-    const scroller = trigger.closest<HTMLElement>(".modal-content, .bt-editor-page-body");
-    const reposition = () => placeFloat();
-    scroller?.addEventListener("scroll", reposition, { passive: true });
-    window.addEventListener("resize", reposition, { passive: true });
-    // Clean the listeners when this popover leaves the DOM (next rerender).
-    const cleanup = () => {
-      scroller?.removeEventListener("scroll", reposition);
-      window.removeEventListener("resize", reposition);
-    };
-    new MutationObserver((_m, obs) => {
-      if (!popover.isConnected) { cleanup(); obs.disconnect(); }
-    }).observe(sec, { childList: true, subtree: true });
-    const searchInput = popover.createEl("input", { type: "text", cls: "bt-area-tag-search", placeholder: tr("savedViews.tagSearch") });
-    const list = popover.createDiv({ cls: "bt-area-tag-list" });
-    const options = this.collectTagOptions(selectedTags);
-    const CAP = 100;
-    const renderRows = (query: string) => {
-      list.empty();
-      const q = query.trim().toLowerCase();
-      const filtered = q ? options.filter((o) => o.tag.toLowerCase().includes(q)) : options;
-      if (filtered.length === 0) {
-        list.createDiv({ cls: "bt-area-filter-empty", text: tr("savedViews.tagEmpty") });
-        return;
-      }
-      for (const opt of filtered.slice(0, CAP)) {
-        const lc = opt.tag.toLowerCase();
-        const checked = selectedTags.some((t) => t.toLowerCase() === lc);
-        const row = list.createEl("button", {
-          cls: "bt-area-tag-row" + (checked ? " active" : ""),
-        });
-        row.dataset.areaTag = opt.tag;
-        const check = row.createSpan({ cls: "bt-area-tag-check" });
-        if (checked) setIcon(check, "check");
-        row.createSpan({ text: opt.tag, cls: "bt-area-tag-row-label" });
-        if (opt.count > 0) row.createSpan({ text: String(opt.count), cls: "bt-area-tag-row-count" });
-        row.addEventListener("click", () => {
-          const next = checked
-            ? selectedTags.filter((t) => t.toLowerCase() !== lc)
-            : [...selectedTags, opt.tag];
-          this.setAreaWhen(areaIndex, { ...when, tags: next }, rerenderControls);
-        });
-      }
-      if (filtered.length > CAP) {
-        list.createDiv({ cls: "bt-area-tag-more", text: tr("savedViews.tagMore", { n: filtered.length - CAP }) });
-      }
-    };
-    searchInput.addEventListener("input", () => renderRows(searchInput.value));
-    renderRows("");
-  }
-
-  private areaTags(when: QueryPresetFilters): string[] {
+  areaTags(when: QueryPresetFilters): string[] {
     if (Array.isArray(when.tags)) return when.tags;
     if (typeof when.tags === "string") return parseFilterTags(when.tags);
     return [];
@@ -4502,7 +4259,7 @@ export class TaskCenterView extends ItemView {
     return true;
   }
 
-  private collectTagOptions(selectedTags?: string[]): Array<{ tag: string; count: number }> {
+  collectTagOptions(selectedTags?: string[]): Array<{ tag: string; count: number }> {
     const options = new Map<string, { tag: string; count: number }>();
     const selected = new Set(
       (selectedTags ?? parseFilterTags(this.state.savedViewTag)).map((t) => t.toLowerCase()),
