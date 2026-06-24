@@ -11,11 +11,10 @@
 .task-center-bottom-sheet .bt-manage-tab-row:hover {
   background: var(--background-modifier-hover);
 }
-/* UX §2.3: current tab = full-row highlight + left accent bar (replaces the
+/* UX §2.3: current tab = full-row highlight (replaces the
  * 「当前」text badge — you spot where you are without reading). */
 .task-center-bottom-sheet .bt-manage-tab-row-active {
   background: var(--background-modifier-hover);
-  box-shadow: inset 2px 0 0 var(--interactive-accent);
 }
 /* Handle stays out of the way until you hover the row; always shown on mobile
  * (no hover) so drag-to-reorder remains discoverable. */

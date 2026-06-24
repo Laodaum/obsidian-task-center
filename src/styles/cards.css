@@ -32,12 +32,9 @@
 .task-center-view .bt-card.dragging {
   opacity: 0.4;
 }
-/* D6: selection feedback (US-168c) uses the canonical soft-mix + inset accent
-   bar rather than a hard 2px outline. The inset bar sits on the left to
-   reinforce the card spine. */
+/* D6: selection feedback (US-168c) uses a soft background mix. */
 .task-center-view .bt-card.selected {
   background: color-mix(in srgb, var(--interactive-accent) 8%, var(--background-primary));
-  box-shadow: inset 2px 0 0 var(--interactive-accent);
 }
 .task-center-view .bt-card.bt-overdue {
   border-color: color-mix(in srgb, var(--color-red) 30%, var(--background-modifier-border));

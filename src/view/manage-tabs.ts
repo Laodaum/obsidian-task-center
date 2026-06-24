@@ -127,7 +127,7 @@ export function renderManageTabsSheet(
       void reorderQueryTab(v, draggedId, insertAt).then(rerender);
     });
 
-    // UX §2.3: 当前 tab 靠整行高亮 + 左侧 accent 竖条表达，不再用「当前」文字徽标。
+    // UX §2.3: 当前 tab 靠整行高亮表达，不再用「当前」文字徽标。
     if (v.isViewCurrentlyActive(view)) row.addClass("bt-manage-tab-row-active");
 
     // 状态标记降噪：只保留「已隐藏」「预设」文字徽标。当前 tab 靠整行高亮表达；
