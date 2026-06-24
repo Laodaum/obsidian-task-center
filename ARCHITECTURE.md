@@ -1124,6 +1124,12 @@ export interface PresentationCtx {
 
 ### 7.13 与 AreaSpec / AreaView 的关系（复用 REFACTOR.md §4）
 
+> **落地实况（截至本轮，覆盖本节后续的设计草案）**：本节是 §4 的早期设计草案，**部分已落地、其余按 §7.14 与 REFACTOR §4.7 评审判定不做**：
+> - **纯核心两半已落地、且是分开两表**，不是合一的 `AREA_SPECS`：能力侧 = `src/areas.ts` 的 `AreaHandler` 层次 + `HANDLERS: Record<AreaType|"unknown", AreaHandler>`；投影侧 = `src/query/projection.ts` 的 `AREA_PROJECTORS: Record<AreaType|"unknown", AreaProjector>`（投影 switch 已消除，`today` 显式注入）。两表都带 exhaustive 编译检查。
+> - **渲染侧已落地为 `AREA_RENDERERS: Record<AreaType|"unknown", (v, el, area, idx)=>void>`**（`src/view.ts`，消除 `renderLayoutNode` 的最后一处 `switch(node.type)`），值是 step8/9 抽出的**收-v 函数**（`renderListArea` / `calendar.ts:renderWeek|renderMonth` / `renderTrashZone` / `renderUnknownArea`）。
+> - **下文的 `AreaView.mount` 生命周期对象 + 窄 `AreaViewPorts` + `AREA_VIEWS` 表不采纳**：按 §7.14 第 11 步「窄 Port/DIP 对单宿主插件是过度设计、收 v 是正确终态」，以及 REFACTOR §4.7 的多维度+对抗式评审结论——渲染函数无跨渲染实例状态（`expandedDays`/`selectedMonthDay` 都在 `v.state`、整树重渲染），AreaView 是为不存在的生命周期造容器；§4.7 的 `AreaKind` 合一对象 / `AreaSettingsSpec` DSL（旗舰示例 `firstDayOfWeek`/`density` 实为未接线死字段）一并不采纳。
+> - 因此「area 渲染走注册表而非 switch」这个**目标已达成**（三张同构注册表：能力/投影/渲染），只是落地形态是收-v 函数表，而非下文的 `AreaSpec`/`AreaView` 双对象。下文保留作设计沿革。
+
 area 渲染走**注册表**而非 `switch(area.type)`（现 `view.ts:renderLayoutNode`(3042) / `query/projection.ts` 的 `switch`，`default→list` 会把新 type 静默当 list）。分两组 strategy + 全量注册表：
 
 - **纯核心** `src/query/areas/`：`AreaSpec` = `{ type, capabilities: AreaHandler, projector: AreaProjector, validate }`，`AREA_SPECS: Record<AreaType|"unknown", AreaSpec>`。CLI `query-run` 与 GUI 共用，`projector.project(area, tasks, ctx)` 只吃 `EffectiveTask[] + AreaProjectionCtx`（`today` 显式注入），可单测、无 DOM。
