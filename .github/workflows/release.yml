@@ -109,34 +109,32 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # Hard guard: the tag MUST match manifest.json's version. The
-      # `version-bump.mjs` script (wired into the `version` package
-      # lifecycle) is supposed to keep them in lockstep. If someone
-      # tagged manually without bumping, fail loud here rather than
-      # publish a release with mismatched plugin metadata.
-      - name: Verify tag matches manifest.json version
+      # Auto-sync: if the tag version doesn't match manifest.json (e.g. someone
+      # pushed the tag directly without running `pnpm version`), update
+      # package.json / manifest.json / versions.json to match the tag, then
+      # commit the fix back to main so the repo stays consistent.
+      - name: Auto-sync version files to tag
         run: |
+          set -euo pipefail
           TAG_VERSION="${GITHUB_REF#refs/tags/}"
           MANIFEST_VERSION=$(node -p "require('./manifest.json').version")
-          if [ "$TAG_VERSION" != "$MANIFEST_VERSION" ]; then
-            echo "::error::tag '$TAG_VERSION' does not match manifest.json version '$MANIFEST_VERSION' — did you forget 'pnpm version <bump>' before tagging?"
-            exit 1
-          fi
-
-      # US-603: versions.json must include this version → Obsidian
-      # minAppVersion. version-bump.mjs writes it locally before the
-      # tag commit; this is the "did the maintainer remember?" check.
-      - name: Verify versions.json contains this tag
-        run: |
-          TAG_VERSION="${GITHUB_REF#refs/tags/}"
-          # With `node -e`, argv layout is [node, arg1, arg2, ...] — there
-          # is NO empty script slot. So the first positional arg sits at
-          # argv[1]. Verified locally against node v22:
-          #   node -e "console.log(process.argv)" "0.1.0"
-          #   → ["/.../node","0.1.0"]
-          if ! node -e "const v=require('./versions.json'); if(!v[process.argv[1]])process.exit(1);" "$TAG_VERSION"; then
-            echo "::error::versions.json missing entry for $TAG_VERSION — version-bump.mjs should add it; check the version script wiring"
-            exit 1
+          if [ "$TAG_VERSION" = "$MANIFEST_VERSION" ]; then
+            echo "Version OK: $TAG_VERSION — no sync needed."
+          else
+            echo "Auto-syncing $MANIFEST_VERSION → $TAG_VERSION"
+            node -e "
+              const fs = require('fs');
+              const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+              pkg.version = process.argv[1];
+              fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+            " "$TAG_VERSION"
+            node version-bump.mjs
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add package.json manifest.json versions.json
+            git commit -m "chore(release): bump version files to ${TAG_VERSION} [skip ci]"
+            git push origin HEAD:main
+            echo "Pushed version-sync commit to main."
           fi
 
       - name: Build (produces main.js)
