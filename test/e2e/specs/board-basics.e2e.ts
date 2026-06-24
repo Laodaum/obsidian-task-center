@@ -227,7 +227,10 @@ describe("Task Center — 看板基础 (US-101/107/115)", function () {
   // data-just-completed) until the view is re-entered, then disappears.
   it("US-153: a just-completed card lingers in place, then disappears on re-enter", async function () {
     const today = todayISO();
-    await writeAndWait("Tasks/Inbox.md", `- [ ] Linger task ⏳ ${today}\n`);
+    // A dedicated file: earlier tests rewrite Tasks/Inbox.md many times, which
+    // accumulates stale path:L1 → hash entries in the cache; resolving this
+    // task's ref for the ✔ write must not collide with a prior occupant's hash.
+    await writeAndWait("Tasks/US153.md", `- [ ] Linger task ⏳ ${today}\n`);
 
     await browser.executeObsidianCommand("task-center:open");
     await forFlush();
@@ -238,7 +241,7 @@ describe("Task Center — 看板基础 (US-101/107/115)", function () {
     await todayTab.click();
     await $('[data-view="today"]').waitForExist({ timeout: 3000 });
 
-    const cardSel = `[data-view="today"] [data-task-id="Tasks/Inbox.md:L1"]`;
+    const cardSel = `[data-view="today"] [data-task-id="Tasks/US153.md:L1"]`;
     await $(cardSel).waitForExist({ timeout: 5000 });
 
     // Click the ✔ to complete it.
