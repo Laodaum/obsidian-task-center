@@ -1,42 +1,61 @@
-/* DESIGN §5.0 / UX §2.3: one compact row per tab — handle + name/markers + kebab.
- * Tight row height so the whole tab set fits on one screen. */
+/* ── Manage Tabs sheet layout ── */
+.task-center-bottom-sheet .bt-manage-tabs-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.task-center-bottom-sheet .bt-manage-tabs-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px 4px 12px;
+}
+/* Divider between action buttons and the list */
+.task-center-bottom-sheet .bt-manage-tabs-list {
+  border-top: 1px solid var(--background-modifier-border);
+  padding-top: 6px;
+}
+
+/* ── Row chrome ── */
 .task-center-bottom-sheet .bt-manage-tab-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 5px 10px;
+  gap: 6px;
+  padding: 6px 8px;
   border-radius: var(--radius-m);
   cursor: pointer;
 }
 .task-center-bottom-sheet .bt-manage-tab-row:hover {
   background: var(--background-modifier-hover);
 }
-/* UX §2.3: current tab = full-row highlight (replaces the
- * 「当前」text badge — you spot where you are without reading). */
+/* Active row: accent-tinted background + name in accent color */
 .task-center-bottom-sheet .bt-manage-tab-row-active {
-  background: var(--background-modifier-hover);
+  background: color-mix(in srgb, var(--interactive-accent) 10%, var(--background-modifier-hover));
 }
-/* Handle stays out of the way until you hover the row; always shown on mobile
- * (no hover) so drag-to-reorder remains discoverable. */
+.task-center-bottom-sheet .bt-manage-tab-row-active .bt-manage-tab-title {
+  color: var(--text-accent);
+}
+/* Handle: dimly visible at rest so rows feel balanced; full on hover */
 .task-center-bottom-sheet .bt-manage-tab-handle {
   flex: 0 0 auto;
   color: var(--text-faint);
   cursor: grab;
-  opacity: 0;
-  transition: opacity 0.12s ease;
+  opacity: 0.25;
+  transition: opacity 0.1s ease;
+  font-size: 13px;
 }
 .task-center-bottom-sheet .bt-manage-tab-row:hover .bt-manage-tab-handle {
-  opacity: 1;
+  opacity: 0.7;
 }
 .task-center-obsidian-mobile-sheet .bt-manage-tab-handle {
-  opacity: 1;
+  opacity: 0.6;
 }
 .task-center-bottom-sheet .bt-manage-tab-main {
   flex: 1 1 auto;
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
 .task-center-bottom-sheet .bt-manage-tab-title {
   flex: 0 1 auto;
@@ -44,6 +63,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: var(--font-ui-small);
   font-weight: var(--font-semibold);
   color: var(--text-normal);
 }
@@ -51,28 +71,28 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 4px;
   margin-left: auto;
 }
 .task-center-bottom-sheet .bt-manage-tab-badge {
-  padding: 1px 8px;
+  padding: 1px 7px;
   border-radius: 999px;
-  background: var(--background-secondary);
+  background: var(--background-modifier-border);
   color: var(--text-muted);
-  font-size: var(--font-ui-smaller);
+  font-size: 11px;
 }
-/* UX §2.3: preset badge is low-signal (almost every row has it) — keep it only
- * to tell preset vs custom apart, dialed way down so it doesn't grab the eye. */
+/* Preset badge: subtle pill, low visual weight */
 .task-center-bottom-sheet .bt-manage-tab-badge-preset {
-  padding: 1px 4px;
   background: transparent;
   color: var(--text-faint);
+  font-size: 11px;
+  padding: 1px 4px;
 }
-/* 「未保存」→ accent dot; 「默认」→ star icon. Both replace text badges. */
+/* Unsaved dot; default star */
 .task-center-bottom-sheet .bt-manage-tab-dot {
   flex: 0 0 auto;
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
   border-radius: 50%;
   background: var(--interactive-accent);
 }
@@ -83,33 +103,46 @@
   color: var(--text-accent);
 }
 .task-center-bottom-sheet .bt-manage-tab-star svg {
-  width: 14px;
-  height: 14px;
+  width: 13px;
+  height: 13px;
 }
 .task-center-bottom-sheet .bt-manage-tab-kebab {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
   padding: 0;
   border: none;
   border-radius: var(--radius-s);
   background: transparent;
-  color: var(--text-muted);
+  color: var(--text-faint);
   cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.1s ease;
+}
+.task-center-bottom-sheet .bt-manage-tab-row:hover .bt-manage-tab-kebab {
+  opacity: 1;
+  color: var(--text-muted);
 }
 .task-center-bottom-sheet .bt-manage-tab-kebab:hover {
   background: var(--background-modifier-hover);
   color: var(--text-normal);
 }
 .task-center-bottom-sheet .bt-manage-tab-btn {
-  min-height: 30px;
-  padding: 6px 10px;
+  height: 28px;
+  padding: 0 12px;
   border: 1px solid var(--background-modifier-border);
   border-radius: var(--radius-m);
-  background: var(--background-secondary);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+.task-center-bottom-sheet .bt-manage-tab-btn:hover {
+  background: var(--background-modifier-hover);
   color: var(--text-normal);
 }
 
