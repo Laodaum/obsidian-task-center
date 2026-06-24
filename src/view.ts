@@ -2,7 +2,6 @@ import {
   ItemView,
   Modal,
   WorkspaceLeaf,
-  Menu,
   Notice,
   Platform,
   setIcon,
@@ -17,7 +16,6 @@ import {
   shiftMonth,
   startOfWeek,
   startOfMonth,
-  endOfMonth,
   isoWeekNumber,
   pad,
 } from "./dates";
@@ -27,7 +25,6 @@ import { TabDwellTracker } from "./view/dnd";
 import { UndoStack, UndoEntry, UndoOp } from "./view/undo";
 import { BottomSheet } from "./view/bottom-sheet";
 import { openMobileDatePicker, openMobileTagEditor, type TagEditResult } from "./view/mobile-task-sheet";
-import { attachLongPress } from "./view/touch";
 import { shouldCloseFilterPopoverOnPointerDown, isClickInsideFilterControls } from "./view/filter-popover";
 import { isMobileMode } from "./platform";
 import { weekMinHeightFromViewHeightPx } from "./view/layout";
@@ -37,29 +34,22 @@ import { renderMigrationGate } from "./view/migration-gate";
 import type { FilterPopoverKey, TabKey, ViewState } from "./view/state";
 import { taskDisplayTags } from "./tags";
 import { taskMatchesTimeToken, timeTokenAppliesToField } from "./time-filter";
-import { deriveEffectiveTasks, countTopLevel, recomputeTopLevelInQuery } from "./task-tree";
+import { deriveEffectiveTasks, recomputeTopLevelInQuery } from "./task-tree";
 import type { EffectiveTask } from "./task-tree";
 import { projectListArea } from "./query/projection";
 import { applyQueryFilters, queryFilterHasActiveConditions } from "./query/filter";
 import { TabOverflowMeasure } from "./view/tab-overflow";
 import {
-  copySavedView,
-  setDefaultSavedView,
-  moveSavedView,
-  reorderQueryTab,
-  renameSavedView,
-  toggleSavedViewHidden,
-  deleteSavedViewWithConfirm,
-  restoreBuiltinSavedView,
   suggestSavedViewName,
   askSavedViewName,
   saveCurrentView,
 } from "./view/saved-view-actions";
-import { openManageTabsSheet, openManageTabRowMenu } from "./view/manage-tabs";
+import { openManageTabsSheet } from "./view/manage-tabs";
 import { openParentPickerForTask } from "./view/parent-picker";
 import { openSourceEditShell, openQuickAdd } from "./view/source-actions";
 import { renderCard } from "./view/render/card";
 import { renderWeek, renderMonth } from "./view/render/calendar";
+import { renderTabBar } from "./view/tabbar";
 import { statusFilterLabel } from "./view/area-filter-model";
 import {
   applyQueryPresetFilters,
@@ -192,7 +182,7 @@ export class TaskCenterView extends ItemView {
   // Cross-tab drag dwell: hovering a card over a tab head for 600ms switches
   // tabs. UX.md §6.1 / ARCHITECTURE.md §11. One tracker for the whole view —
   // tab heads route their dragover events through `update()`.
-  private dwellTracker = new TabDwellTracker<string>({
+  dwellTracker = new TabDwellTracker<string>({
     durationMs: 600,
     onCommit: (id) => this.activateSavedViewById(id),
   });
@@ -216,13 +206,13 @@ export class TaskCenterView extends ItemView {
   // toggleDone sets this so the next scheduleRefresh skips the clear exactly
   // once; genuine external changes still clear.
   private skipNextRefreshClear = false;
-  private filterPopoverOpen: FilterPopoverKey | null = null;
+  filterPopoverOpen: FilterPopoverKey | null = null;
   // US-109q: desktop "更多" overflow tabs dropdown open state. Mirrors the
   // per-area filter popover model — open/close is a render-time flag closed by
   // outside pointerdown / Esc / row select / button toggle (mobile uses a sheet).
-  private overflowTabsMenuOpen = false;
+  overflowTabsMenuOpen = false;
   // US-109q: desktop tab-overflow geometry (measured-width cache + fit state).
-  private readonly tabOverflow = new TabOverflowMeasure({
+  readonly tabOverflow = new TabOverflowMeasure({
     visibleTabs: () => this.visibleQueryTabs(),
     isMobileLayout: () => this.contentEl.dataset.mobileLayout === "true",
     findTabbar: () => this.contentEl.querySelector<HTMLElement>(".bt-tabbar"),
@@ -625,7 +615,7 @@ export class TaskCenterView extends ItemView {
     this.applyMobileLayoutAttr();
 
     const header = el.createDiv({ cls: "bt-header" });
-    this.renderTabBar(header);
+    renderTabBar(this, header);
     this.renderMobileStatusRow(header);
     this.renderToolbar(header);
 
@@ -715,439 +705,6 @@ export class TaskCenterView extends ItemView {
   }
 
   // ---------- Header ----------
-
-  private renderTabBar(parent: HTMLElement) {
-    const bar = parent.createDiv({ cls: "bt-tabbar" });
-    const tabs = this.visibleQueryTabs();
-    const mobileLayout = this.contentEl.dataset.mobileLayout === "true";
-    // VAL-GUI-005 / US-109q / US-117a: overflow handling differs by regime:
-    //  - Mobile: the strip pans horizontally and shows ALL tabs — no "更多"
-    //    overflow button (US-117a: one compact strip that scrolls; no desktop
-    //    affordances). CSS gives `.bt-tabbar` `overflow-x: auto` on mobile.
-    //  - Desktop: width-driven. `fittedVisibleTabCount` (measured after layout,
-    //    see scheduleTabOverflowMeasure) caps how many leading tabs fit so the
-    //    bar never scrolls horizontally; the rest go into the "更多" button.
-    // ⌃1–⌃9 map to the first 9 of `visibleQueryTabs()` regardless of the split.
-    const visibleCount = mobileLayout
-      ? tabs.length
-      : (this.tabOverflow.fittedCount ?? tabs.length);
-    const visibleTabs = tabs.slice(0, visibleCount);
-    const overflowTabs = tabs.slice(visibleCount);
-
-    for (const [index, view] of visibleTabs.entries()) {
-      this.renderTabButton(bar, view, index, mobileLayout);
-    }
-
-    // Overflow "更多" button — first-class tab metadata
-    if (overflowTabs.length > 0) {
-      const moreBtn = bar.createDiv({ cls: "bt-tab bt-tab-more" });
-      // data-tab-id anchors this as a first-class entry for e2e selectors
-      moreBtn.dataset.queryTabId = "__overflow__";
-      moreBtn.dataset.tabId = "__overflow__";
-      // Aggregate metadata: show dirty/default if ANY overflow tab carries it
-      if (overflowTabs.some((v) => this.isSavedViewDirty(v))) {
-        moreBtn.dataset.queryTabDirty = "true";
-      }
-      if (overflowTabs.some((v) => this.plugin.settings.defaultSavedViewId === v.id)) {
-        moreBtn.dataset.queryTabDefault = "true";
-      }
-      const label = moreBtn.createDiv({ cls: "bt-tab-label" });
-      label.createSpan({ text: tr("savedViews.tabMore"), cls: "bt-tab-name" });
-      if (overflowTabs.some((v) => this.isSavedViewDirty(v))) {
-        label.createSpan({ text: "•", cls: "bt-tab-dirty-dot" });
-      }
-      // US-109q: the badge counts collapsed tabs ("还有 N 个 tab"), not the sum
-      // of their task counts — per-tab task counts already show on each row.
-      moreBtn.createSpan({ text: String(overflowTabs.length), cls: "bt-tab-count" });
-      moreBtn.title = overflowTabs.map((v) => v.name).join(", ");
-
-      // US-109q: desktop opens an in-place dropdown anchored under the "更多"
-      // button; mobile keeps the bottom sheet (narrow screens can't host an
-      // anchored popover — see UX.md §「Tab 过多」 / UX-mobile §3.1).
-      if (mobileLayout) {
-        moreBtn.addEventListener("click", () => this.openOverflowTabsSheet(overflowTabs));
-        moreBtn.addEventListener("contextmenu", (event) => {
-          event.preventDefault();
-          this.openOverflowTabsSheet(overflowTabs);
-        });
-      } else {
-        moreBtn.addClass("bt-tab-more-anchor");
-        moreBtn.setAttr("aria-expanded", this.overflowTabsMenuOpen ? "true" : "false");
-        const toggleMenu = (event: Event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          this.overflowTabsMenuOpen = !this.overflowTabsMenuOpen;
-          // Opening the overflow menu closes any open filter popover.
-          this.filterPopoverOpen = null;
-          this.render();
-        };
-        moreBtn.addEventListener("click", toggleMenu);
-        moreBtn.addEventListener("contextmenu", toggleMenu);
-        if (this.overflowTabsMenuOpen) {
-          const menu = moreBtn.createDiv({ cls: "bt-overflow-tabs-menu" });
-          // Stop clicks inside the menu chrome from bubbling to the toggle.
-          menu.addEventListener("click", (e) => e.stopPropagation());
-          this.renderOverflowTabEntries(menu, overflowTabs, () => {
-            this.overflowTabsMenuOpen = false;
-            this.render();
-          }, { draggable: false });
-        }
-      }
-    } else if (this.overflowTabsMenuOpen) {
-      // Overflow collapsed away (e.g. a tab was hidden) — drop the stale flag.
-      this.overflowTabsMenuOpen = false;
-    }
-
-    // DESIGN §5.0: tab-collection management belongs to the Tab Strip (the tabs'
-    // home), not the per-query toolbar. Settings is app chrome — a standalone
-    // gear in the top strip, not buried in a query action drawer.
-    const tail = bar.createDiv({ cls: "bt-tabbar-tail" });
-    const manageBtn = tail.createEl("button", { cls: "bt-tabbar-tail-btn" });
-    setIcon(manageBtn, "list");
-    manageBtn.setAttr("aria-label", tr("savedViews.manage"));
-    manageBtn.dataset.action = "manage-query-tabs";
-    manageBtn.addEventListener("click", () => openManageTabsSheet(this));
-    const gearBtn = tail.createEl("button", { cls: "bt-tabbar-tail-btn" });
-    setIcon(gearBtn, "settings");
-    gearBtn.setAttr("aria-label", tr("toolbar.settings"));
-    gearBtn.addEventListener("click", () => this.openPluginSettings());
-
-    // US-109q: desktop width-driven overflow runs after layout — measure which
-    // tabs actually fit and collapse the rest into "更多". Mobile pans instead.
-    if (!mobileLayout) {
-      this.tabOverflow.measure(bar);
-    }
-  }
-
-  private renderTabButton(bar: HTMLElement, view: QueryPreset, index: number, mobileLayout: boolean): void {
-    const active = view.id === this.state.savedViewId;
-    const dirty = this.isSavedViewDirty(view);
-    const badges = this.savedViewBadges(view);
-    const btn = bar.createDiv({ cls: "bt-tab" + (active ? " active" : "") });
-    const legacyTab = this.legacyTabForSavedView(view);
-    if (legacyTab) btn.dataset.tab = legacyTab;
-    btn.dataset.queryTabId = view.id;
-    btn.dataset.tabId = view.id;
-    if (dirty) btn.dataset.queryTabDirty = "true";
-    if (this.plugin.settings.defaultSavedViewId === view.id) btn.dataset.queryTabDefault = "true";
-    btn.title = badges.length > 0 ? `${view.name} · ${badges.join(" · ")}` : view.name;
-    if (!mobileLayout) btn.draggable = true;
-    const label = btn.createDiv({ cls: "bt-tab-label" });
-    label.createSpan({ text: view.name, cls: "bt-tab-name" });
-    if (dirty) {
-      label.createSpan({ text: "•", cls: "bt-tab-dirty-dot" });
-    }
-    const count = this.countForSavedView(view);
-    if (count > 0) {
-      btn.createSpan({ text: String(count), cls: "bt-tab-count" });
-    }
-    if (!mobileLayout && index < 9) {
-      btn.createSpan({ text: `⌃${index + 1}`, cls: "bt-hotkey" });
-    }
-    btn.addEventListener("click", () => this.activateSavedView(view));
-    btn.addEventListener("dblclick", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      void renameSavedView(this, view);
-    });
-    btn.addEventListener("contextmenu", (event) => {
-      event.preventDefault();
-      this.openSavedViewMenu(event, view);
-    });
-
-    // UX-mobile §3.2: long-press on a tab opens the tab management sheet
-    // on mobile (desktop uses right-click / contextmenu instead).
-    if (isMobileMode()) {
-      attachLongPress(btn, {
-        durationMs: this.plugin.settings.mobileLongPressMs,
-        moveThresholdPx: 4,
-        onTrigger: () => this.openTabManagementSheet(view),
-      });
-    }
-
-    if (mobileLayout) return;
-
-    // ── Tab drag-to-reorder ──
-    btn.addEventListener("dragstart", (e) => {
-      if (!e.dataTransfer) return;
-      e.dataTransfer.effectAllowed = "move";
-      e.dataTransfer.setData("text/tab-id", view.id);
-      btn.addClass("bt-tab-dragging");
-      // Let the bar know a tab drag is in progress
-      bar.addClass("bt-tabbar-dragging");
-    });
-    btn.addEventListener("dragend", () => {
-      btn.removeClass("bt-tab-dragging");
-      bar.removeClass("bt-tabbar-dragging");
-      // Clear all insertion indicators
-      bar.findAll(".bt-tab").forEach((el) => {
-        el.removeClass("bt-tab-drop-before", "bt-tab-drop-after");
-      });
-    });
-    btn.addEventListener("dragover", (e) => {
-      const dt = e.dataTransfer;
-      if (!dt) return;
-
-      // Cross-tab drag dwell for task cards
-      if (dt.types.includes("text/task-id")) {
-        e.preventDefault();
-        dt.dropEffect = "move";
-        btn.addClass("drag-hover");
-        this.dwellTracker.update(view.id, btn, this.state.savedViewId ?? "");
-        return;
-      }
-
-      // Tab reorder
-      if (dt.types.includes("text/tab-id")) {
-        const draggedId = dt.getData("text/tab-id");
-        if (draggedId === view.id) return; // can't drop on itself
-        e.preventDefault();
-        dt.dropEffect = "move";
-        // Show insertion indicator based on cursor position
-        const rect = btn.getBoundingClientRect();
-        const mid = rect.left + rect.width / 2;
-        const isAfter = e.clientX > mid;
-        // Clear all indicators first
-        bar.findAll(".bt-tab").forEach((el) => {
-          el.removeClass("bt-tab-drop-before", "bt-tab-drop-after");
-        });
-        btn.addClass(isAfter ? "bt-tab-drop-after" : "bt-tab-drop-before");
-      }
-    });
-    btn.addEventListener("dragleave", (e) => {
-      const dt = e.dataTransfer;
-      if (dt?.types.includes("text/task-id")) {
-        btn.removeClass("drag-hover");
-        this.dwellTracker.reset();
-      }
-      if (dt?.types.includes("text/tab-id")) {
-        btn.removeClass("bt-tab-drop-before", "bt-tab-drop-after");
-      }
-    });
-    btn.addEventListener("drop", (e) => {
-      const dt = e.dataTransfer;
-      if (!dt) return;
-      if (dt.types.includes("text/tab-id")) {
-        e.preventDefault();
-        e.stopPropagation();
-        const draggedId = dt.getData("text/tab-id");
-        if (draggedId === view.id) return;
-        const rect = btn.getBoundingClientRect();
-        const mid = rect.left + rect.width / 2;
-        const isAfter = e.clientX > mid;
-        const presets = this.plugin.settings.queryPresets;
-        const targetIndex = presets.findIndex((p) => p.id === view.id);
-        if (targetIndex === -1) return;
-        // If dropping after, insert at targetIndex + 1; if before, at targetIndex
-        const insertAt = isAfter ? targetIndex + 1 : targetIndex;
-        void reorderQueryTab(this, draggedId, insertAt);
-      }
-    });
-  }
-
-  /**
-   * VAL-GUI-005: overflow tabs are first-class Query Tabs rendered in a sheet.
-   * Each entry carries data-tab-id, badge/dirty/default metadata, and full
-   * UX-mobile §3.2: long-press a tab → bottom sheet with full management
-   * actions: rename, copy, edit Query, set default, move L/R, hide, delete.
-   * Mirrors the desktop right-click `openSavedViewMenu` but rendered as
-   * large tap targets in a mobile-friendly sheet.
-   */
-  private openTabManagementSheet(view: QueryPreset): void {
-    const sheet = new BottomSheet(this.app, {
-      title: view.name,
-      populate: (el) => {
-        const actions = el.createDiv({ cls: "bt-sheet-actions" });
-
-        const addBtn = (text: string, fn: () => void | Promise<void>) => {
-          const b = actions.createEl("button", {
-            cls: "bt-sheet-action",
-            text,
-          });
-          b.addEventListener("click", () => {
-            sheet.close();
-            Promise.resolve(fn()).catch((err) =>
-              new Notice(tr("notice.error", {
-                msg: (err as Error).message,
-              }), 4000),
-            );
-          });
-        };
-
-        const presets = this.plugin.settings.queryPresets;
-        const idx = presets.findIndex((p) => p.id === view.id);
-
-        addBtn(tr("savedViews.rename"), () => renameSavedView(this, view));
-        addBtn(tr("savedViews.copy"), () => copySavedView(this, view));
-        addBtn(tr("savedViews.editQuery"), () => this.openQueryControlsSheet());
-        addBtn(tr("savedViews.setDefault"), () => setDefaultSavedView(this, view.id));
-
-        if (idx > 0) {
-          addBtn(tr("savedViews.moveLeft"), () => moveSavedView(this, view, -1));
-        } else {
-          actions.createEl("button", {
-            cls: "bt-sheet-action bt-sheet-action-disabled",
-            text: tr("savedViews.moveLeft"),
-          });
-        }
-
-        if (idx >= 0 && idx < presets.length - 1) {
-          addBtn(tr("savedViews.moveRight"), () => moveSavedView(this, view, 1));
-        } else {
-          actions.createEl("button", {
-            cls: "bt-sheet-action bt-sheet-action-disabled",
-            text: tr("savedViews.moveRight"),
-          });
-        }
-
-        addBtn(
-          view.hidden ? tr("savedViews.show") : tr("savedViews.hide"),
-          () => toggleSavedViewHidden(this, view, !view.hidden),
-        );
-
-        // US-109l: delete is available for builtin presets too (they re-appear
-        // via 「恢复预设 Tabs」). Builtins additionally offer 「恢复预设」 to reset.
-        if (view.builtin) {
-          addBtn(tr("savedViews.restore"), () => restoreBuiltinSavedView(this, view));
-        }
-        addBtn(tr("savedViews.delete"), () => deleteSavedViewWithConfirm(this, view));
-      },
-    });
-    sheet.open();
-  }
-
-  /**
-   * VAL-GUI-005: overflow tabs are first-class Query Tabs. On mobile (narrow
-   * screens) the "更多" entry opens a bottom sheet; desktop uses an in-place
-   * dropdown anchored under the button (see renderTabBar). Both share
-   * renderOverflowTabEntries, listing overflow Query Tabs with order, badge,
-   * default status, and full management actions (rename, copy, set default,
-   * move, hide, delete) — UX-mobile §3.1 / UX.md §「Tab 过多」.
-   */
-  private openOverflowTabsSheet(overflowTabs: QueryPreset[]): void {
-    const sheet = new BottomSheet(this.app, {
-      title: tr("savedViews.tabMore"),
-      populate: (el) => {
-        const body = el.createDiv({ cls: "bt-overflow-tabs-sheet" });
-        this.renderOverflowTabEntries(body, overflowTabs, () => sheet.close());
-      },
-    });
-    sheet.open();
-  }
-
-  private renderOverflowTabEntries(
-    parent: HTMLElement,
-    overflowTabs: QueryPreset[],
-    closeSheet: () => void,
-    options?: { draggable?: boolean },
-  ): void {
-    // Drag-to-reorder only makes sense in the roomy bottom sheet; the narrow
-    // desktop dropdown skips it (reorder lives in the Manage Tabs panel).
-    const draggable = options?.draggable ?? true;
-    const container = parent;
-    for (const view of overflowTabs) {
-      const row = parent.createDiv({ cls: "bt-overflow-tab-row" });
-      row.draggable = draggable;
-      // First-class data attributes: same as visible tab buttons
-      row.dataset.tabId = view.id;
-      row.dataset.queryTabId = view.id;
-      const dirty = this.isSavedViewDirty(view);
-      if (dirty) row.dataset.queryTabDirty = "true";
-      if (this.plugin.settings.defaultSavedViewId === view.id) row.dataset.queryTabDefault = "true";
-      if (view.id === this.state.savedViewId) row.addClass("bt-overflow-tab-row-active");
-
-      // ── Drag-to-reorder for overflow tab rows (sheet only) ──
-      if (draggable) {
-      row.addEventListener("dragstart", (e) => {
-        if (!e.dataTransfer) return;
-        e.dataTransfer.effectAllowed = "move";
-        e.dataTransfer.setData("text/tab-id", view.id);
-        row.addClass("bt-overflow-tab-row-dragging");
-      });
-      row.addEventListener("dragend", () => {
-        row.removeClass("bt-overflow-tab-row-dragging");
-        container.findAll(".bt-overflow-tab-row").forEach((el) => {
-          el.removeClass("bt-overflow-tab-row-drop-before", "bt-overflow-tab-row-drop-after");
-        });
-      });
-      row.addEventListener("dragover", (e) => {
-        const dt = e.dataTransfer;
-        if (!dt?.types.includes("text/tab-id")) return;
-        const draggedId = dt.getData("text/tab-id");
-        if (draggedId === view.id) return;
-        e.preventDefault();
-        dt.dropEffect = "move";
-        const rect = row.getBoundingClientRect();
-        const mid = rect.top + rect.height / 2;
-        const isAfter = e.clientY > mid;
-        container.findAll(".bt-overflow-tab-row").forEach((el) => {
-          el.removeClass("bt-overflow-tab-row-drop-before", "bt-overflow-tab-row-drop-after");
-        });
-        row.addClass(isAfter ? "bt-overflow-tab-row-drop-after" : "bt-overflow-tab-row-drop-before");
-      });
-      row.addEventListener("dragleave", (e) => {
-        const dt = e.dataTransfer;
-        if (dt?.types.includes("text/tab-id")) {
-          row.removeClass("bt-overflow-tab-row-drop-before", "bt-overflow-tab-row-drop-after");
-        }
-      });
-      row.addEventListener("drop", (e) => {
-        const dt = e.dataTransfer;
-        if (!dt?.types.includes("text/tab-id")) return;
-        e.preventDefault();
-        e.stopPropagation();
-        const draggedId = dt.getData("text/tab-id");
-        if (draggedId === view.id) return;
-        const rect = row.getBoundingClientRect();
-        const mid = rect.top + rect.height / 2;
-        const isAfter = e.clientY > mid;
-        const presets = this.plugin.settings.queryPresets;
-        const targetIndex = presets.findIndex((p) => p.id === view.id);
-        if (targetIndex === -1) return;
-        const insertAt = isAfter ? targetIndex + 1 : targetIndex;
-        void reorderQueryTab(this, draggedId, insertAt).then(() => closeSheet());
-      });
-      }
-
-      // DESIGN §5.0: same row + kebab pattern as the Manage Tabs panel —
-      // name + badges + count inline, management collapsed into one ⋮ menu.
-      // "更多" is primarily a quick switcher: click row = open the tab.
-      const main = row.createDiv({ cls: "bt-overflow-tab-main" });
-      main.createSpan({ text: view.name, cls: "bt-overflow-tab-name" });
-      if (dirty) main.createSpan({ text: "•", cls: "bt-tab-dirty-dot" });
-      for (const badge of this.savedViewBadges(view)) {
-        main.createSpan({ cls: "bt-overflow-tab-badge", text: badge });
-      }
-      const count = this.countForSavedView(view);
-      if (count > 0) {
-        main.createSpan({ text: String(count), cls: "bt-overflow-tab-count" });
-      }
-
-      const runRowAction = (handler: () => void | Promise<void>) =>
-        Promise.resolve(handler()).then(() => closeSheet()).catch((error) =>
-          new Notice(tr("notice.error", { msg: error instanceof Error ? error.message : String(error) }), 4000),
-        );
-
-      // Click row = switch to this tab (and close the sheet).
-      row.addEventListener("click", () => {
-        closeSheet();
-        this.activateSavedView(view);
-      });
-      // Right-click / kebab = the shared tab management menu (§5.0).
-      row.addEventListener("contextmenu", (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        openManageTabRowMenu(this, event, view, (handler) => { void runRowAction(handler); });
-      });
-      const kebab = row.createEl("button", { cls: "bt-overflow-tab-kebab" });
-      setIcon(kebab, "more-vertical");
-      kebab.setAttr("aria-label", tr("savedViews.more"));
-      kebab.addEventListener("click", (e) => {
-        e.stopPropagation();
-        openManageTabRowMenu(this, e, view, (handler) => { void runRowAction(handler); });
-      });
-    }
-  }
 
   // UX.md §3.0: the time-range selector belongs to the time-axis views
   // (week / month), not the global toolbar. On desktop it is rendered by the
@@ -1374,7 +931,7 @@ export class TaskCenterView extends ItemView {
     }
   }
 
-  private openPluginSettings(): void {
+  openPluginSettings(): void {
     const setting = (this.app as unknown as {
       setting: { open: () => void; openTabById: (id: string) => void };
     }).setting;
@@ -1400,25 +957,6 @@ export class TaskCenterView extends ItemView {
     return view.id === this.state.savedViewId;
   }
 
-  private isSavedViewDirty(view: QueryPreset): boolean {
-    const normalized = normalizeQueryPreset(view);
-    if (this.isViewCurrentlyActive(normalized)) {
-      return this.isSelectedSavedViewDirty(normalized);
-    }
-    const draft = this.tabDrafts.get(normalized.id);
-    return !!draft && !sameQueryPresetContent(draft, normalized);
-  }
-
-  private savedViewBadges(view: QueryPreset): string[] {
-    const badges: string[] = [];
-    if (this.isViewCurrentlyActive(view)) badges.push(tr("savedViews.currentBadge"));
-    if (this.plugin.settings.defaultSavedViewId === view.id) badges.push(tr("savedViews.defaultBadge"));
-    if (this.isSavedViewDirty(view)) badges.push(tr("savedViews.dirtyBadge"));
-    if (view.hidden) badges.push(tr("savedViews.hiddenBadge"));
-    if (view.builtin) badges.push(tr("savedViews.presetBadge"));
-    return badges;
-  }
-
   private builtinSavedViewIdForTab(tab: TabKey): string | null {
     switch (tab) {
       case "today":
@@ -1437,7 +975,7 @@ export class TaskCenterView extends ItemView {
     }
   }
 
-  private legacyTabForSavedView(view: QueryPreset): TabKey | null {
+  legacyTabForSavedView(view: QueryPreset): TabKey | null {
     const normalized = normalizeQueryPreset(view);
     if (normalized.id === builtinSavedViewId("today")) return "today";
     if (normalized.id === builtinSavedViewId("week")) return "week";
@@ -1477,77 +1015,6 @@ export class TaskCenterView extends ItemView {
     this.persistCurrentDraft();
     this.applySavedView(view);
     this.render();
-  }
-
-  private countForSavedView(view: QueryPreset): number {
-    const normalized = normalizeQueryPreset(view);
-    // Badge = top-level cards the tab renders (US-105). The set is decided by
-    // the primary area's own `when` (via getSavedViewFilter) — no per-tab-name
-    // special cases. Date views (week/month) only render cards that fall in the
-    // current period, so the count is scoped to it; everything else is a plain
-    // top-level count of the filtered set. (The old `today`/`completed`/
-    // `unscheduled` branches were dead code — tabForSavedView only ever returns
-    // week/month/list.)
-    const tab = this.tabForSavedView(normalized, "list");
-    const filter = this.getSavedViewFilter(normalized);
-    const filtered = this.getEffectiveTasks().filter(filter);
-    const today = todayISO();
-    if (tab === "week" || tab === "month") {
-      const start = tab === "week" ? startOfWeek(today, this.plugin.settings.weekStartsOn) : startOfMonth(today);
-      const end = tab === "week" ? addDays(start, 6) : endOfMonth(today);
-      const inRange = filtered.filter((task) => {
-        const date = task.effectiveScheduled;
-        return !!date && date >= start && date <= end;
-      });
-      return countTopLevel(recomputeTopLevelInQuery(inRange));
-    }
-    return countTopLevel(recomputeTopLevelInQuery(filtered));
-  }
-
-  private openSavedViewMenu(event: MouseEvent, view: QueryPreset): void {
-    const normalized = normalizeQueryPreset(view);
-    const menu = new Menu();
-    menu.addItem((item) =>
-      item.setTitle(tr("savedViews.copy")).onClick(() => {
-        void copySavedView(this, normalized);
-      }),
-    );
-    menu.addItem((item) =>
-      item.setTitle(tr("savedViews.editDsl")).onClick(() => {
-        this.activateSavedView(normalized);
-        this.openQueryControlsSheet({ scope: "tab" });
-      }),
-    );
-    menu.addItem((item) =>
-      item.setTitle(tr("savedViews.rename")).onClick(() => {
-        void renameSavedView(this, normalized);
-      }),
-    );
-    menu.addItem((item) =>
-      item.setTitle(tr("savedViews.setDefault")).onClick(() => {
-        void setDefaultSavedView(this, normalized.id);
-      }),
-    );
-    menu.addItem((item) =>
-      item.setTitle(normalized.hidden ? tr("savedViews.show") : tr("savedViews.hide")).onClick(() => {
-        void toggleSavedViewHidden(this, normalized, !normalized.hidden);
-      }),
-    );
-    // US-109l: builtins keep 「恢复预设」 (reset to factory) and are now also
-    // deletable; custom tabs just delete.
-    if (normalized.builtin) {
-      menu.addItem((item) =>
-        item.setTitle(tr("savedViews.restore")).setIcon("rotate-ccw").onClick(() => {
-          void restoreBuiltinSavedView(this, normalized);
-        }),
-      );
-    }
-    menu.addItem((item) =>
-      item.setTitle(tr("savedViews.delete")).onClick(() => {
-        void deleteSavedViewWithConfirm(this, normalized);
-      }),
-    );
-    menu.showAtMouseEvent(event);
   }
 
   public openManageTabs(): void {
@@ -2332,7 +1799,7 @@ export class TaskCenterView extends ItemView {
     };
   }
 
-  private getSavedViewFilter(view: QueryPreset): (t: EffectiveTask) => boolean {
+  getSavedViewFilter(view: QueryPreset): (t: EffectiveTask) => boolean {
     // US-109z2: the tab badge count derives from the primary content area's
     // own `when` (no tab-level filter anymore).
     const normalized = normalizeQueryPreset(view);
@@ -2547,7 +2014,7 @@ export class TaskCenterView extends ItemView {
     });
   }
 
-  private isSelectedSavedViewDirty(view: QueryPreset): boolean {
+  isSelectedSavedViewDirty(view: QueryPreset): boolean {
     return !sameQueryPresetContent(this.currentQuerySnapshot(view), view);
   }
 
@@ -2592,7 +2059,7 @@ export class TaskCenterView extends ItemView {
   // state.tab 现在只是「主内容 area 类型」的粗标签，用于日期导航与
   // lastTab 记忆。list 家族（today/todo/completed/unscheduled/dropped）
   // 统一映射成 "list"。
-  private tabForSavedView(view: QueryPreset, fallback: TabKey): TabKey {
+  tabForSavedView(view: QueryPreset, fallback: TabKey): TabKey {
     const config = normalizeQueryPreset(view).view;
     const type = this.primaryAreaType(config);
     if (type === "week") return "week";
