@@ -161,7 +161,9 @@ describe("US-109x/z2 area filter model", function () {
       "Tasks/Inbox.md",
       [
         `- [ ] Fixture status todo #status-multi ⏳ ${today}`,
-        `- [x] Fixture status done #status-multi ✅ ${today}`,
+        // The default tab is the week view, which buckets cards by their ⏳ date;
+        // the done card needs a scheduled date too, or it never enters the grid.
+        `- [x] Fixture status done #status-multi ✅ ${today} ⏳ ${today}`,
       ].join("\n") + "\n",
     );
 
@@ -170,7 +172,13 @@ describe("US-109x/z2 area filter model", function () {
     await $('[data-saved-views], .task-center-view').waitForExist({ timeout: 5000 });
     await openFirstAreaFilter();
 
-    // Status chips are fixed order, all-first; the area `when` defaults to "all".
+    // The default tab's primary area may already carry a status filter (e.g. the
+    // week preset defaults to `todo`); the status control correctly reflects the
+    // area's real `when`. Reset to a known "all" base so the all-first /
+    // multi-select assertions below start from a clean state.
+    await $('[data-area-status="all"]').click();
+
+    // Status chips are fixed order, all-first; after the reset the base is "all".
     const statusOptions = await browser.execute(() =>
       Array.from(document.querySelectorAll("[data-area-status]")).map((el) => ({
         value: (el as HTMLElement).dataset.areaStatus,
