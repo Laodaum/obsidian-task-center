@@ -52,6 +52,14 @@ import type { EffectiveTask } from "./task-tree";
 import { projectListArea } from "./query/projection";
 import { applyQueryFilters, queryFilterHasActiveConditions } from "./query/filter";
 import {
+  statusFilterOptions,
+  statusFilterLabel,
+  timeFieldLabel,
+  timeFilterOptions,
+  tagFilterSummary,
+  toggledStatus,
+} from "./view/area-filter-model";
+import {
   applyQueryPresetFilters,
   builtinSavedViewId,
   collectAreas,
@@ -2176,7 +2184,7 @@ export class TaskCenterView extends ItemView {
 
   private renderTimeFilter(parent: HTMLElement, field: SavedViewTimeField, rerenderControls?: FilterControlsRerender): void {
     const container = parent.createDiv({ cls: "bt-filter-popover-wrap" });
-    const options = this.timeFilterOptions(field);
+    const options = timeFilterOptions(field);
     const active = this.timeFilterValue(field);
     const label = this.timeFilterLabel(field, active);
     const popoverKey = this.timePopoverKey(field);
@@ -2204,11 +2212,11 @@ export class TaskCenterView extends ItemView {
   private renderTimeRangePopover(
     parent: HTMLElement,
     field: SavedViewTimeField,
-    options = this.timeFilterOptions(field),
+    options = timeFilterOptions(field),
     rerenderControls?: FilterControlsRerender,
   ): void {
     const presetPanel = parent.createDiv({ cls: "bt-date-presets" });
-    presetPanel.createDiv({ text: tr("savedViews.timePreset", { field: this.timeFieldLabel(field) }), cls: "bt-date-section-title" });
+    presetPanel.createDiv({ text: tr("savedViews.timePreset", { field: timeFieldLabel(field) }), cls: "bt-date-section-title" });
     for (const [value, text] of options) {
       const option = presetPanel.createEl("button", { cls: "bt-date-preset" });
       option.createSpan({ text, cls: "bt-date-preset-label" });
@@ -2249,14 +2257,14 @@ export class TaskCenterView extends ItemView {
         this.pendingDateRangeStart = null;
         this.refreshFilterControls(rerenderControls);
       });
-      this.renderTimeRangePopover(popover, activeField, this.timeFilterOptions(activeField), rerenderControls);
+      this.renderTimeRangePopover(popover, activeField, timeFilterOptions(activeField), rerenderControls);
       return;
     }
 
     for (const field of SECONDARY_TIME_FIELDS) {
       const value = this.timeFilterValue(field);
       const row = popover.createDiv({ cls: "bt-time-more-row" });
-      row.createSpan({ text: this.timeFieldLabel(field), cls: "bt-time-more-label" });
+      row.createSpan({ text: timeFieldLabel(field), cls: "bt-time-more-label" });
       const pick = row.createEl("button", {
         text: this.timeFilterLabel(field, value),
         cls: "bt-time-more-pick",
@@ -2269,43 +2277,19 @@ export class TaskCenterView extends ItemView {
         this.refreshFilterControls(rerenderControls);
       });
       const clear = row.createEl("button", { text: "×", cls: "bt-time-more-clear" });
-      clear.ariaLabel = tr("savedViews.clearTimeRange", { field: this.timeFieldLabel(field) });
+      clear.ariaLabel = tr("savedViews.clearTimeRange", { field: timeFieldLabel(field) });
       clear.disabled = !value;
       clear.addEventListener("click", () => this.setTimeFilter(field, "", rerenderControls));
     }
   }
 
-  private timeFilterOptions(field: SavedViewTimeField): Array<readonly [string, string]> {
-    const base: Array<readonly [string, string]> = [
-      ["", tr("savedViews.timeAll", { field: this.timeFieldLabel(field) })],
-    ];
-    if (field === "deadline") {
-      base.push(["overdue", tr("savedViews.dateOverdue")], ["next-7-days", tr("savedViews.dateNext7Days")]);
-    }
-    base.push(
-      ["today", tr("savedViews.dateToday")],
-      ["tomorrow", tr("savedViews.dateTomorrow")],
-      ["week", tr("savedViews.dateWeek")],
-      ["next-week", tr("savedViews.dateNextWeek")],
-      ["month", tr("savedViews.dateMonth")],
-    );
-    return base;
-  }
-
   private timeFilterLabel(field: SavedViewTimeField, value: string): string {
     return formatDateFilterLabel(value, {
-      emptyLabel: this.timeFieldLabel(field),
+      emptyLabel: timeFieldLabel(field),
       openStartLabel: tr("savedViews.rangeOpenStart"),
       openEndLabel: tr("savedViews.rangeOpenEnd"),
-      presets: new Map(this.timeFilterOptions(field)),
+      presets: new Map(timeFilterOptions(field)),
     });
-  }
-
-  private timeFieldLabel(field: SavedViewTimeField): string {
-    if (field === "scheduled") return tr("savedViews.timeScheduled");
-    if (field === "deadline") return tr("savedViews.timeDeadline");
-    if (field === "completed") return tr("savedViews.timeCompleted");
-    return tr("savedViews.timeCreated");
   }
 
   private timeFilterValue(field: SavedViewTimeField): string {
@@ -2336,8 +2320,8 @@ export class TaskCenterView extends ItemView {
   private renderDateCalendar(parent: HTMLElement, field: SavedViewTimeField, rerenderControls?: FilterControlsRerender): void {
     const calendar = parent.createDiv({ cls: "bt-date-calendar" });
     const head = calendar.createDiv({ cls: "bt-date-calendar-head" });
-    head.createSpan({ text: tr("savedViews.customTimeRange", { field: this.timeFieldLabel(field) }), cls: "bt-date-section-title" });
-    const clear = head.createEl("button", { text: tr("savedViews.clearTimeRange", { field: this.timeFieldLabel(field) }), cls: "bt-date-clear" });
+    head.createSpan({ text: tr("savedViews.customTimeRange", { field: timeFieldLabel(field) }), cls: "bt-date-section-title" });
+    const clear = head.createEl("button", { text: tr("savedViews.clearTimeRange", { field: timeFieldLabel(field) }), cls: "bt-date-clear" });
     clear.dataset.timeClear = field;
     clear.disabled = !this.timeFilterValue(field) && !this.pendingDateRangeStart;
     clear.addEventListener("click", () => this.setTimeFilter(field, "", rerenderControls));
@@ -2417,7 +2401,7 @@ export class TaskCenterView extends ItemView {
       text: label,
       cls: "bt-saved-view-filter bt-status-trigger",
     });
-    if (selected !== "all") trigger.title = selected.map((value) => this.statusFilterLabel(value)).join(", ");
+    if (selected !== "all") trigger.title = selected.map((value) => statusFilterLabel(value)).join(", ");
     trigger.dataset.savedViewFilter = "status";
     trigger.setAttribute("aria-haspopup", "listbox");
     trigger.setAttribute("aria-expanded", this.filterPopoverOpen === "status" ? "true" : "false");
@@ -2429,7 +2413,7 @@ export class TaskCenterView extends ItemView {
 
     const popover = container.createDiv({ cls: "bt-filter-popover bt-status-popover" });
     popover.setAttribute("role", "listbox");
-    for (const option of this.statusFilterOptions()) {
+    for (const option of statusFilterOptions()) {
       const item = popover.createEl("button", { cls: "bt-status-option" });
       item.dataset.statusOption = option.value;
       const checked = selected === "all" ? option.value === "all" : option.value !== "all" && selected.includes(option.value);
@@ -2445,31 +2429,18 @@ export class TaskCenterView extends ItemView {
     }
   }
 
-  private statusFilterOptions(): Array<{ value: "all" | TaskStatus; label: string }> {
-    return [
-      { value: "all", label: tr("savedViews.statusAny") },
-      { value: "todo", label: tr("savedViews.statusTodo") },
-      { value: "done", label: tr("savedViews.statusDone") },
-      { value: "dropped", label: tr("savedViews.statusDropped") },
-    ];
-  }
-
   private statusFilterSummary(selected: "all" | TaskStatus[]): string {
     if (selected === "all" || selected.length === 0) return tr("savedViews.statusAll");
-    const first = this.statusFilterLabel(selected[0]);
+    const first = statusFilterLabel(selected[0]);
     if (selected.length === 1) return first;
     return `${first} +${selected.length - 1}`;
-  }
-
-  private statusFilterLabel(status: TaskStatus): string {
-    return this.statusFilterOptions().find((option) => option.value === status)?.label ?? status;
   }
 
   private renderTagFilter(parent: HTMLElement, rerenderControls?: FilterControlsRerender): void {
     const selected = parseFilterTags(this.state.savedViewTag);
     const selectedSet = new Set(selected);
     const container = parent.createDiv({ cls: "bt-tag-filter" });
-    const triggerText = this.tagFilterSummary(selected);
+    const triggerText = tagFilterSummary(selected);
     const trigger = container.createEl("button", { text: triggerText, cls: "bt-tag-filter-trigger" });
     if (selected.length > 0) trigger.title = selected.join(", ");
     trigger.dataset.savedViewFilter = "tag";
@@ -2527,13 +2498,6 @@ export class TaskCenterView extends ItemView {
       }
     });
     search.focus();
-  }
-
-  private tagFilterSummary(selected: string[]): string {
-    if (selected.length === 0) return tr("savedViews.tag");
-    const first = selected[0];
-    if (selected.length === 1) return first;
-    return `${first} +${selected.length - 1}`;
   }
 
   // US-109z2: there is no tab-level filter anymore, so the global filter state
@@ -3703,7 +3667,7 @@ export class TaskCenterView extends ItemView {
     const statusSec = parent.createDiv({ cls: "bt-area-filter-sec" });
     statusSec.createDiv({ cls: "bt-area-filter-sec-label", text: tr("savedViews.statusAll") });
     const statusRow = statusSec.createDiv({ cls: "bt-area-filter-chips" });
-    for (const opt of this.statusFilterOptions()) {
+    for (const opt of statusFilterOptions()) {
       const checked = opt.value === "all"
         ? status === "all"
         : status !== "all" && status.includes(opt.value);
@@ -3713,7 +3677,7 @@ export class TaskCenterView extends ItemView {
       });
       chip.dataset.areaStatus = opt.value;
       chip.addEventListener("click", () => {
-        const next = this.toggledStatus(status, opt.value);
+        const next = toggledStatus(status, opt.value);
         this.setAreaWhen(areaIndex, { ...when, status: next }, rerenderControls);
       });
     }
@@ -3738,7 +3702,7 @@ export class TaskCenterView extends ItemView {
       for (const f of addable) {
         const chip = addRow.createEl("button", {
           cls: "bt-area-add-field",
-          text: `＋ ${this.timeFieldLabel(f)}`,
+          text: `＋ ${timeFieldLabel(f)}`,
         });
         chip.dataset.action = "add-time-field";
         chip.dataset.timeField = f;
@@ -3766,7 +3730,7 @@ export class TaskCenterView extends ItemView {
     const isRange = token.includes("..");
     const sec = parent.createDiv({ cls: "bt-area-filter-sec" });
     sec.dataset.areaTimeField = field;
-    sec.createDiv({ cls: "bt-area-filter-sec-label", text: this.timeFieldLabel(field) });
+    sec.createDiv({ cls: "bt-area-filter-sec-label", text: timeFieldLabel(field) });
 
     const setToken = (next: string | undefined) => {
       const nextTime = { ...(when.time ?? {}) };
@@ -3777,8 +3741,8 @@ export class TaskCenterView extends ItemView {
 
     const chips = sec.createDiv({ cls: "bt-area-filter-chips" });
     const opts: Array<readonly [string, string]> = field === "scheduled"
-      ? [...this.timeFilterOptions("scheduled"), ["unscheduled", tr("pool.unscheduled")]]
-      : this.timeFilterOptions(field);
+      ? [...timeFilterOptions("scheduled"), ["unscheduled", tr("pool.unscheduled")]]
+      : timeFilterOptions(field);
     for (const [t, label] of opts) {
       const checked = !isRange && token === t;
       const chip = chips.createEl("button", {
@@ -3839,7 +3803,7 @@ export class TaskCenterView extends ItemView {
     trigger.dataset.action = "tag-select";
     const summary = trigger.createSpan({
       cls: "bt-area-tag-trigger-summary" + (selectedTags.length ? "" : " is-empty"),
-      text: selectedTags.length ? this.tagFilterSummary(selectedTags) : tr("savedViews.tagSearch"),
+      text: selectedTags.length ? tagFilterSummary(selectedTags) : tr("savedViews.tagSearch"),
     });
     void summary;
     setIcon(trigger.createSpan({ cls: "bt-area-tag-caret" }), this.areaTagPopoverOpen ? "chevron-up" : "chevron-down");
@@ -3920,15 +3884,6 @@ export class TaskCenterView extends ItemView {
     return [];
   }
 
-  private toggledStatus(current: "all" | TaskStatus[], value: "all" | TaskStatus): SavedViewStatus {
-    if (value === "all") return "all";
-    const set = current === "all" ? [] : [...current];
-    const idx = set.indexOf(value);
-    if (idx >= 0) set.splice(idx, 1);
-    else set.push(value);
-    return set.length > 0 ? set : "all";
-  }
-
   areaFilterSummary(when: QueryPresetFilters): string {
     const parts: string[] = [];
     if (when.search?.trim()) parts.push(`🔍 ${when.search.trim()}`);
@@ -3936,7 +3891,7 @@ export class TaskCenterView extends ItemView {
     if (tags.length === 1) parts.push(tags[0]);
     else if (tags.length > 1) parts.push(`${tags[0]} +${tags.length - 1}`);
     const status = normalizeSavedViewStatus(when.status);
-    if (status !== "all") parts.push(status.map((s) => this.statusFilterLabel(s)).join("/"));
+    if (status !== "all") parts.push(status.map((s) => statusFilterLabel(s)).join("/"));
     const scheduled = when.time?.scheduled?.trim();
     if (scheduled) parts.push(scheduled === "unscheduled" ? tr("pool.unscheduled") : scheduled);
     return parts.join(" · ");
