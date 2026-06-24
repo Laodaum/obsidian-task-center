@@ -49,7 +49,7 @@ export class BottomSheet extends Modal {
       handle.setAttr("aria-hidden", "true");
     }
 
-    contentEl.createEl("h3", { cls: "bt-sheet-title", text: this.opts.title });
+    this.titleEl.setText(this.opts.title);
 
     this.opts.populate(contentEl);
   }

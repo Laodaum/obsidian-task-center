@@ -86,7 +86,7 @@ export class QueryEditorView {
     parent.dataset.savedViews = "true";
     parent.dataset.queryEditor = "true";
     parent.dataset.queryEditorScope = this.scope;
-    const titleEl = parent.closest(".bt-sheet-content")?.querySelector<HTMLElement>(".bt-sheet-title");
+    const titleEl = parent.closest(".modal")?.querySelector<HTMLElement>(".modal-title");
     if (titleEl) {
       titleEl.setText(tr(this.scope === "area" ? "savedViews.editAreaTitle" : "savedViews.editViewTitle"));
     }

@@ -30,7 +30,7 @@ export class DatePromptModal extends Modal {
     const { contentEl } = this;
     contentEl.empty();
     contentEl.addClass("task-center-date-prompt");
-    contentEl.createEl("h3", { text: this.title });
+    this.titleEl.setText(this.title);
 
     const input = new TextComponent(contentEl);
     input.inputEl.addClass("tc-full-width-input");

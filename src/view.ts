@@ -148,7 +148,7 @@ class SwitchTabConfirmModal extends Modal {
   }
 
   onOpen() {
-    this.contentEl.createEl("h4", { text: tr("savedViews.switchDirtyTitle") });
+    this.titleEl.setText(tr("savedViews.switchDirtyTitle"));
     this.contentEl.createEl("p", { text: tr("savedViews.switchDirtyBody") });
     const row = this.contentEl.createDiv({ cls: "bt-confirm-row" });
     row.createEl("button", {

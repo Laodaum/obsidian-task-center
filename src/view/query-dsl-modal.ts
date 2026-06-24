@@ -41,10 +41,8 @@ export class QueryDslModal extends Modal {
     contentEl.empty();
     contentEl.addClass("task-center-query-dsl-modal");
 
-    // Header: title + external docs link.
-    const head = contentEl.createDiv({ cls: "tc-dsl-head" });
-    head.createEl("h3", { text: tr("savedViews.dslTitle") });
-    const docs = head.createEl("a", {
+    this.titleEl.setText(tr("savedViews.dslTitle"));
+    const docs = this.titleEl.createEl("a", {
       text: tr("savedViews.dslDocs"),
       cls: "tc-dsl-docs",
       href: dslDocsUrl(),

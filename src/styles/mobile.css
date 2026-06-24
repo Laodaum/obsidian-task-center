@@ -451,13 +451,6 @@
   border-radius: 2px;
   margin: 4px auto 8px;
 }
-.task-center-bottom-sheet .bt-sheet-title {
-  margin: 0 0 8px 0;
-  font-size: 13px;
-  color: var(--text-muted);
-  text-align: center;
-  font-weight: 600;
-}
 .task-center-bottom-sheet .bt-sheet-empty {
   padding: 24px 8px;
   text-align: center;

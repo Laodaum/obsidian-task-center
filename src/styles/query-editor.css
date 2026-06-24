@@ -486,14 +486,11 @@
 }
 
 /* ── Query DSL modal: header docs link + live validation status ── */
-.task-center-query-dsl-modal .tc-dsl-head {
+.task-center-query-dsl-modal .modal-title {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 12px;
-}
-.task-center-query-dsl-modal .tc-dsl-head h3 {
-  margin: 0;
 }
 .task-center-query-dsl-modal .tc-dsl-docs {
   font-size: 12px;
