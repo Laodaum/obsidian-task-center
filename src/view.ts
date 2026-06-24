@@ -1,12 +1,10 @@
 import {
   ItemView,
-  MarkdownView,
   Modal,
   WorkspaceLeaf,
   Menu,
   Notice,
   Platform,
-  TFile,
   setIcon,
 } from "obsidian";
 import { ParsedTask, VIEW_TYPE_TASK_CENTER } from "./types";
@@ -24,8 +22,6 @@ import {
   isoWeekNumber,
   pad,
 } from "./dates";
-import { QuickAddModal } from "./quickadd";
-import { DatePromptModal } from "./dateprompt";
 import { t as tr } from "./i18n";
 import { animateOut } from "./anim";
 import { TabDwellTracker } from "./view/dnd";
@@ -36,8 +32,6 @@ import { weekdayLabel } from "./weekday";
 import { attachCardGestures, attachLongPress } from "./view/touch";
 import { shouldCloseFilterPopoverOnPointerDown, isClickInsideFilterControls } from "./view/filter-popover";
 import { isMobileMode } from "./platform";
-import { openTaskSourceEditShell } from "./view/source-dialog";
-import { markdownSourceOpenState } from "./view/source-open-state";
 import { weekMinHeightFromViewHeightPx } from "./view/layout";
 import { QueryDslModal, type QueryDslSubmitMode } from "./view/query-dsl-modal";
 import { QueryEditorView, type QueryEditorScope, type QueryEditorAreaTab } from "./view/query-editor";
@@ -67,6 +61,7 @@ import {
 } from "./view/saved-view-actions";
 import { openManageTabsSheet, openManageTabRowMenu } from "./view/manage-tabs";
 import { openParentPickerForTask } from "./view/parent-picker";
+import { openSourceEditShell, openContextMenu, openQuickAdd } from "./view/source-actions";
 import { compactPath } from "./view/paths";
 import { statusFilterLabel } from "./view/area-filter-model";
 import {
@@ -395,7 +390,7 @@ export class TaskCenterView extends ItemView {
     return Promise.resolve();
   }
 
-  private scheduleRefresh() {
+  scheduleRefresh() {
     if (this.refreshTimer !== null) window.clearTimeout(this.refreshTimer);
     this.refreshTimer = window.setTimeout(() => {
       void (async () => {
@@ -416,7 +411,7 @@ export class TaskCenterView extends ItemView {
     }, 400);
   }
 
-  private bumpCacheVersion() {
+  bumpCacheVersion() {
     this.cacheVersion++;
     this.contentEl.dataset.testCacheVersion = String(this.cacheVersion);
   }
@@ -425,47 +420,6 @@ export class TaskCenterView extends ItemView {
     return this.contentEl.querySelector(
       `[data-task-id="${CSS.escape(taskId)}"]`,
     );
-  }
-
-  private async openSourceEditShell(task: ParsedTask): Promise<void> {
-    this.state.selectedTaskId = task.id;
-    this.contentEl.focus();
-    if (isMobileMode()) {
-      await this.openNativeSourceEditor(task);
-      return;
-    }
-    await openTaskSourceEditShell(this.app, this.leaf, task, {
-      onSave: async () => {
-        await this.waitForCacheUpdate([task.path], 2000);
-        await this.reloadTasks();
-        this.bumpCacheVersion();
-        this.render();
-      },
-    });
-  }
-
-  private async openNativeSourceEditor(task: ParsedTask): Promise<void> {
-    const file = this.app.vault.getAbstractFileByPath(task.path);
-    if (!(file instanceof TFile)) {
-      new Notice(tr("notice.fileNotFound", { path: task.path }));
-      return;
-    }
-    try {
-      const leaf = this.app.workspace.getLeaf("tab");
-      await leaf.openFile(file, markdownSourceOpenState(task.line, true));
-      if (typeof leaf.loadIfDeferred === "function") await leaf.loadIfDeferred();
-      const view = leaf.view;
-      if (!(view instanceof MarkdownView) || !view.editor) {
-        throw new Error("native MarkdownView editor missing");
-      }
-      const pos = { line: task.line, ch: 0 };
-      view.editor.setCursor(pos);
-      view.editor.scrollIntoView({ from: pos, to: pos }, true);
-      view.editor.focus();
-    } catch (err) {
-      new Notice(tr("sourceEdit.nativeFailed"));
-      console.error(err);
-    }
   }
 
   /**
@@ -488,7 +442,7 @@ export class TaskCenterView extends ItemView {
     return false;
   }
 
-  private async runWithRemoveAnim(
+  async runWithRemoveAnim(
     taskId: string,
     action: () => Promise<unknown>,
     opts: { awaitCachePaths?: string[] } = {},
@@ -530,7 +484,7 @@ export class TaskCenterView extends ItemView {
    * `scheduleRefresh`, `onOpen`). The in-place reload+render below deliberately
    * does NOT clear it, otherwise the card would vanish the instant we re-render.
    */
-  private async toggleDone(t: EffectiveTask): Promise<void> {
+  async toggleDone(t: EffectiveTask): Promise<void> {
     const wasDone = t.effectiveStatus === "done";
     if (wasDone) {
       await this.api.undone(t.id);
@@ -566,7 +520,7 @@ export class TaskCenterView extends ItemView {
    * Reads `cache.on("changed")` (post-reparse), not raw metadataCache
    * (ARCHITECTURE.md §3.1: cache is the sole subscriber to vault events).
    */
-  private waitForCacheUpdate(paths: string[], timeoutMs = 1500): Promise<void> {
+  waitForCacheUpdate(paths: string[], timeoutMs = 1500): Promise<void> {
     const remaining = new Set(paths);
     if (remaining.size === 0) return Promise.resolve();
     return new Promise<void>((resolve) => {
@@ -744,7 +698,7 @@ export class TaskCenterView extends ItemView {
       cls: "bt-mobile-add-btn",
     });
     add.dataset.mobileAction = "quick-add";
-    add.addEventListener("click", () => this.openQuickAdd());
+    add.addEventListener("click", () => openQuickAdd(this));
   }
 
   // US-113: empty-state onboarding card — "no tasks yet, press + to add" —
@@ -762,7 +716,7 @@ export class TaskCenterView extends ItemView {
     wrap.createEl("p", { text: tr(isMobileMode() ? "onboarding.mobileBody" : "onboarding.body") });
     const btn = wrap.createEl("button", { text: tr("onboarding.cta"), cls: "bt-onboarding-cta" });
     btn.dataset.mobileAction = "empty-quick-add";
-    btn.addEventListener("click", () => this.openQuickAdd());
+    btn.addEventListener("click", () => openQuickAdd(this));
   }
 
   // ---------- Header ----------
@@ -1286,7 +1240,7 @@ export class TaskCenterView extends ItemView {
     // see USER_STORIES.md
     const add = utility.createEl("button", { text: tr("toolbar.add") });
     add.addClass("bt-add-btn");
-    add.addEventListener("click", () => this.openQuickAdd());
+    add.addEventListener("click", () => openQuickAdd(this));
     // Settings moved out of the query toolbar to the Tab Strip gear (DESIGN §5.0).
   }
 
@@ -2102,7 +2056,7 @@ export class TaskCenterView extends ItemView {
           const parentId = await openParentPickerForTask(this, t);
           if (parentId !== null) await this.nestFromMobile(t, parentId);
         });
-        secondaryAction("source", tr("sheet.editSource"), () => this.openSourceEditShell(t));
+        secondaryAction("source", tr("sheet.editSource"), () => openSourceEditShell(this, t));
       },
     });
     sheet.open();
@@ -2974,7 +2928,7 @@ export class TaskCenterView extends ItemView {
       if (this.contentEl.dataset.mobileLayout === "true") {
         this.openMobileTaskDetailSheet(t);
       } else {
-        void this.openSourceEditShell(t);
+        void openSourceEditShell(this, t);
       }
     });
 
@@ -2982,7 +2936,7 @@ export class TaskCenterView extends ItemView {
     el.addEventListener("contextmenu", (e) => {
       e.preventDefault();
       e.stopPropagation();
-      this.openContextMenu(e, t);
+      openContextMenu(this, e, t);
     });
   }
 
@@ -3152,7 +3106,7 @@ export class TaskCenterView extends ItemView {
     });
   }
 
-  private collectKnownTags(): string[] {
+  collectKnownTags(): string[] {
     return this.collectTagOptions().map((option) => option.tag);
   }
 
@@ -3492,97 +3446,6 @@ export class TaskCenterView extends ItemView {
   private getSelectedTask(): ParsedTask | null {
     if (!this.state.selectedTaskId) return null;
     return this.tasks.find((t) => t.id === this.state.selectedTaskId) ?? null;
-  }
-
-  // ---------- Context menu / source ----------
-
-  // US-164: right-click a card to get secondary task actions — toggle
-  // done, schedule today / tomorrow / clear, drop.
-  // Source/context editing is now the US-168 single-click source shell.
-  // Wired from `wireCardEvents`'s `contextmenu` listener.
-  // see USER_STORIES.md
-  openContextMenu(e: MouseEvent, task: EffectiveTask) {
-    const m = new Menu();
-    m.addItem((i) =>
-      i.setTitle(task.effectiveStatus === "done" ? tr("ctx.markTodo") : tr("ctx.markDone")).onClick(async () => {
-        // US-153: same linger-in-place behavior as the ✔ check.
-        await this.toggleDone(task);
-      }),
-    );
-    m.addItem((i) =>
-      i.setTitle(tr("ctx.scheduleToday")).onClick(async () => {
-        const target = todayISO();
-        if ((task.scheduled ?? null) !== target) {
-          await this.runWithRemoveAnim(task.id, () => this.api.schedule(task.id, target));
-        } else {
-          this.scheduleRefresh();
-        }
-      }),
-    );
-    m.addItem((i) =>
-      i.setTitle(tr("ctx.scheduleTomorrow")).onClick(async () => {
-        const target = addDays(todayISO(), 1);
-        if ((task.scheduled ?? null) !== target) {
-          await this.runWithRemoveAnim(task.id, () => this.api.schedule(task.id, target));
-        } else {
-          this.scheduleRefresh();
-        }
-      }),
-    );
-    m.addItem((i) =>
-      i.setTitle(tr("ctx.clearSchedule")).onClick(async () => {
-        if (task.scheduled) {
-          await this.runWithRemoveAnim(task.id, () => this.api.schedule(task.id, null));
-        } else {
-          this.scheduleRefresh();
-        }
-      }),
-    );
-    m.addItem((i) =>
-      i.setTitle(tr("ctx.drop")).onClick(async () => {
-        await this.runWithRemoveAnim(task.id, () => this.api.drop(task.id));
-      }),
-    );
-    m.showAtMouseEvent(e);
-  }
-
-  openDatePrompt(task: ParsedTask) {
-    new DatePromptModal(
-      this.app,
-      tr("prompt.setScheduled", { title: task.title }),
-      task.scheduled ?? todayISO(),
-      (resolved) => {
-        void (async () => {
-          if (resolved === undefined) return;
-          const willMove = (task.scheduled ?? null) !== (resolved ?? null);
-          const work = async () => {
-            const r = await this.api.schedule(task.id, resolved);
-            if (!r.unchanged) {
-              this.undoStack.push({
-                label: resolved ? `⏳ ${resolved}` : "⏳ cleared",
-                ops: [{ path: task.path, line: task.line, before: [r.before], after: [r.after] }],
-              });
-            }
-          };
-          if (willMove) {
-            await this.runWithRemoveAnim(task.id, work);
-          } else {
-            await work();
-            this.scheduleRefresh();
-          }
-        })();
-      },
-    ).open();
-  }
-
-  openQuickAdd() {
-    new QuickAddModal(
-      this.app,
-      this.api,
-      () => this.scheduleRefresh(),
-      this.plugin.settings,
-      this.collectKnownTags(),
-    ).open();
   }
 
 }
