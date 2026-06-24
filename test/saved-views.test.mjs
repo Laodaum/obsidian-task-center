@@ -25,7 +25,7 @@ function compilePure() {
 
 compilePure();
 const {
-  normalizeSavedViewStatus,
+  normalizeQueryStatus,
   deleteQueryPresetById,
   upsertQueryPreset,
   normalizeQueryPreset,
@@ -88,10 +88,10 @@ test("US-109l: restoreBuiltinQueryPresets resurrects all tombstoned builtins", (
 });
 
 test("US-109h: status filters normalize legacy single-select and new multi-select values", () => {
-  assert.equal(normalizeSavedViewStatus("all"), "all");
-  assert.deepEqual(normalizeSavedViewStatus("todo"), ["todo"]);
-  assert.deepEqual(normalizeSavedViewStatus(["todo", "done", "todo"]), ["todo", "done"]);
-  assert.equal(normalizeSavedViewStatus([]), "all");
+  assert.equal(normalizeQueryStatus("all"), "all");
+  assert.deepEqual(normalizeQueryStatus("todo"), ["todo"]);
+  assert.deepEqual(normalizeQueryStatus(["todo", "done", "todo"]), ["todo", "done"]);
+  assert.equal(normalizeQueryStatus([]), "all");
 });
 
 // ── VAL-GUI-004: delete custom tab + undo restore ──

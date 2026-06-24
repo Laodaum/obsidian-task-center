@@ -13,10 +13,10 @@
 import type { EffectiveTask } from "../task-tree";
 import type {
   QueryPresetFilters,
-  SavedViewTimeField,
-  SavedViewTimeFilters,
+  QueryTimeField,
+  QueryTimeFilters,
 } from "../types";
-import { normalizeSavedViewStatus } from "./schema";
+import { normalizeQueryStatus } from "./schema";
 import { taskMatchesTimeToken, timeTokenAppliesToField } from "../time-filter";
 import { todayISO } from "../dates";
 
@@ -28,7 +28,7 @@ import { todayISO } from "../dates";
  */
 function effectiveTimeValue(
   task: EffectiveTask,
-  field: SavedViewTimeField,
+  field: QueryTimeField,
 ): string | null {
   switch (field) {
     case "scheduled":
@@ -61,14 +61,14 @@ function normalizeTags(tags: QueryPresetFilters["tags"]): string[] {
 function normalizeStatusFilter(
   status: QueryPresetFilters["status"],
 ): "all" | string[] {
-  return normalizeSavedViewStatus(status);
+  return normalizeQueryStatus(status);
 }
 
 interface NormalizedQueryFilters {
   searchQ: string;
   tagList: string[];
   statusFilter: "all" | string[];
-  time: SavedViewTimeFilters;
+  time: QueryTimeFilters;
   hasTime: boolean;
 }
 
@@ -122,7 +122,7 @@ function matchesStatus(
 
 function matchesTime(
   task: EffectiveTask,
-  time: SavedViewTimeFilters,
+  time: QueryTimeFilters,
   weekStartsOn: 0 | 1,
   today: string,
 ): boolean {
@@ -132,7 +132,7 @@ function matchesTime(
     "completed",
     "created",
     "dropped",
-  ] as SavedViewTimeField[]) {
+  ] as QueryTimeField[]) {
     const token = time[field]?.trim();
     if (!token) continue;
 

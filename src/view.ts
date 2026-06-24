@@ -77,7 +77,7 @@ import {
   setQueryPresetHiddenById,
   deleteQueryPresetById,
   normalizeQueryPreset,
-  normalizeSavedViewStatus,
+  normalizeQueryStatus,
   suggestQueryPresetName as suggestSavedViewNameForFilters,
   upsertQueryPreset,
   updateQueryPresetById,
@@ -102,7 +102,7 @@ import type {
 } from "./types";
 import { isStackNode } from "./types";
 import { areaSupportsWhen, areaHandler } from "./areas";
-import type { SavedViewTimeField, SavedViewTimeFilters } from "./types";
+import type { QueryTimeField, QueryTimeFilters } from "./types";
 import type TaskCenterPlugin from "./main";
 
 type FilterControlsRerender = () => void;
@@ -139,7 +139,7 @@ function taskMatchesText(t: ParsedTask, q: string): boolean {
   return false;
 }
 
-function effectiveTimeValue(t: EffectiveTask, field: SavedViewTimeField): string | null {
+function effectiveTimeValue(t: EffectiveTask, field: QueryTimeField): string | null {
   if (field === "scheduled") return t.effectiveScheduled;
   if (field === "deadline") return t.effectiveDeadline;
   if (field === "completed") return t.completed;
@@ -147,7 +147,7 @@ function effectiveTimeValue(t: EffectiveTask, field: SavedViewTimeField): string
   return t.effectiveCreated ?? t.created;
 }
 
-function taskMatchesTimeFilter(t: EffectiveTask, field: SavedViewTimeField, token: string, weekStartsOn: 0 | 1): boolean {
+function taskMatchesTimeFilter(t: EffectiveTask, field: QueryTimeField, token: string, weekStartsOn: 0 | 1): boolean {
   if (!timeTokenAppliesToField(field, token)) return false;
   // "unscheduled" means effective scheduled is empty
   if (field === "scheduled" && token === "unscheduled") return t.effectiveScheduled === null;
@@ -250,7 +250,7 @@ export class TaskCenterView extends ItemView {
   // US-109z2: secondary time fields (deadline/completed/created) the user has
   // progressively added in the area filter this session (scheduled is always
   // shown). Transient UI state — fields with a value show regardless.
-  readonly areaFilterExtraFields = new Set<SavedViewTimeField>();
+  readonly areaFilterExtraFields = new Set<QueryTimeField>();
   // US-109z2: whether the area filter's tag select popover is open. A click-to-
   // open dropdown keeps the panel short when there are many tags.
   areaTagPopoverOpen = false;
@@ -3149,7 +3149,7 @@ export class TaskCenterView extends ItemView {
     const tags = this.areaTags(when);
     if (tags.length === 1) parts.push(tags[0]);
     else if (tags.length > 1) parts.push(`${tags[0]} +${tags.length - 1}`);
-    const status = normalizeSavedViewStatus(when.status);
+    const status = normalizeQueryStatus(when.status);
     if (status !== "all") parts.push(status.map((s) => statusFilterLabel(s)).join("/"));
     const scheduled = when.time?.scheduled?.trim();
     if (scheduled) parts.push(scheduled === "unscheduled" ? tr("pool.unscheduled") : scheduled);
@@ -3678,7 +3678,7 @@ export class TaskCenterView extends ItemView {
     const q = this.state.filter.trim().toLowerCase();
     const tags = parseFilterTags(this.state.savedViewTag);
     const time = this.state.savedViewTime;
-    const status = normalizeSavedViewStatus(this.state.savedViewStatus);
+    const status = normalizeQueryStatus(this.state.savedViewStatus);
     if (!q && tags.length === 0 && !this.hasTimeFilters(time) && status === "all") return () => true;
     return (t) => {
       if (q && !taskMatchesText(t, q)) return false;
@@ -3708,7 +3708,7 @@ export class TaskCenterView extends ItemView {
     const tagStr = Array.isArray(when.tags) ? when.tags.join(",") : (when.tags ?? "");
     const tags = parseFilterTags(tagStr);
     const time = when.time ?? {};
-    const status = normalizeSavedViewStatus(when.status);
+    const status = normalizeQueryStatus(when.status);
     if (!q && tags.length === 0 && !this.hasTimeFilters(time) && status === "all") return () => true;
     return (t) => {
       if (q && !taskMatchesText(t, q)) return false;
@@ -3721,12 +3721,12 @@ export class TaskCenterView extends ItemView {
     };
   }
 
-  private hasTimeFilters(time: SavedViewTimeFilters): boolean {
+  private hasTimeFilters(time: QueryTimeFilters): boolean {
     return Object.values(time).some((value) => !!value?.trim());
   }
 
-  private taskMatchesTimeFilters(task: EffectiveTask, time: SavedViewTimeFilters): boolean {
-    for (const field of ["scheduled", "deadline", "completed", "created"] as SavedViewTimeField[]) {
+  private taskMatchesTimeFilters(task: EffectiveTask, time: QueryTimeFilters): boolean {
+    for (const field of ["scheduled", "deadline", "completed", "created"] as QueryTimeField[]) {
       const token = time[field]?.trim();
       if (token && !taskMatchesTimeFilter(task, field, token, this.plugin.settings.weekStartsOn)) return false;
     }
@@ -3752,7 +3752,7 @@ export class TaskCenterView extends ItemView {
     };
     const q = this.state.filter.trim().toLowerCase();
     const time = this.state.savedViewTime;
-    const status = normalizeSavedViewStatus(this.state.savedViewStatus);
+    const status = normalizeQueryStatus(this.state.savedViewStatus);
     for (const task of this.getEffectiveTasks()) {
       if (q && !taskMatchesText(task, q)) continue;
       if (!this.taskMatchesTimeFilters(task, time)) continue;

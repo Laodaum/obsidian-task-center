@@ -13,8 +13,8 @@ import type {
   QuerySection,
   QueryTray,
   QueryViewType,
-  SavedViewStatus,
-  SavedViewTimeFilters,
+  QueryStatus,
+  QueryTimeFilters,
   StackConfig,
   TaskStatus,
 } from "./types";
@@ -22,8 +22,8 @@ import { BUILTIN_VIEW_DATA } from "./builtin-views/index";
 // US-109z2 / REFACTOR.md D5: status schema lives in the query layer so the pure
 // query pipeline (filter / projection) never imports up into saved-views.
 // Re-exported here for the view layer's existing import sites.
-import { KNOWN_STATUS_VALUES, normalizeSavedViewStatus } from "./query/schema";
-export { normalizeSavedViewStatus };
+import { KNOWN_STATUS_VALUES, normalizeQueryStatus } from "./query/schema";
+export { normalizeQueryStatus };
 const BUILTIN_QUERY_TABS = ["today", "week", "month", "todo", "unscheduled", "completed", "dropped"] as const;
 type BuiltinQueryTab = typeof BUILTIN_QUERY_TABS[number];
 
@@ -50,8 +50,8 @@ const DEFAULT_BUILTIN_LABELS: Record<BuiltinQueryTab, string> = {
 export interface SavedViewFilters {
   search: string;
   tag: string;
-  time: SavedViewTimeFilters;
-  status: SavedViewStatus;
+  time: QueryTimeFilters;
+  status: QueryStatus;
   view?: QueryPresetViewConfig;
 }
 
@@ -84,9 +84,9 @@ function normalizeQueryViewType(type: string | null | undefined): QueryViewType 
   return type === "week" || type === "month" ? type : "list";
 }
 
-function normalizeTimeFilters(time: unknown): SavedViewTimeFilters {
+function normalizeTimeFilters(time: unknown): QueryTimeFilters {
   const raw = isRecord(time) ? time : {};
-  const out: SavedViewTimeFilters = {};
+  const out: QueryTimeFilters = {};
   for (const key of ["scheduled", "deadline", "completed", "created"] as const) {
     const value = raw[key];
     const trimmed = typeof value === "string" ? value.trim() : "";
@@ -175,7 +175,7 @@ function normalizeQueryPresetFilters(raw: unknown): QueryPresetFilters {
   const filters = isRecord(raw) ? raw : {};
   const search = typeof filters.search === "string" ? filters.search.trim() : "";
   const tags = normalizeDslTags(filters.tags);
-  const status = normalizeSavedViewStatus(filters.status);
+  const status = normalizeQueryStatus(filters.status);
   const time = normalizeTimeFilters(filters.time);
   const out: QueryPresetFilters = {};
   if (search) out.search = search;
@@ -729,8 +729,8 @@ export function createQueryPreset(
   opts: {
     search?: string;
     tags?: string[];
-    time?: SavedViewTimeFilters;
-    status?: SavedViewStatus;
+    time?: QueryTimeFilters;
+    status?: QueryStatus;
     view?: QueryPresetViewConfig;
   },
   makeId: () => string = defaultSavedViewId,
@@ -788,7 +788,7 @@ export function hasQueryPresetFilters(_preset: QueryPreset): boolean {
 }
 
 export function suggestQueryPresetName(
-  filters: { tags?: string[] | string; status?: SavedViewStatus },
+  filters: { tags?: string[] | string; status?: QueryStatus },
   fallback: string,
 ): string {
   if (Array.isArray(filters.tags) && filters.tags.length > 0) {
@@ -797,7 +797,7 @@ export function suggestQueryPresetName(
   if (typeof filters.tags === "string" && filters.tags.trim()) {
     return filters.tags.trim().replace(/^#/, "");
   }
-  const status = normalizeSavedViewStatus(filters.status);
+  const status = normalizeQueryStatus(filters.status);
   if (status !== "all") return status.join(",");
   return fallback;
 }
@@ -1166,9 +1166,9 @@ export interface ComputeQueryPresetSnapshotParams {
   /** Current tag filter string (comma-separated). */
   filterTags: string;
   /** Current time filters. */
-  filterTime: SavedViewTimeFilters;
+  filterTime: QueryTimeFilters;
   /** Current status filter. */
-  filterStatus: SavedViewStatus;
+  filterStatus: QueryStatus;
   /** Fallback view config when neither draft nor saved provides one. */
   fallbackView: () => QueryPresetViewConfig;
   /** Optional override for the snapshot name. */

@@ -23,7 +23,7 @@ export function isKnownTaskStatus(value: unknown): value is TaskStatus {
  * Normalize a raw `status` filter into the canonical form: "all" or a deduped
  * list of known TaskStatus values (an empty / all-unknown list → "all").
  */
-export function normalizeSavedViewStatus(status: unknown): "all" | TaskStatus[] {
+export function normalizeQueryStatus(status: unknown): "all" | TaskStatus[] {
   if (!status || status === "all") return "all";
   const raw: unknown[] = Array.isArray(status) ? status : [status];
   const seen = new Set<TaskStatus>();

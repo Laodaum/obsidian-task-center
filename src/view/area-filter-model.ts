@@ -4,12 +4,12 @@
 // (REFACTOR.md Phase 2 — first pure-logic extraction.)
 
 import { t as tr } from "../i18n";
-import type { SavedViewStatus, SavedViewTimeField, TaskStatus } from "../types";
+import type { QueryStatus, QueryTimeField, TaskStatus } from "../types";
 
 // The scheduled field is always shown; the rest are progressive (added on
 // demand). Shared by the area filter controls and the legacy filter popovers.
-export const PRIMARY_TIME_FIELD: SavedViewTimeField = "scheduled";
-export const SECONDARY_TIME_FIELDS: SavedViewTimeField[] = ["deadline", "completed", "created"];
+export const PRIMARY_TIME_FIELD: QueryTimeField = "scheduled";
+export const SECONDARY_TIME_FIELDS: QueryTimeField[] = ["deadline", "completed", "created"];
 
 export function statusFilterOptions(): Array<{ value: "all" | TaskStatus; label: string }> {
   return [
@@ -24,14 +24,14 @@ export function statusFilterLabel(status: TaskStatus): string {
   return statusFilterOptions().find((option) => option.value === status)?.label ?? status;
 }
 
-export function timeFieldLabel(field: SavedViewTimeField): string {
+export function timeFieldLabel(field: QueryTimeField): string {
   if (field === "scheduled") return tr("savedViews.timeScheduled");
   if (field === "deadline") return tr("savedViews.timeDeadline");
   if (field === "completed") return tr("savedViews.timeCompleted");
   return tr("savedViews.timeCreated");
 }
 
-export function timeFilterOptions(field: SavedViewTimeField): Array<readonly [string, string]> {
+export function timeFilterOptions(field: QueryTimeField): Array<readonly [string, string]> {
   const base: Array<readonly [string, string]> = [
     ["", tr("savedViews.timeAll", { field: timeFieldLabel(field) })],
   ];
@@ -60,7 +60,7 @@ export function tagFilterSummary(selected: string[]): string {
 export function toggledStatus(
   current: "all" | TaskStatus[],
   value: "all" | TaskStatus,
-): SavedViewStatus {
+): QueryStatus {
   if (value === "all") return "all";
   const set = current === "all" ? [] : [...current];
   const idx = set.indexOf(value);

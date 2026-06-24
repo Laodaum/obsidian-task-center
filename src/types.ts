@@ -108,9 +108,9 @@ export interface TaskCenterSettings {
 
 export type TaskFormatFlavor = "tasks" | "dataview";
 
-export type SavedViewStatus = "all" | TaskStatus | TaskStatus[];
-export type SavedViewTimeField = "scheduled" | "deadline" | "completed" | "created" | "dropped";
-export type SavedViewTimeFilters = Partial<Record<SavedViewTimeField, string>>;
+export type QueryStatus = "all" | TaskStatus | TaskStatus[];
+export type QueryTimeField = "scheduled" | "deadline" | "completed" | "created" | "dropped";
+export type QueryTimeFilters = Partial<Record<QueryTimeField, string>>;
 export type QueryViewType = "list" | "week" | "month";
 
 export interface SavedViewConfig {
@@ -133,8 +133,8 @@ export interface SavedTaskView {
   hidden?: boolean;
   search: string;
   tag: string;
-  time: SavedViewTimeFilters;
-  status: SavedViewStatus;
+  time: QueryTimeFilters;
+  status: QueryStatus;
   view?: SavedViewConfig;
 }
 
@@ -147,8 +147,8 @@ export interface SavedTaskView {
 export interface QueryPresetFilters {
   search?: string;
   tags?: string[] | string;
-  status?: SavedViewStatus;
-  time?: SavedViewTimeFilters;
+  status?: QueryStatus;
+  time?: QueryTimeFilters;
 }
 
 // ARCHITECTURE.md §1.3: QuerySection — a named filter group for list views.

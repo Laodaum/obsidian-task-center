@@ -8,9 +8,9 @@
 
 import { setIcon } from "obsidian";
 import type { TaskCenterView } from "../view";
-import type { QueryPresetFilters, SavedViewTimeField } from "../types";
+import type { QueryPresetFilters, QueryTimeField } from "../types";
 import { t as tr } from "../i18n";
-import { normalizeSavedViewStatus } from "../query/schema";
+import { normalizeQueryStatus } from "../query/schema";
 import {
   PRIMARY_TIME_FIELD,
   SECONDARY_TIME_FIELDS,
@@ -31,7 +31,7 @@ export function renderAreaFilterControls(
   rerenderControls?: Rerender,
 ): void {
   const selectedTags = v.areaTags(when);
-  const status = normalizeSavedViewStatus(when.status);
+  const status = normalizeQueryStatus(when.status);
   const scheduled = when.time?.scheduled?.trim() ?? "";
 
   // Search — matches task title text. Placeholder reads as "task text
@@ -108,7 +108,7 @@ function renderAreaTimeField(
   parent: HTMLElement,
   areaIndex: number,
   when: QueryPresetFilters,
-  field: SavedViewTimeField,
+  field: QueryTimeField,
   rerenderControls?: Rerender,
 ): void {
   const token = when.time?.[field]?.trim() ?? "";

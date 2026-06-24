@@ -1,5 +1,5 @@
 import { addDays, endOfMonth, startOfMonth, startOfWeek, todayISO } from "./dates";
-import type { SavedViewTimeField } from "./types";
+import type { QueryTimeField } from "./types";
 
 function isISODate(value: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(value);
@@ -42,7 +42,7 @@ export function taskMatchesTimeToken(
   return false;
 }
 
-export function timeTokenAppliesToField(field: SavedViewTimeField, token: string): boolean {
+export function timeTokenAppliesToField(field: QueryTimeField, token: string): boolean {
   const value = token.trim();
   if (!value) return true;
   if ((value === "overdue" || value === "next-7-days") && field !== "deadline") return false;
