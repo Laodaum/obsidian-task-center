@@ -53,7 +53,6 @@ import { applyQueryFilters, queryFilterHasActiveConditions } from "./query/filte
 import { columnStats, buildWeekDays, buildMonthGrid } from "./view/render/calendar-grid";
 import { TabOverflowMeasure } from "./view/tab-overflow";
 import {
-  createSavedViewFromCurrent,
   copySavedView,
   setDefaultSavedView,
   moveSavedView,
@@ -62,11 +61,11 @@ import {
   toggleSavedViewHidden,
   deleteSavedViewWithConfirm,
   restoreBuiltinSavedView,
-  restoreAllBuiltinSavedViews,
   suggestSavedViewName,
   askSavedViewName,
   saveCurrentView,
 } from "./view/saved-view-actions";
+import { openManageTabsSheet, openManageTabRowMenu } from "./view/manage-tabs";
 import { statusFilterLabel } from "./view/area-filter-model";
 import {
   applyQueryPresetFilters,
@@ -856,7 +855,7 @@ export class TaskCenterView extends ItemView {
     setIcon(manageBtn, "list");
     manageBtn.setAttr("aria-label", tr("savedViews.manage"));
     manageBtn.dataset.action = "manage-query-tabs";
-    manageBtn.addEventListener("click", () => this.openManageTabsSheet());
+    manageBtn.addEventListener("click", () => openManageTabsSheet(this));
     const gearBtn = tail.createEl("button", { cls: "bt-tabbar-tail-btn" });
     setIcon(gearBtn, "settings");
     gearBtn.setAttr("aria-label", tr("toolbar.settings"));
@@ -1187,14 +1186,14 @@ export class TaskCenterView extends ItemView {
       row.addEventListener("contextmenu", (event) => {
         event.preventDefault();
         event.stopPropagation();
-        this.openManageTabRowMenu(event, view, (handler) => { void runRowAction(handler); });
+        openManageTabRowMenu(this, event, view, (handler) => { void runRowAction(handler); });
       });
       const kebab = row.createEl("button", { cls: "bt-overflow-tab-kebab" });
       setIcon(kebab, "more-vertical");
       kebab.setAttr("aria-label", tr("savedViews.more"));
       kebab.addEventListener("click", (e) => {
         e.stopPropagation();
-        this.openManageTabRowMenu(e, view, (handler) => { void runRowAction(handler); });
+        openManageTabRowMenu(this, e, view, (handler) => { void runRowAction(handler); });
       });
     }
   }
@@ -1420,7 +1419,7 @@ export class TaskCenterView extends ItemView {
         cls: "bt-saved-view-save",
       });
       manage.dataset.action = "manage-query-tabs";
-      manage.addEventListener("click", () => this.openManageTabsSheet());
+      manage.addEventListener("click", () => openManageTabsSheet(this));
     }
   }
 
@@ -1446,7 +1445,7 @@ export class TaskCenterView extends ItemView {
     };
   }
 
-  private isViewCurrentlyActive(view: QueryPreset): boolean {
+  isViewCurrentlyActive(view: QueryPreset): boolean {
     return view.id === this.state.savedViewId;
   }
 
@@ -1503,7 +1502,7 @@ export class TaskCenterView extends ItemView {
     this.activateSavedView(view);
   }
 
-  private activateSavedView(view: QueryPreset): void {
+  activateSavedView(view: QueryPreset): void {
     const current = this.activeSavedView();
     if (current.id !== view.id && this.isSelectedSavedViewDirty(current)) {
       new SwitchTabConfirmModal(
@@ -1600,180 +1599,8 @@ export class TaskCenterView extends ItemView {
     menu.showAtMouseEvent(event);
   }
 
-  private openManageTabsSheet(): void {
-    let body: HTMLElement;
-    let sheet: BottomSheet;
-    const rerender = () => {
-      this.render();
-      if (!body) return;
-      body.empty();
-      this.renderManageTabsSheet(body, rerender, () => sheet.close());
-    };
-    sheet = new BottomSheet(this.app, {
-      title: tr("savedViews.manageTitle"),
-      populate: (el) => {
-        body = el.createDiv({ cls: "bt-manage-tabs-sheet" });
-        this.renderManageTabsSheet(body, rerender, () => sheet.close());
-      },
-    });
-    sheet.open();
-  }
-
   public openManageTabs(): void {
-    this.openManageTabsSheet();
-  }
-
-  private renderManageTabsSheet(parent: HTMLElement, rerender: () => void, closeSheet: () => void): void {
-    const topActions = parent.createDiv({ cls: "bt-manage-tabs-actions" });
-    const create = topActions.createEl("button", {
-      text: tr("savedViews.create"),
-      cls: "bt-manage-tab-btn",
-    });
-    create.addEventListener("click", () => {
-      void createSavedViewFromCurrent(this).then(rerender).catch((error) =>
-        new Notice(tr("notice.error", { msg: error instanceof Error ? error.message : String(error) }), 4000),
-      );
-    });
-    const restoreDefaults = topActions.createEl("button", {
-      text: tr("savedViews.restoreDefaultTabs"),
-      cls: "bt-manage-tab-btn",
-    });
-    restoreDefaults.addEventListener("click", () => {
-      void restoreAllBuiltinSavedViews(this).then(rerender).catch((error) =>
-        new Notice(tr("notice.error", { msg: error instanceof Error ? error.message : String(error) }), 4000),
-      );
-    });
-
-    const rows = parent.createDiv({ cls: "bt-manage-tabs-list" });
-    for (const view of this.plugin.settings.queryPresets.map((item) => normalizeQueryPreset(item))) {
-      const row = rows.createDiv({ cls: "bt-manage-tab-row" });
-      row.draggable = true;
-      const handle = row.createSpan({ cls: "bt-manage-tab-handle", text: "⠿" });
-      handle.setAttr("aria-hidden", "true");
-      const main = row.createDiv({ cls: "bt-manage-tab-main" });
-      const title = main.createDiv({ cls: "bt-manage-tab-title", text: view.name });
-      title.dataset.queryTabId = view.id;
-
-      // ── Drag-to-reorder for manage tab rows ──
-      row.addEventListener("dragstart", (e) => {
-        if (!e.dataTransfer) return;
-        e.dataTransfer.effectAllowed = "move";
-        e.dataTransfer.setData("text/tab-id", view.id);
-        row.addClass("bt-manage-tab-row-dragging");
-      });
-      row.addEventListener("dragend", () => {
-        row.removeClass("bt-manage-tab-row-dragging");
-        rows.findAll(".bt-manage-tab-row").forEach((el) => {
-          el.removeClass("bt-manage-tab-row-drop-before", "bt-manage-tab-row-drop-after");
-        });
-      });
-      row.addEventListener("dragover", (e) => {
-        const dt = e.dataTransfer;
-        if (!dt?.types.includes("text/tab-id")) return;
-        const draggedId = dt.getData("text/tab-id");
-        if (draggedId === view.id) return;
-        e.preventDefault();
-        dt.dropEffect = "move";
-        const rect = row.getBoundingClientRect();
-        const mid = rect.top + rect.height / 2;
-        const isAfter = e.clientY > mid;
-        rows.findAll(".bt-manage-tab-row").forEach((el) => {
-          el.removeClass("bt-manage-tab-row-drop-before", "bt-manage-tab-row-drop-after");
-        });
-        row.addClass(isAfter ? "bt-manage-tab-row-drop-after" : "bt-manage-tab-row-drop-before");
-      });
-      row.addEventListener("dragleave", (e) => {
-        const dt = e.dataTransfer;
-        if (dt?.types.includes("text/tab-id")) {
-          row.removeClass("bt-manage-tab-row-drop-before", "bt-manage-tab-row-drop-after");
-        }
-      });
-      row.addEventListener("drop", (e) => {
-        const dt = e.dataTransfer;
-        if (!dt?.types.includes("text/tab-id")) return;
-        e.preventDefault();
-        e.stopPropagation();
-        const draggedId = dt.getData("text/tab-id");
-        if (draggedId === view.id) return;
-        const rect = row.getBoundingClientRect();
-        const mid = rect.top + rect.height / 2;
-        const isAfter = e.clientY > mid;
-        const presets = this.plugin.settings.queryPresets;
-        const targetIndex = presets.findIndex((p) => p.id === view.id);
-        if (targetIndex === -1) return;
-        const insertAt = isAfter ? targetIndex + 1 : targetIndex;
-        void reorderQueryTab(this, draggedId, insertAt).then(rerender);
-      });
-
-      // UX §2.3: 当前 tab 靠整行高亮 + 左侧 accent 竖条表达，不再用「当前」文字徽标。
-      if (this.isViewCurrentlyActive(view)) row.addClass("bt-manage-tab-row-active");
-
-      // 状态标记降噪：只保留「已隐藏」「预设」文字徽标。当前 tab 靠整行高亮表达；
-      // 「默认」「未保存」不在面板列表里展示（信息量低、看着杂），改由 ⋮ 菜单承载。
-      const meta = main.createDiv({ cls: "bt-manage-tab-meta" });
-      if (view.hidden) {
-        meta.createSpan({ cls: "bt-manage-tab-badge", text: tr("savedViews.hiddenBadge") });
-      }
-      if (view.builtin) {
-        meta.createSpan({ cls: "bt-manage-tab-badge bt-manage-tab-badge-preset", text: tr("savedViews.presetBadge") });
-      }
-
-      const runRowAction = (handler: () => void | Promise<void>) =>
-        Promise.resolve(handler()).then(rerender).catch((error) =>
-          new Notice(tr("notice.error", { msg: error instanceof Error ? error.message : String(error) }), 4000),
-        );
-
-      // UX §2.3: 点击行 = 切到该 tab 并关闭面板（跳转语义）。单击即关闭，故面板内不再
-      // 支持双击重命名（第一击就关了面板，与之冲突）；重命名走行尾 kebab (⋮) 菜单。
-      main.addEventListener("click", () => {
-        closeSheet();
-        this.activateSavedView(view);
-      });
-
-      const kebab = row.createEl("button", { cls: "bt-manage-tab-kebab" });
-      setIcon(kebab, "more-vertical");
-      kebab.setAttr("aria-label", tr("savedViews.more"));
-      kebab.addEventListener("click", (e) => {
-        e.stopPropagation();
-        this.openManageTabRowMenu(e, view, (handler) => { void runRowAction(handler); });
-      });
-    }
-  }
-
-  /**
-   * DESIGN §5.0: per-row kebab menu for the Manage Tabs panel. Collapses the
-   * former flat button row (open / edit DSL / rename / copy / set default /
-   * hide / restore / delete) into one native Menu. `run` wraps each handler so
-   * the panel re-renders after the action.
-   */
-  private openManageTabRowMenu(
-    event: MouseEvent,
-    view: QueryPreset,
-    run: (handler: () => void | Promise<void>) => void,
-  ): void {
-    const menu = new Menu();
-    menu.addItem((i) => i.setTitle(tr("savedViews.open")).setIcon("folder-open")
-      .onClick(() => run(() => this.activateSavedView(view))));
-    menu.addItem((i) => i.setTitle(tr("savedViews.editDsl")).setIcon("code")
-      .onClick(() => run(() => { this.activateSavedView(view); this.openQueryControlsSheet({ scope: "tab" }); })));
-    menu.addItem((i) => i.setTitle(tr("savedViews.rename")).setIcon("pencil")
-      .onClick(() => run(() => renameSavedView(this, view))));
-    menu.addItem((i) => i.setTitle(tr("savedViews.copy")).setIcon("copy")
-      .onClick(() => run(() => copySavedView(this, view))));
-    menu.addItem((i) => i.setTitle(tr("savedViews.setDefault")).setIcon("star")
-      .onClick(() => run(() => setDefaultSavedView(this, view.id))));
-    menu.addItem((i) => i.setTitle(view.hidden ? tr("savedViews.show") : tr("savedViews.hide"))
-      .setIcon(view.hidden ? "eye" : "eye-off")
-      .onClick(() => run(() => toggleSavedViewHidden(this, view, !view.hidden))));
-    if (view.builtin) {
-      menu.addItem((i) => i.setTitle(tr("savedViews.restore")).setIcon("rotate-ccw")
-        .onClick(() => run(() => restoreBuiltinSavedView(this, view))));
-    }
-    // US-109l: delete is available for builtin presets too (tombstoned so they
-    // stay gone; recoverable via 「恢复预设」 / 「恢复预设 Tabs」).
-    menu.addItem((i) => i.setTitle(tr("savedViews.delete")).setIcon("trash-2")
-      .onClick(() => run(() => deleteSavedViewWithConfirm(this, view))));
-    menu.showAtMouseEvent(event);
+    openManageTabsSheet(this);
   }
 
   // US-109n1: inline rename from the Tab panel's name input — renames the active
