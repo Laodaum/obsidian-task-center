@@ -50,6 +50,7 @@ import { taskMatchesTimeToken, timeTokenAppliesToField } from "./time-filter";
 import { deriveEffectiveTasks, countTopLevel, recomputeTopLevelInQuery } from "./task-tree";
 import type { EffectiveTask } from "./task-tree";
 import { projectListArea } from "./query/projection";
+import { applyQueryFilters, queryFilterHasActiveConditions } from "./query/filter";
 import {
   applyQueryPresetFilters,
   builtinSavedViewId,
@@ -2653,6 +2654,16 @@ export class TaskCenterView extends ItemView {
   // (US-121). Mobile renders the same columns as vertical rows, but there
   // is no touch drop target (US-503 / US-507).
   // see USER_STORIES.md
+  // US-109z2 / US-109x: filter a task set by an area's own `when` (the single
+  // source of per-area filtering). Week / month areas must scope by this — they
+  // previously used the removed global getTextFilter and so ignored area `when`.
+  // `today` = the active anchor; justCompletedIds keeps US-153 linger semantics.
+  private scopeTasksToArea(tasks: EffectiveTask[], when: QueryPresetFilters | undefined): EffectiveTask[] {
+    return when && queryFilterHasActiveConditions(when)
+      ? applyQueryFilters(tasks, when, this.plugin.settings.weekStartsOn, this.state.anchorISO, this.justCompletedIds)
+      : tasks;
+  }
+
   private renderWeek(parent: HTMLElement, area: WeekAreaConfig, areaIndex: number) {
     // US-109p9: shared area head (title + 日期导航 + 编辑 entry) — one row, same
     // component as list/grid. §3.0: desktop owns the range nav inside this head;
@@ -2669,7 +2680,7 @@ export class TaskCenterView extends ItemView {
     for (let i = 0; i < 7; i++) days.push(addDays(weekStart, i));
 
     const filter = this.getTextFilter();
-    const effectiveTasks = this.getEffectiveTasks();
+    const effectiveTasks = this.scopeTasksToArea(this.getEffectiveTasks(), area.when);
 
     if (this.hasActiveFilters()) {
       const unfilteredCount = days.reduce(
@@ -2858,7 +2869,7 @@ export class TaskCenterView extends ItemView {
       header.createDiv({ text: weekdayLabel(d.getDay()), cls: "bt-month-dow" });
     }
 
-    const effectiveTasks = this.getEffectiveTasks();
+    const effectiveTasks = this.scopeTasksToArea(this.getEffectiveTasks(), area.when);
     const filter = this.getTextFilter();
     if (this.hasActiveFilters()) {
       const unfilteredCount = gridDays.reduce(
