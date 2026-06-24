@@ -50,6 +50,7 @@ import { deriveEffectiveTasks, countTopLevel, recomputeTopLevelInQuery } from ".
 import type { EffectiveTask } from "./task-tree";
 import { projectListArea } from "./query/projection";
 import { applyQueryFilters, queryFilterHasActiveConditions } from "./query/filter";
+import { columnStats, buildWeekDays, buildMonthGrid } from "./view/render/calendar-grid";
 import { statusFilterLabel } from "./view/area-filter-model";
 import {
   applyQueryPresetFilters,
@@ -2270,9 +2271,7 @@ export class TaskCenterView extends ItemView {
       renderNav: desktop ? (host) => this.renderRangeNav(host) : undefined,
     });
     const today = todayISO();
-    const weekStart = startOfWeek(this.state.anchorISO, this.plugin.settings.weekStartsOn);
-    const days: string[] = [];
-    for (let i = 0; i < 7; i++) days.push(addDays(weekStart, i));
+    const days = buildWeekDays(this.state.anchorISO, this.plugin.settings.weekStartsOn);
 
     const filter = this.getTextFilter();
     const effectiveTasks = this.scopeTasksToArea(this.getEffectiveTasks(), area.when);
@@ -2342,7 +2341,7 @@ export class TaskCenterView extends ItemView {
       });
       head.createSpan({ text: `${pad(d.getMonth() + 1)}-${pad(d.getDate())}`, cls: "bt-week-date" });
       const stats = head.createSpan({
-        text: this.columnStats(dayTasksRecomputed),
+        text: columnStats(dayTasksRecomputed),
         cls: "bt-week-stats",
       });
       stats.title = "Scheduled estimate (hours)";
@@ -2357,17 +2356,6 @@ export class TaskCenterView extends ItemView {
         this.renderCard(list, t, day);
       }
     }
-  }
-
-  // US-116: per-column header line `N tasks · XhYm` — task count plus
-  // summed `[estimate::]` minutes. Lets the user see at a glance whether
-  // a day is overbooked before they drop a new card on it. Sum collapses
-  // to plain count when no card on the day carries an estimate.
-  // see USER_STORIES.md
-  private columnStats(tasks: ParsedTask[]): string {
-    const sum = tasks.reduce((s, t) => s + (t.estimate ?? 0), 0);
-    if (sum === 0) return `${tasks.length}`;
-    return `${tasks.length} · ${formatMinutes(sum)}`;
   }
 
   /**
@@ -2444,16 +2432,10 @@ export class TaskCenterView extends ItemView {
       renderNav: desktop ? (host) => this.renderRangeNav(host) : undefined,
     });
     const today = todayISO();
-    const weekStart = this.plugin.settings.weekStartsOn;
-    const first = startOfMonth(this.state.anchorISO);
-    const last = endOfMonth(this.state.anchorISO);
-    const gridStart = startOfWeek(first, weekStart);
-    const gridDays: string[] = [];
-    for (let i = 0; i < 42; i++) {
-      const d = addDays(gridStart, i);
-      gridDays.push(d);
-      if (i >= 27 && d > last) break;
-    }
+    const { first, last, gridStart, gridDays } = buildMonthGrid(
+      this.state.anchorISO,
+      this.plugin.settings.weekStartsOn,
+    );
 
     const wrapper = parent.createDiv({ cls: "bt-month" });
     wrapper.dataset.view = "month";
@@ -2567,7 +2549,7 @@ export class TaskCenterView extends ItemView {
     });
     head.createSpan({
       cls: "bt-month-day-panel-count",
-      text: this.columnStats(dayTasks),
+      text: columnStats(dayTasks),
     });
 
     const list = panel.createDiv({ cls: "bt-month-day-panel-list" });
