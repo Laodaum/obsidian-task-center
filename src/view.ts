@@ -51,6 +51,7 @@ import type { EffectiveTask } from "./task-tree";
 import { projectListArea } from "./query/projection";
 import { applyQueryFilters, queryFilterHasActiveConditions } from "./query/filter";
 import { columnStats, buildWeekDays, buildMonthGrid } from "./view/render/calendar-grid";
+import { TabOverflowMeasure } from "./view/tab-overflow";
 import { statusFilterLabel } from "./view/area-filter-model";
 import {
   applyQueryPresetFilters,
@@ -184,36 +185,6 @@ class SwitchTabConfirmModal extends Modal {
   onClose() { this.contentEl.empty(); }
 }
 
-// US-109q: desktop tab-overflow geometry. The flex gap between tab-bar items
-// and a FALLBACK width for the "更多 N" chip, used only until its real rendered
-// width is measured — the old fixed 96px over-reserved and collapsed too many
-// tabs (panel showed only one tab even with room to spare).
-const TAB_BAR_GAP = 2;
-const MORE_CHIP_RESERVE = 64;
-
-/**
- * Largest number of leading tabs that fit in `avail` px, reserving `moreReserve`
- * px for the "更多" chip when not all fit. Always keeps at least one real tab so
- * the bar is never reduced to just "更多". Pure — unit-testable without the DOM.
- */
-export function fitTabCountFromWidths(widths: number[], avail: number, moreReserve: number): number {
-  const total = widths.length;
-  if (total === 0) return 0;
-  // Everything fits without a "更多" chip?
-  let sum = 0;
-  for (let i = 0; i < total; i++) sum += widths[i] + (i > 0 ? TAB_BAR_GAP : 0);
-  if (sum <= avail) return total;
-  // Otherwise take the largest prefix that fits alongside the chip.
-  let used = 0;
-  let fit = 0;
-  for (let i = 0; i < total; i++) {
-    used += widths[i] + (i > 0 ? TAB_BAR_GAP : 0);
-    if (used + TAB_BAR_GAP + moreReserve <= avail) fit = i + 1;
-    else break;
-  }
-  return Math.max(1, fit);
-}
-
 export class TaskCenterView extends ItemView {
   plugin: TaskCenterPlugin;
   api: TaskCenterApi;
@@ -258,21 +229,13 @@ export class TaskCenterView extends ItemView {
   // per-area filter popover model — open/close is a render-time flag closed by
   // outside pointerdown / Esc / row select / button toggle (mobile uses a sheet).
   private overflowTabsMenuOpen = false;
-  // US-109q: width-driven desktop tab overflow. `fittedVisibleTabCount` is how
-  // many leading tabs fit on the bar before "更多" collapses the rest; null means
-  // "render all and measure". The desktop tab bar never scrolls horizontally —
-  // tabs that don't fit go into "更多". `lastTabbarMeasureWidth` lets the resize
-  // observer re-measure only when the bar width actually changed (avoids loops).
-  private fittedVisibleTabCount: number | null = null;
-  private lastTabbarMeasureWidth = 0;
-  // US-109q: per-tab measured pixel widths (keyed by tab id). Cached so the
-  // overflow fit can be recomputed for tabs currently hidden inside "更多",
-  // letting the bar grow back when the panel widens. Refreshed on each measure.
-  private tabWidthCache: Map<string, number> = new Map();
-  // US-109q: last measured pixel width of the "更多" chip (0 until first seen).
-  // Used as the reserve when deciding how many tabs fit, so the bar doesn't
-  // over-collapse against a guessed chip width.
-  private moreChipWidth = 0;
+  // US-109q: desktop tab-overflow geometry (measured-width cache + fit state).
+  private readonly tabOverflow = new TabOverflowMeasure({
+    visibleTabs: () => this.visibleQueryTabs(),
+    isMobileLayout: () => this.contentEl.dataset.mobileLayout === "true",
+    findTabbar: () => this.contentEl.querySelector<HTMLElement>(".bt-tabbar"),
+    requestRender: () => this.render(),
+  });
   // Render-time DFS area counter, reset at the start of renderViewLayout so each
   // rendered area's index matches collectAreas(layout) order (for setAreaWhen).
   private renderAreaCounter = 0;
@@ -382,11 +345,11 @@ export class TaskCenterView extends ItemView {
     this.registerDomEvent(window, "resize", () => {
       this.applyMobileLayoutAttr();
       this.updateViewLayoutMetrics();
-      this.handleTabbarOverflowResize();
+      this.tabOverflow.onResize();
     });
     this.viewResizeObserver = new ResizeObserver(() => {
       this.updateViewLayoutMetrics();
-      this.handleTabbarOverflowResize();
+      this.tabOverflow.onResize();
     });
     this.viewResizeObserver.observe(this.contentEl);
     this.updateViewLayoutMetrics();
@@ -816,7 +779,7 @@ export class TaskCenterView extends ItemView {
     // ⌃1–⌃9 map to the first 9 of `visibleQueryTabs()` regardless of the split.
     const visibleCount = mobileLayout
       ? tabs.length
-      : (this.fittedVisibleTabCount ?? tabs.length);
+      : (this.tabOverflow.fittedCount ?? tabs.length);
     const visibleTabs = tabs.slice(0, visibleCount);
     const overflowTabs = tabs.slice(visibleCount);
 
@@ -901,88 +864,8 @@ export class TaskCenterView extends ItemView {
     // US-109q: desktop width-driven overflow runs after layout — measure which
     // tabs actually fit and collapse the rest into "更多". Mobile pans instead.
     if (!mobileLayout) {
-      this.scheduleTabOverflowMeasure(bar);
+      this.tabOverflow.measure(bar);
     }
-  }
-
-  /**
-   * US-109q: after the desktop tab bar renders, measure which leading tabs fit
-   * on one row and collapse the rest into "更多" so the bar never scrolls
-   * horizontally. Robust against transient layout (0-width frames while the leaf
-   * mounts) and able to BOTH shrink and grow: per-tab widths are cached by id so
-   * the fit can be recomputed even for tabs currently hidden in "更多". Never
-   * collapses below one real tab, so the bar is never reduced to just "更多".
-   */
-  private scheduleTabOverflowMeasure(bar: HTMLElement): void {
-    window.requestAnimationFrame(() => {
-      if (!bar.isConnected) return;
-      if (this.contentEl.dataset.mobileLayout === "true") return;
-      const barWidth = bar.clientWidth;
-      // Layout not settled (leaf still mounting) — bail without caching a bad
-      // width; the ResizeObserver fires again once the bar has real width. This
-      // is what prevents the "only 更多" collapse from a transient 0-width frame.
-      if (barWidth < 40) return;
-      const tabEls = Array.from(bar.querySelectorAll<HTMLElement>(".bt-tab:not(.bt-tab-more)"));
-      // Styles-not-applied guard: before the plugin's CSS lands, .bt-tab divs
-      // fall back to display:block and each fills the whole row (offsetWidth ≈
-      // barWidth). Caching those bogus widths poisoned the cache and pinned the
-      // bar to a single tab forever. A properly-laid-out flex row can never have
-      // two tabs each ≈ the full bar width, so treat that as "not ready": skip
-      // caching and retry next frame.
-      if (tabEls.length >= 2 && tabEls.every((el) => el.offsetWidth >= barWidth * 0.9)) {
-        window.requestAnimationFrame(() => this.scheduleTabOverflowMeasure(bar));
-        return;
-      }
-      this.lastTabbarMeasureWidth = barWidth;
-      // Refresh cached widths for every tab currently in the DOM. Visible tabs
-      // get fresh measurements; tabs hidden in "更多" keep their last width.
-      for (const el of tabEls) {
-        const id = el.dataset.tabId;
-        if (id) this.tabWidthCache.set(id, el.offsetWidth);
-      }
-      const tabs = this.visibleQueryTabs();
-      // A tab has never been measured (e.g. just added) — render the full strip
-      // once so every width gets cached, then recompute on the next pass.
-      if (tabs.some((t) => !this.tabWidthCache.has(t.id))) {
-        if (this.fittedVisibleTabCount !== null) {
-          this.fittedVisibleTabCount = null;
-          this.render();
-        }
-        return;
-      }
-      const tail = bar.querySelector<HTMLElement>(".bt-tabbar-tail");
-      const avail = barWidth - (tail ? tail.offsetWidth + TAB_BAR_GAP : 0);
-      // Reserve the "更多" chip's REAL rendered width once it exists (it's in the
-      // DOM whenever we're collapsed). Falling back to a fixed guess over-reserved
-      // and hid tabs that actually fit — measure it so the bar fills properly.
-      const moreEl = bar.querySelector<HTMLElement>(".bt-tab-more");
-      // Same styles-not-applied caveat: only trust a sane chip width (never a
-      // full-row block fallback).
-      if (moreEl && moreEl.offsetWidth > 0 && moreEl.offsetWidth < barWidth * 0.5) {
-        this.moreChipWidth = moreEl.offsetWidth;
-      }
-      const reserve = this.moreChipWidth || MORE_CHIP_RESERVE;
-      const widths = tabs.map((t) => this.tabWidthCache.get(t.id) ?? 0);
-      const fit = fitTabCountFromWidths(widths, avail, reserve);
-      // fit >= total → everything fits, keep "show all" (null) to avoid a churn
-      // render; otherwise collapse to the measured cap.
-      const desired = fit >= tabs.length ? null : fit;
-      if (desired !== this.fittedVisibleTabCount) {
-        this.fittedVisibleTabCount = desired;
-        this.render();
-      }
-    });
-  }
-
-  /** Re-measure the desktop tab overflow when the bar width actually changes. */
-  private handleTabbarOverflowResize(): void {
-    if (this.contentEl.dataset.mobileLayout === "true") return;
-    const bar = this.contentEl.querySelector<HTMLElement>(".bt-tabbar");
-    if (!bar) return;
-    if (Math.abs(bar.clientWidth - this.lastTabbarMeasureWidth) < 1) return;
-    // Cached widths are container-width independent, so a plain re-render lets
-    // the measure pass re-split on the new width (grows or shrinks).
-    this.render();
   }
 
   private renderTabButton(bar: HTMLElement, view: QueryPreset, index: number, mobileLayout: boolean): void {
