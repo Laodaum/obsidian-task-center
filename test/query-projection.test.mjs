@@ -585,3 +585,38 @@ test("M2: sections with no matching tasks produce empty sections", async () => {
   assert.equal(model.sections.length, 1);
   assert.equal(model.sections[0].tasks.length, 0, "Section is empty when no tasks match filter");
 });
+
+// ── US-109x: AREA-LEVEL `when` (the thing the area editor edits) ──
+// Regression repro for the e2e failure: editing an area's own `when` (not a
+// section's) must filter the area's cards. The existing tests only covered
+// section-level `when`; the area-level `when.tags` path was uncovered.
+test("US-109x: area-level when {tags} filters the area's own cards", async () => {
+  const { projectListArea } = await import("../test/.compiled/projection.js");
+  const tasks = [
+    effectiveTask({ id: "Inbox.md:L1", title: "alpha", tags: ["#alpha"] }),
+    effectiveTask({ id: "Inbox.md:L2", title: "beta", tags: ["#beta"] }),
+  ];
+  const model = projectListArea(tasks, { type: "list", when: { tags: ["#alpha"] } }, 1);
+  const ids = model.sections.flatMap((s) => s.tasks.map((t) => t.id));
+  assert.deepEqual(ids, ["Inbox.md:L1"], "area.when {tags:#alpha} keeps L1, drops L2(#beta)");
+});
+
+test("US-109h: area-level when {status} filters the area's own cards", async () => {
+  const { projectListArea } = await import("../test/.compiled/projection.js");
+  const tasks = [
+    effectiveTask({ id: "Inbox.md:L1", title: "todo", effectiveStatus: "todo" }),
+    effectiveTask({ id: "Inbox.md:L2", title: "done", effectiveStatus: "done" }),
+  ];
+  const todoOnly = projectListArea(tasks, { type: "list", when: { status: ["todo"] } }, 1);
+  assert.deepEqual(
+    todoOnly.sections.flatMap((s) => s.tasks.map((t) => t.id)),
+    ["Inbox.md:L1"],
+    "area.when {status:[todo]} drops the done card",
+  );
+  const both = projectListArea(tasks, { type: "list", when: { status: ["todo", "done"] } }, 1);
+  assert.equal(
+    both.sections.flatMap((s) => s.tasks).length,
+    2,
+    "area.when {status:[todo,done]} keeps both",
+  );
+});

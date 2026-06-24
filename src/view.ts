@@ -3600,12 +3600,10 @@ export class TaskCenterView extends ItemView {
       target.when = when;
     }
     this.tabDrafts.set(active.id, normalizeQueryPreset({ ...snapshot, view: { layout } }));
-    // US-109x: editing an area's `when` live-updates the board, not just the
-    // sheet's own controls. The editor sheet is a separate Obsidian Modal, so
-    // re-rendering the board in contentEl does not close it; refresh the sheet's
-    // own controls too when it is open.
-    this.render();
-    rerenderControls?.();
+    // The editor's rerender callback (view/query-editor.ts) already calls
+    // this.v.render(), so the board live-updates on every area `when` edit; here
+    // we only refresh the sheet's own controls.
+    this.refreshFilterControls(rerenderControls);
   }
 
   // US-109p9: read the raw (non-localized) title of an area by DFS index from the
