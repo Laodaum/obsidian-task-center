@@ -38,6 +38,7 @@ export class QueryDslModal extends Modal {
 
   onOpen(): void {
     const { contentEl } = this;
+    this.modalEl.addClass("task-center-modal");
     contentEl.empty();
     contentEl.addClass("task-center-query-dsl-modal");
 

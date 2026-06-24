@@ -148,6 +148,7 @@ class SwitchTabConfirmModal extends Modal {
   }
 
   onOpen() {
+    this.modalEl.addClass("task-center-modal");
     this.titleEl.setText(tr("savedViews.switchDirtyTitle"));
     this.contentEl.createEl("p", { text: tr("savedViews.switchDirtyBody") });
     const row = this.contentEl.createDiv({ cls: "bt-confirm-row" });

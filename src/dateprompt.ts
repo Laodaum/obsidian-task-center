@@ -28,6 +28,7 @@ export class DatePromptModal extends Modal {
 
   onOpen() {
     const { contentEl } = this;
+    this.modalEl.addClass("task-center-modal");
     contentEl.empty();
     contentEl.addClass("task-center-date-prompt");
     this.titleEl.setText(this.title);

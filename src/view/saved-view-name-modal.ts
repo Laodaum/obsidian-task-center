@@ -14,6 +14,7 @@ export class SavedViewNameModal extends Modal {
 
   onOpen(): void {
     const { contentEl } = this;
+    this.modalEl.addClass("task-center-modal");
     contentEl.empty();
     contentEl.addClass("task-center-saved-view-name-modal");
     this.titleEl.setText(tr("savedViews.promptName"));
