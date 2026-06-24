@@ -1178,6 +1178,22 @@ for (const [i, area] of collectAreas(layout).entries()) {
 
 落地伴随 REFACTOR §4 的 `AreaSpec`/`AreaView` 注册表（消两处 `switch(area.type)`）与 §5 `PresentationCtx`（收 ~30 处分叉），与第 8/9 步同批——它们是同一内聚单元（REFACTOR §6 "最小一起改集合"）。
 
+#### 落地实况（截至本轮）
+
+第 1–10 步**已全部落地并合并**，`src/view.ts` 由 5066 行降到约 2118 行（较 Brooks-Lint 标记的 5060 行 god class −58%），抽出 8 个聚焦模块：`view/saved-view-actions.ts`、`view/manage-tabs.ts`、`view/parent-picker.ts`（+`view/paths.ts`）、`view/source-actions.ts`、`view/render/card.ts`、`view/render/calendar.ts`、`view/tabbar.ts`、`view/toolbar.ts`。CI e2e 白名单（board-basics / saved-views / mobile-filter-ui / source-edit-dialog / dataview-format）+ 527 单测全绿。顺手删了死代码 `openDatePrompt` / `renderSavedViewsCompactBar`。
+
+**与原计划的偏差（重要）**：第 5–10 步采用务实的「收 v」抽法——子模块以 `(v: TaskCenterView)` 收外壳、把动作派发回壳的引擎，而**不是**先定义窄 Port（§7.6–§7.10）再依赖 Port。代价是这 8 个模块都 `import type { TaskCenterView }`，外壳为此把若干私有成员临时改成 public（每个 commit 已注明「step11 收窄为 XxxPort」）。因此：
+
+- **第 11 步的字面目标「打断最后的 `import type { TaskCenterView }`」已不可达**：要名副其实，需把全部 8 个模块一起改成依赖窄 Port，是一个比本表预估更大的纯类型重构阶段（零行为变更，typecheck 兜底）。只收窄 `query-editor` / `area-filter-controls`（各用 17 / 6 个 `v.*` 成员）则与其余模块不一致，且接近「把公有面照抄一遍」的 header 接口，DIP 收益有限。
+- **第 12 步**（外壳改名 `view/task-center-view.ts`）是纯文件名 churn，需改全部 `./view` / `../view` 导入点（8 模块 + `main.ts` / `settings.ts` / 测试），本表自标「风险最高、放最后」。
+
+**决策（基于取舍）**：
+
+- **第 11 步：判定为过度设计，不做。** 窄 Port / DIP 的价值在于「同一接口多实现」或「模块脱离具体宿主单测（对 mock host）」。本插件只有**一个** `TaskCenterView`，渲染/动作模块永远不会有第二个宿主；为它们造 8 个「照抄公有面」的 header 接口，只会新增必须跟随类 API 漂移的维护负担，换不到任何可替换性收益。「收 v」（模块以 `(v: TaskCenterView)` 收外壳）对单宿主插件就是**正确的终态**，不是临时态。若将来真出现第二个宿主或要对渲染做隔离单测，再按需为该模块单独定义窄 Port 即可。
+- **第 12 步：技术上可做，但当前被「无人在途」前置条件挡住，暂缓。** `view.ts` 是全仓被 import 最多的文件；改名要改动 8 个子模块 + `main.ts` / `settings.ts` / 测试的全部导入点。本仓多 agent 同时在 `main` 上工作，改名期间别的 agent 在途的 `view.ts` 改动会被大面积冲突/冲掉（CLAUDE.md 头号禁忌）。须在确认无人在途的窗口、由单一 agent 一次性完成，不可与他人并行。
+
+综上：第 1–10 步的 god class 拆解目标已达成且经 e2e 验证（`view.ts` 5066→~2118，−58%）；第 11 步按取舍判定不做，第 12 步待无人在途的窗口再单独执行。
+
 ---
 
 ### 7.15 不变量与边界
