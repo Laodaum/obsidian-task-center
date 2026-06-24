@@ -151,8 +151,9 @@
     box-sizing: border-box;
   }
 
-  /* Tab bar: mobile may pan horizontally across query tabs, but the strip
-     itself is never a vertical scroll surface. */
+  /* Tab bar: mobile pans horizontally across query tabs. The tail buttons
+     (manage + settings) are sticky to the right with a fade so they never
+     scroll off screen — tabs scroll underneath. */
   .task-center-view[data-mobile-layout="true"] .bt-tabbar {
     overflow-x: auto;
     overflow-y: hidden;
@@ -167,6 +168,15 @@
   }
   .task-center-view[data-mobile-layout="true"] .bt-tabbar::-webkit-scrollbar {
     display: none;
+  }
+  /* Tail always visible at right edge; fade hides the last scrolled tab */
+  .task-center-view[data-mobile-layout="true"] .bt-tabbar-tail {
+    position: sticky;
+    right: 0;
+    flex-shrink: 0;
+    background: linear-gradient(to right, transparent, var(--background-primary) 28%);
+    padding-left: 14px;
+    z-index: 1;
   }
   .task-center-view[data-mobile-layout="true"] .bt-tab {
     flex: 0 0 auto;
@@ -184,6 +194,24 @@
   }
   .task-center-view[data-mobile-layout="true"] .bt-hotkey {
     display: none;
+  }
+  /* Filter button: icon-only on mobile, no text */
+  .task-center-view[data-mobile-layout="true"] .bt-toolbar .bt-mobile-filter-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    min-width: 44px;
+    max-width: 44px;
+    height: 44px;
+    min-height: 44px;
+    padding: 0;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 8px;
+    background: var(--background-secondary);
+    color: var(--text-muted);
+    overflow: visible;
+    white-space: normal;
   }
 
   /* ───── Card compact mode (US-505 / UX-mobile §4) ───── */
@@ -541,11 +569,92 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.task-center-bottom-sheet .bt-mobile-task-detail-actions,
+/* Legacy flat-list selectors kept for any other usage sites */
+.task-center-bottom-sheet .bt-mobile-task-detail-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+}
 .task-center-bottom-sheet .bt-mobile-task-detail-secondary {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 6px;
+}
+
+/* ── Redesigned task detail modal (primary / reschedule / secondary / danger) ── */
+
+/* Primary: Done button — full-width, visually weighted */
+.task-center-bottom-sheet .bt-mobile-task-detail-primary {
+  display: flex;
+  flex-direction: column;
+}
+.task-center-bottom-sheet .bt-sheet-action-done {
+  font-size: 15px;
+  font-weight: 700;
+  text-align: center;
+  padding: 14px;
+  background: color-mix(in srgb, var(--color-green) 12%, var(--background-secondary));
+  border-color: color-mix(in srgb, var(--color-green) 28%, var(--background-modifier-border));
+  color: var(--color-green);
+}
+.task-center-bottom-sheet .bt-sheet-action-done.bt-sheet-action-done-active {
+  background: var(--background-secondary);
+  border-color: var(--background-modifier-border);
+  color: var(--text-muted);
+}
+
+/* Quick reschedule: 3-column chip row + optional clear link */
+.task-center-bottom-sheet .bt-mobile-task-detail-reschedule {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.task-center-bottom-sheet .bt-mobile-task-detail-quick-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+.task-center-bottom-sheet .bt-sheet-quick-btn {
+  min-height: 44px;
+  padding: 6px 4px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  font-size: 13px;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.task-center-bottom-sheet .bt-sheet-quick-btn:active {
+  background: var(--background-modifier-hover);
+}
+.task-center-bottom-sheet .bt-sheet-quick-btn.active {
+  border-color: var(--interactive-accent);
+  background: color-mix(in srgb, var(--interactive-accent) 14%, transparent);
+  color: var(--interactive-accent);
+  font-weight: 600;
+}
+/* Clear schedule: subtle text link below the chip row */
+.task-center-bottom-sheet .bt-sheet-clear-btn {
+  width: 100%;
+  padding: 4px;
+  background: transparent;
+  border: none;
+  color: var(--text-faint);
+  font-size: 12px;
+  text-align: center;
+  cursor: pointer;
+}
+.task-center-bottom-sheet .bt-sheet-clear-btn:active {
+  color: var(--text-muted);
+}
+
+/* Danger zone: separator + abandon button */
+.task-center-bottom-sheet .bt-mobile-task-detail-danger {
+  padding-top: 6px;
+  border-top: 1px solid var(--background-modifier-border);
 }
 .task-center-bottom-sheet .bt-mobile-date-sheet {
   display: flex;

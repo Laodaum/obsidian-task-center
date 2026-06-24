@@ -1135,8 +1135,9 @@ export class TaskCenterView extends ItemView {
       title: t.title,
       populate: (el) => {
         const detail = el.createDiv({ cls: "bt-mobile-task-detail" });
-        detail.createDiv({ cls: "bt-sheet-source", text: `${t.path}:L${t.line + 1}` });
 
+        // Source + meta chips
+        detail.createDiv({ cls: "bt-sheet-source", text: `${t.path}:L${t.line + 1}` });
         const meta = detail.createDiv({ cls: "bt-mobile-task-detail-meta" });
         if (t.effectiveScheduled) meta.createSpan({ text: `⏳ ${t.effectiveScheduled}` });
         else meta.createSpan({ text: tr("sheet.unscheduled") });
@@ -1145,27 +1146,52 @@ export class TaskCenterView extends ItemView {
         if (t.actual) meta.createSpan({ text: tr("meta.act", { dur: formatMinutes(t.actual) }) });
         for (const tag of taskDisplayTags(t.tags)) meta.createSpan({ text: tag });
 
-        const primary = detail.createDiv({ cls: "bt-mobile-task-detail-actions" });
-        const action = (id: string, text: string, fn: () => Promise<unknown>, danger = false) => {
-          const btn = primary.createEl("button", {
-            cls: "bt-sheet-action" + (danger ? " bt-sheet-action-danger" : ""),
-            text,
+        // ── Primary: Done ──────────────────────────────────
+        const primaryZone = detail.createDiv({ cls: "bt-mobile-task-detail-primary" });
+        const isDone = t.effectiveStatus === "done";
+        const doneBtn = primaryZone.createEl("button", {
+          cls: "bt-sheet-action bt-sheet-action-done" + (isDone ? " bt-sheet-action-done-active" : ""),
+          text: isDone ? tr("sheet.markUndone") : tr("sheet.done"),
+        });
+        doneBtn.dataset.mobileDetailAction = "done";
+        doneBtn.addEventListener("click", () => {
+          void run(() => isDone ? this.api.undone(t.id) : this.api.done(t.id));
+        });
+
+        // ── Quick reschedule ───────────────────────────────
+        const rescheduleZone = detail.createDiv({ cls: "bt-mobile-task-detail-reschedule" });
+        const quickRow = rescheduleZone.createDiv({ cls: "bt-mobile-task-detail-quick-row" });
+
+        const tomorrow = addDays(todayISO(), 1);
+        const nextWeekStart = startOfWeek(addDays(todayISO(), 7), this.plugin.settings.weekStartsOn);
+
+        const quickBtn = (id: string, label: string, date: string) => {
+          const btn = quickRow.createEl("button", {
+            cls: "bt-sheet-quick-btn" + (t.effectiveScheduled === date ? " active" : ""),
+            text: label,
           });
           btn.dataset.mobileDetailAction = id;
-          btn.addEventListener("click", () => { void run(fn); });
+          btn.addEventListener("click", () => { void run(() => this.api.schedule(t.id, date)); });
         };
+        quickBtn("quick-tomorrow", tr("sheet.tomorrow"), tomorrow);
+        quickBtn("quick-next-week", tr("sheet.nextWeek"), nextWeekStart);
+        const pickerBtn = quickRow.createEl("button", {
+          cls: "bt-sheet-quick-btn",
+          text: tr("sheet.scheduleCustom"),
+        });
+        pickerBtn.dataset.mobileDetailAction = "schedule";
+        pickerBtn.addEventListener("click", () => { void run(scheduleWithPicker); });
 
-        action(
-          "done",
-          t.effectiveStatus === "done" ? tr("sheet.markUndone") : tr("sheet.done"),
-          () => (t.effectiveStatus === "done" ? this.api.undone(t.id) : this.api.done(t.id)),
-        );
-        action("schedule", t.effectiveScheduled ? tr("sheet.reschedule") : tr("sheet.schedule"), scheduleWithPicker);
         if (t.effectiveScheduled) {
-          action("clear-schedule", tr("sheet.scheduleClear"), () => this.api.schedule(t.id, null));
+          const clearBtn = rescheduleZone.createEl("button", {
+            cls: "bt-sheet-clear-btn",
+            text: tr("sheet.clearSchedule"),
+          });
+          clearBtn.dataset.mobileDetailAction = "clear-schedule";
+          clearBtn.addEventListener("click", () => { void run(() => this.api.schedule(t.id, null)); });
         }
-        action("drop", tr("sheet.drop"), () => this.api.drop(t.id), true);
 
+        // ── Secondary actions ──────────────────────────────
         const secondary = detail.createDiv({ cls: "bt-mobile-task-detail-secondary" });
         const secondaryAction = (id: string, text: string, fn: () => Promise<unknown>) => {
           const btn = secondary.createEl("button", { cls: "bt-sheet-action bt-sheet-action-secondary", text });
@@ -1177,9 +1203,7 @@ export class TaskCenterView extends ItemView {
           const initialSet = new Set(initialTags);
           const suggestions = taskDisplayTags(
             this.getEffectiveTasks().flatMap((task) => taskDisplayTags(task.tags)),
-          )
-            .filter((tag) => !initialSet.has(tag))
-            .slice(0, 16);
+          ).filter((tag) => !initialSet.has(tag)).slice(0, 16);
           const edit = await openMobileTagEditor(this.app, { initialTags, suggestions });
           if (edit !== null) await this.applyTagEditResult(t, edit);
         });
@@ -1188,6 +1212,15 @@ export class TaskCenterView extends ItemView {
           if (parentId !== null) await this.nestFromMobile(t, parentId);
         });
         secondaryAction("source", tr("sheet.editSource"), () => openSourceEditShell(this, t));
+
+        // ── Danger zone ────────────────────────────────────
+        const dangerZone = detail.createDiv({ cls: "bt-mobile-task-detail-danger" });
+        const dropBtn = dangerZone.createEl("button", {
+          cls: "bt-sheet-action bt-sheet-action-danger",
+          text: tr("sheet.drop"),
+        });
+        dropBtn.dataset.mobileDetailAction = "drop";
+        dropBtn.addEventListener("click", () => { void run(() => this.api.drop(t.id)); });
       },
     });
     sheet.open();

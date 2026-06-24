@@ -100,11 +100,16 @@ export function renderWeek(
       cls: "bt-week-dow",
     });
     head.createSpan({ text: `${pad(d.getMonth() + 1)}-${pad(d.getDate())}`, cls: "bt-week-date" });
-    const stats = head.createSpan({
-      text: columnStats(dayTasksRecomputed),
-      cls: "bt-week-stats",
-    });
-    stats.title = "Scheduled estimate (hours)";
+    // On mobile, hide the "0" count for empty days — the caret already
+    // signals collapsibility; showing "0" is noise with no value.
+    const isMobile = v.contentEl.dataset.mobileLayout === "true";
+    if (!isMobile || dayTasksRecomputed.length > 0) {
+      const stats = head.createSpan({
+        text: columnStats(dayTasksRecomputed),
+        cls: "bt-week-stats",
+      });
+      stats.title = "Scheduled estimate (hours)";
+    }
 
     const list = col.createDiv({ cls: "bt-week-list" });
     // Drop handler on the COLUMN (which carries `data-date`), not the

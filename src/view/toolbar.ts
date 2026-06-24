@@ -3,6 +3,7 @@
 // 移动端两行（日期导航 + 编辑 Query 入口）。当前 query 动作复用壳仍 public 的
 // renderSavedViewsActionControls；范围导航走壳 renderRangeNav。
 
+import { setIcon } from "obsidian";
 import type { TaskCenterView } from "../view";
 import { t as tr } from "../i18n";
 import { openQuickAdd } from "./source-actions";
@@ -28,10 +29,9 @@ export function renderToolbar(v: TaskCenterView, parent: HTMLElement): void {
   // programmatically and editable via the Query editor, not via a global chip.
 
   if (mobileLayout) {
-    const mobileFilters = mainRow.createEl("button", {
-      text: tr("savedViews.editQuery"),
-      cls: "bt-mobile-filter-btn",
-    });
+    const mobileFilters = mainRow.createEl("button", { cls: "bt-mobile-filter-btn" });
+    setIcon(mobileFilters, "sliders-horizontal");
+    mobileFilters.setAttr("aria-label", tr("savedViews.editQuery"));
     mobileFilters.dataset.mobileAction = "filters";
     mobileFilters.addEventListener("click", () => v.openQueryControlsSheet());
   } else {

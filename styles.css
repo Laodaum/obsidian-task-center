@@ -2889,6 +2889,18 @@
 .task-center-view[data-mobile-layout=true] .bt-tabbar::-webkit-scrollbar {
   display: none;
 }
+.task-center-view[data-mobile-layout=true] .bt-tabbar-tail {
+  position: sticky;
+  right: 0;
+  flex-shrink: 0;
+  background:
+    linear-gradient(
+      to right,
+      transparent,
+      var(--background-primary) 28%);
+  padding-left: 14px;
+  z-index: 1;
+}
 .task-center-view[data-mobile-layout=true] .bt-tab {
   flex: 0 0 auto;
   justify-content: center;
@@ -2905,6 +2917,23 @@
 }
 .task-center-view[data-mobile-layout=true] .bt-hotkey {
   display: none;
+}
+.task-center-view[data-mobile-layout=true] .bt-toolbar .bt-mobile-filter-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  min-width: 44px;
+  max-width: 44px;
+  height: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background: var(--background-secondary);
+  color: var(--text-muted);
+  overflow: visible;
+  white-space: normal;
 }
 .task-center-view[data-mobile-layout=true] .bt-meta-path {
   display: none;
@@ -3226,11 +3255,82 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.task-center-bottom-sheet .bt-mobile-task-detail-actions,
+.task-center-bottom-sheet .bt-mobile-task-detail-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+}
 .task-center-bottom-sheet .bt-mobile-task-detail-secondary {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 6px;
+}
+.task-center-bottom-sheet .bt-mobile-task-detail-primary {
+  display: flex;
+  flex-direction: column;
+}
+.task-center-bottom-sheet .bt-sheet-action-done {
+  font-size: 15px;
+  font-weight: 700;
+  text-align: center;
+  padding: 14px;
+  background: color-mix(in srgb, var(--color-green) 12%, var(--background-secondary));
+  border-color: color-mix(in srgb, var(--color-green) 28%, var(--background-modifier-border));
+  color: var(--color-green);
+}
+.task-center-bottom-sheet .bt-sheet-action-done.bt-sheet-action-done-active {
+  background: var(--background-secondary);
+  border-color: var(--background-modifier-border);
+  color: var(--text-muted);
+}
+.task-center-bottom-sheet .bt-mobile-task-detail-reschedule {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.task-center-bottom-sheet .bt-mobile-task-detail-quick-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+.task-center-bottom-sheet .bt-sheet-quick-btn {
+  min-height: 44px;
+  padding: 6px 4px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  font-size: 13px;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.task-center-bottom-sheet .bt-sheet-quick-btn:active {
+  background: var(--background-modifier-hover);
+}
+.task-center-bottom-sheet .bt-sheet-quick-btn.active {
+  border-color: var(--interactive-accent);
+  background: color-mix(in srgb, var(--interactive-accent) 14%, transparent);
+  color: var(--interactive-accent);
+  font-weight: 600;
+}
+.task-center-bottom-sheet .bt-sheet-clear-btn {
+  width: 100%;
+  padding: 4px;
+  background: transparent;
+  border: none;
+  color: var(--text-faint);
+  font-size: 12px;
+  text-align: center;
+  cursor: pointer;
+}
+.task-center-bottom-sheet .bt-sheet-clear-btn:active {
+  color: var(--text-muted);
+}
+.task-center-bottom-sheet .bt-mobile-task-detail-danger {
+  padding-top: 6px;
+  border-top: 1px solid var(--background-modifier-border);
 }
 .task-center-bottom-sheet .bt-mobile-date-sheet {
   display: flex;
