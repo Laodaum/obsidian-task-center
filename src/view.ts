@@ -39,7 +39,6 @@ import { isMobileMode } from "./platform";
 import { openTaskSourceEditShell } from "./view/source-dialog";
 import { markdownSourceOpenState } from "./view/source-open-state";
 import { weekMinHeightFromViewHeightPx } from "./view/layout";
-import { SavedViewNameModal } from "./view/saved-view-name-modal";
 import { QueryDslModal, type QueryDslSubmitMode } from "./view/query-dsl-modal";
 import { QueryEditorView, type QueryEditorScope, type QueryEditorAreaTab } from "./view/query-editor";
 import { renderMigrationGate } from "./view/migration-gate";
@@ -53,39 +52,40 @@ import { projectListArea } from "./query/projection";
 import { applyQueryFilters, queryFilterHasActiveConditions } from "./query/filter";
 import { columnStats, buildWeekDays, buildMonthGrid } from "./view/render/calendar-grid";
 import { TabOverflowMeasure } from "./view/tab-overflow";
+import {
+  createSavedViewFromCurrent,
+  copySavedView,
+  setDefaultSavedView,
+  moveSavedView,
+  reorderQueryTab,
+  renameSavedView,
+  toggleSavedViewHidden,
+  deleteSavedViewWithConfirm,
+  restoreBuiltinSavedView,
+  restoreAllBuiltinSavedViews,
+  suggestSavedViewName,
+  askSavedViewName,
+  saveCurrentView,
+} from "./view/saved-view-actions";
 import { statusFilterLabel } from "./view/area-filter-model";
 import {
   applyQueryPresetFilters,
   builtinSavedViewId,
   collectAreas,
   computeQueryPresetSnapshot,
-  computeDeleteQueryPresetState,
-  computeUndoQueryPresetState,
-  executeDeleteQueryPresetFlow,
-  restoreBuiltinQueryPresetById,
-  restoreBuiltinQueryPresets,
   clearQueryPresetFilters as emptySavedViewFilters,
   createSavedViewId,
   createQueryPreset,
   parseQueryDsl,
   sameQueryPresetContent,
   stringifyQueryPreset,
-  duplicateQueryPreset,
-  moveQueryPresetById,
-  reorderQueryPresetById,
   renameQueryPresetById,
-  setQueryPresetHiddenById,
-  deleteQueryPresetById,
   normalizeQueryPreset,
   normalizeQueryStatus,
-  suggestQueryPresetName as suggestSavedViewNameForFilters,
   upsertQueryPreset,
   updateQueryPresetById,
   visibleQueryPresets,
   queryPresetTagString,
-} from "./saved-views";
-import type {
-  QueryPresetDeleteFlowCallbacks,
 } from "./saved-views";
 import type {
   AreaConfig,
@@ -898,7 +898,7 @@ export class TaskCenterView extends ItemView {
     btn.addEventListener("dblclick", (event) => {
       event.preventDefault();
       event.stopPropagation();
-      void this.renameSavedView(view);
+      void renameSavedView(this, view);
     });
     btn.addEventListener("contextmenu", (event) => {
       event.preventDefault();
@@ -990,7 +990,7 @@ export class TaskCenterView extends ItemView {
         if (targetIndex === -1) return;
         // If dropping after, insert at targetIndex + 1; if before, at targetIndex
         const insertAt = isAfter ? targetIndex + 1 : targetIndex;
-        void this.reorderQueryTab(draggedId, insertAt);
+        void reorderQueryTab(this, draggedId, insertAt);
       }
     });
   }
@@ -1027,13 +1027,13 @@ export class TaskCenterView extends ItemView {
         const presets = this.plugin.settings.queryPresets;
         const idx = presets.findIndex((p) => p.id === view.id);
 
-        addBtn(tr("savedViews.rename"), () => this.renameSavedView(view));
-        addBtn(tr("savedViews.copy"), () => this.copySavedView(view));
+        addBtn(tr("savedViews.rename"), () => renameSavedView(this, view));
+        addBtn(tr("savedViews.copy"), () => copySavedView(this, view));
         addBtn(tr("savedViews.editQuery"), () => this.openQueryControlsSheet());
-        addBtn(tr("savedViews.setDefault"), () => this.setDefaultSavedView(view.id));
+        addBtn(tr("savedViews.setDefault"), () => setDefaultSavedView(this, view.id));
 
         if (idx > 0) {
-          addBtn(tr("savedViews.moveLeft"), () => this.moveSavedView(view, -1));
+          addBtn(tr("savedViews.moveLeft"), () => moveSavedView(this, view, -1));
         } else {
           actions.createEl("button", {
             cls: "bt-sheet-action bt-sheet-action-disabled",
@@ -1042,7 +1042,7 @@ export class TaskCenterView extends ItemView {
         }
 
         if (idx >= 0 && idx < presets.length - 1) {
-          addBtn(tr("savedViews.moveRight"), () => this.moveSavedView(view, 1));
+          addBtn(tr("savedViews.moveRight"), () => moveSavedView(this, view, 1));
         } else {
           actions.createEl("button", {
             cls: "bt-sheet-action bt-sheet-action-disabled",
@@ -1052,15 +1052,15 @@ export class TaskCenterView extends ItemView {
 
         addBtn(
           view.hidden ? tr("savedViews.show") : tr("savedViews.hide"),
-          () => this.toggleSavedViewHidden(view, !view.hidden),
+          () => toggleSavedViewHidden(this, view, !view.hidden),
         );
 
         // US-109l: delete is available for builtin presets too (they re-appear
         // via 「恢复预设 Tabs」). Builtins additionally offer 「恢复预设」 to reset.
         if (view.builtin) {
-          addBtn(tr("savedViews.restore"), () => this.restoreBuiltinSavedView(view));
+          addBtn(tr("savedViews.restore"), () => restoreBuiltinSavedView(this, view));
         }
-        addBtn(tr("savedViews.delete"), () => this.deleteSavedViewWithConfirm(view));
+        addBtn(tr("savedViews.delete"), () => deleteSavedViewWithConfirm(this, view));
       },
     });
     sheet.open();
@@ -1155,7 +1155,7 @@ export class TaskCenterView extends ItemView {
         const targetIndex = presets.findIndex((p) => p.id === view.id);
         if (targetIndex === -1) return;
         const insertAt = isAfter ? targetIndex + 1 : targetIndex;
-        void this.reorderQueryTab(draggedId, insertAt).then(() => closeSheet());
+        void reorderQueryTab(this, draggedId, insertAt).then(() => closeSheet());
       });
       }
 
@@ -1363,9 +1363,9 @@ export class TaskCenterView extends ItemView {
       save.dataset.action = "save-current-view";
       save.addEventListener("click", () => {
         void (async () => {
-          const name = await this.askSavedViewName(`${selectedView.name} Copy`);
+          const name = await askSavedViewName(this, `${selectedView.name} Copy`);
           if (!name || !name.trim()) return;
-          await this.saveCurrentView(name.trim());
+          await saveCurrentView(this, name.trim());
           this.refreshFilterControls(rerenderControls);
         })();
       });
@@ -1432,11 +1432,11 @@ export class TaskCenterView extends ItemView {
     setting.openTabById("task-center");
   }
 
-  private visibleQueryTabs(): QueryPreset[] {
+  visibleQueryTabs(): QueryPreset[] {
     return visibleQueryPresets(this.plugin.settings.queryPresets);
   }
 
-  private savedViewLabels(): Record<"today" | "week" | "month" | "completed" | "unscheduled", string> {
+  savedViewLabels(): Record<"today" | "week" | "month" | "completed" | "unscheduled", string> {
     return {
       today: tr("tab.today"),
       week: tr("tab.week"),
@@ -1559,7 +1559,7 @@ export class TaskCenterView extends ItemView {
     const menu = new Menu();
     menu.addItem((item) =>
       item.setTitle(tr("savedViews.copy")).onClick(() => {
-        void this.copySavedView(normalized);
+        void copySavedView(this, normalized);
       }),
     );
     menu.addItem((item) =>
@@ -1570,17 +1570,17 @@ export class TaskCenterView extends ItemView {
     );
     menu.addItem((item) =>
       item.setTitle(tr("savedViews.rename")).onClick(() => {
-        void this.renameSavedView(normalized);
+        void renameSavedView(this, normalized);
       }),
     );
     menu.addItem((item) =>
       item.setTitle(tr("savedViews.setDefault")).onClick(() => {
-        void this.setDefaultSavedView(normalized.id);
+        void setDefaultSavedView(this, normalized.id);
       }),
     );
     menu.addItem((item) =>
       item.setTitle(normalized.hidden ? tr("savedViews.show") : tr("savedViews.hide")).onClick(() => {
-        void this.toggleSavedViewHidden(normalized, !normalized.hidden);
+        void toggleSavedViewHidden(this, normalized, !normalized.hidden);
       }),
     );
     // US-109l: builtins keep 「恢复预设」 (reset to factory) and are now also
@@ -1588,13 +1588,13 @@ export class TaskCenterView extends ItemView {
     if (normalized.builtin) {
       menu.addItem((item) =>
         item.setTitle(tr("savedViews.restore")).setIcon("rotate-ccw").onClick(() => {
-          void this.restoreBuiltinSavedView(normalized);
+          void restoreBuiltinSavedView(this, normalized);
         }),
       );
     }
     menu.addItem((item) =>
       item.setTitle(tr("savedViews.delete")).onClick(() => {
-        void this.deleteSavedViewWithConfirm(normalized);
+        void deleteSavedViewWithConfirm(this, normalized);
       }),
     );
     menu.showAtMouseEvent(event);
@@ -1630,7 +1630,7 @@ export class TaskCenterView extends ItemView {
       cls: "bt-manage-tab-btn",
     });
     create.addEventListener("click", () => {
-      void this.createSavedViewFromCurrent().then(rerender).catch((error) =>
+      void createSavedViewFromCurrent(this).then(rerender).catch((error) =>
         new Notice(tr("notice.error", { msg: error instanceof Error ? error.message : String(error) }), 4000),
       );
     });
@@ -1639,7 +1639,7 @@ export class TaskCenterView extends ItemView {
       cls: "bt-manage-tab-btn",
     });
     restoreDefaults.addEventListener("click", () => {
-      void this.restoreAllBuiltinSavedViews().then(rerender).catch((error) =>
+      void restoreAllBuiltinSavedViews(this).then(rerender).catch((error) =>
         new Notice(tr("notice.error", { msg: error instanceof Error ? error.message : String(error) }), 4000),
       );
     });
@@ -1702,7 +1702,7 @@ export class TaskCenterView extends ItemView {
         const targetIndex = presets.findIndex((p) => p.id === view.id);
         if (targetIndex === -1) return;
         const insertAt = isAfter ? targetIndex + 1 : targetIndex;
-        void this.reorderQueryTab(draggedId, insertAt).then(rerender);
+        void reorderQueryTab(this, draggedId, insertAt).then(rerender);
       });
 
       // UX §2.3: 当前 tab 靠整行高亮 + 左侧 accent 竖条表达，不再用「当前」文字徽标。
@@ -1757,75 +1757,23 @@ export class TaskCenterView extends ItemView {
     menu.addItem((i) => i.setTitle(tr("savedViews.editDsl")).setIcon("code")
       .onClick(() => run(() => { this.activateSavedView(view); this.openQueryControlsSheet({ scope: "tab" }); })));
     menu.addItem((i) => i.setTitle(tr("savedViews.rename")).setIcon("pencil")
-      .onClick(() => run(() => this.renameSavedView(view))));
+      .onClick(() => run(() => renameSavedView(this, view))));
     menu.addItem((i) => i.setTitle(tr("savedViews.copy")).setIcon("copy")
-      .onClick(() => run(() => this.copySavedView(view))));
+      .onClick(() => run(() => copySavedView(this, view))));
     menu.addItem((i) => i.setTitle(tr("savedViews.setDefault")).setIcon("star")
-      .onClick(() => run(() => this.setDefaultSavedView(view.id))));
+      .onClick(() => run(() => setDefaultSavedView(this, view.id))));
     menu.addItem((i) => i.setTitle(view.hidden ? tr("savedViews.show") : tr("savedViews.hide"))
       .setIcon(view.hidden ? "eye" : "eye-off")
-      .onClick(() => run(() => this.toggleSavedViewHidden(view, !view.hidden))));
+      .onClick(() => run(() => toggleSavedViewHidden(this, view, !view.hidden))));
     if (view.builtin) {
       menu.addItem((i) => i.setTitle(tr("savedViews.restore")).setIcon("rotate-ccw")
-        .onClick(() => run(() => this.restoreBuiltinSavedView(view))));
+        .onClick(() => run(() => restoreBuiltinSavedView(this, view))));
     }
     // US-109l: delete is available for builtin presets too (tombstoned so they
     // stay gone; recoverable via 「恢复预设」 / 「恢复预设 Tabs」).
     menu.addItem((i) => i.setTitle(tr("savedViews.delete")).setIcon("trash-2")
-      .onClick(() => run(() => this.deleteSavedViewWithConfirm(view))));
+      .onClick(() => run(() => deleteSavedViewWithConfirm(this, view))));
     menu.showAtMouseEvent(event);
-  }
-
-  private async createSavedViewFromCurrent(): Promise<void> {
-    const active = this.activeSavedView();
-    const suggestedName = active.builtin ? this.suggestSavedViewName() : `${active.name} Copy`;
-    const name = await this.askSavedViewName(suggestedName);
-    if (!name?.trim()) return;
-    await this.saveCurrentView(name.trim());
-  }
-
-  private async copySavedView(view: QueryPreset): Promise<void> {
-    const name = await this.askSavedViewName(`${view.name} Copy`);
-    if (!name?.trim()) return;
-    const copied = duplicateQueryPreset(this.plugin.settings.queryPresets, view.id, name.trim(), createSavedViewId);
-    this.plugin.settings.queryPresets = upsertQueryPreset(this.plugin.settings.queryPresets, copied);
-    this.tabDrafts.delete(copied.id);
-    this.applySavedView(copied);
-    await this.plugin.saveSettings();
-    this.render();
-  }
-
-  private async setDefaultSavedView(id: string): Promise<void> {
-    const view = this.plugin.settings.queryPresets.find((item) => item.id === id);
-    if (!view) return;
-    if (view.hidden) {
-      throw new Error("不能把已隐藏的 Tab 设为默认。");
-    }
-    this.plugin.settings.defaultSavedViewId = id;
-    await this.plugin.saveSettings();
-    this.render();
-  }
-
-  private async moveSavedView(view: QueryPreset, direction: -1 | 1): Promise<void> {
-    this.plugin.settings.queryPresets = moveQueryPresetById(this.plugin.settings.queryPresets, view.id, direction);
-    await this.plugin.saveSettings();
-    this.render();
-  }
-
-  private async reorderQueryTab(id: string, targetIndex: number): Promise<void> {
-    this.plugin.settings.queryPresets = reorderQueryPresetById(this.plugin.settings.queryPresets, id, targetIndex);
-    await this.plugin.saveSettings();
-    this.render();
-  }
-
-  private async renameSavedView(view: QueryPreset): Promise<void> {
-    const name = await this.askSavedViewName(view.name);
-    if (!name?.trim()) return;
-    this.plugin.settings.queryPresets = renameQueryPresetById(this.plugin.settings.queryPresets, view.id, name.trim());
-    const renamed = this.plugin.settings.queryPresets.find((item) => item.id === view.id);
-    if (renamed) this.applySavedView(renamed);
-    await this.plugin.saveSettings();
-    this.render();
   }
 
   // US-109n1: inline rename from the Tab panel's name input — renames the active
@@ -1839,212 +1787,6 @@ export class TaskCenterView extends ItemView {
     const draft = this.tabDrafts.get(active.id);
     if (draft) this.tabDrafts.set(active.id, normalizeQueryPreset({ ...draft, name: trimmed }));
     void this.plugin.saveSettings();
-    this.render();
-  }
-
-  private async toggleSavedViewHidden(view: QueryPreset, hidden: boolean): Promise<void> {
-    const visible = this.visibleQueryTabs();
-    if (hidden && visible.length <= 1 && visible[0]?.id === view.id) {
-      throw new Error("至少保留一个可见 Tab。");
-    }
-    this.plugin.settings.queryPresets = setQueryPresetHiddenById(this.plugin.settings.queryPresets, view.id, hidden);
-    if (hidden) this.tabDrafts.delete(view.id);
-    if (hidden && this.plugin.settings.defaultSavedViewId === view.id) {
-      this.plugin.settings.defaultSavedViewId = this.visibleQueryTabs().find((item) => item.id !== view.id)?.id ?? null;
-    }
-    if (hidden && this.state.savedViewId === view.id) {
-      const next = this.visibleQueryTabs().find((item) => item.id !== view.id);
-      if (next) this.applySavedView(next);
-    }
-    await this.plugin.saveSettings();
-    this.render();
-  }
-
-  private async deleteSavedView(view: QueryPreset): Promise<void> {
-    const visible = this.visibleQueryTabs();
-    if (visible.length <= 1 && visible[0]?.id === view.id) {
-      throw new Error("至少保留一个可见 Tab。");
-    }
-    this.plugin.settings.queryPresets = deleteQueryPresetById(this.plugin.settings.queryPresets, view.id);
-    this.tabDrafts.delete(view.id);
-    if (this.plugin.settings.defaultSavedViewId === view.id) {
-      this.plugin.settings.defaultSavedViewId = this.visibleQueryTabs()[0]?.id ?? null;
-    }
-    if (this.state.savedViewId === view.id) {
-      const next = this.visibleQueryTabs()[0];
-      if (next) this.applySavedView(next);
-    }
-    await this.plugin.saveSettings();
-    this.render();
-  }
-
-  /**
-   * VAL-GUI-004: delete a custom tab with confirmation.
-   * Shows "只删除这个视图，不删除任何任务" and provides toast undo.
-   *
-   * Delegates to the pure `executeDeleteQueryPresetFlow` helper so the
-   * confirm / delete / undo logic is unit-testable without DOM.
-   */
-  async deleteSavedViewWithConfirm(view: QueryPreset): Promise<void> {
-    const visible = this.visibleQueryTabs();
-    if (visible.length <= 1 && visible[0]?.id === view.id) {
-      new Notice(tr("notice.error", { msg: "至少保留一个可见 Tab。" }), 4000);
-      return;
-    }
-
-    const flowCallbacks: QueryPresetDeleteFlowCallbacks = {
-      confirm: async (viewName: string) => {
-        const confirmed = await new Promise<boolean>((resolve) => {
-          const modal = new BottomSheet(this.app, {
-            title: tr("savedViews.deleteConfirmTitle"),
-            populate: (el) => {
-              el.createDiv({ cls: "bt-delete-confirm-body", text: tr("savedViews.deleteConfirmBody") });
-              el.createDiv({ cls: "bt-delete-confirm-detail", text: `"${viewName}"` });
-              const actions = el.createDiv({ cls: "bt-delete-confirm-actions" });
-              const cancel = actions.createEl("button", { text: tr("savedViews.cancel") });
-              cancel.addEventListener("click", () => { modal.close(); resolve(false); });
-              const del = actions.createEl("button", {
-                text: tr("savedViews.deleteConfirmAction"),
-                cls: "mod-warning",
-              });
-              del.addEventListener("click", () => { modal.close(); resolve(true); });
-            },
-          });
-          modal.open();
-        });
-        return confirmed;
-      },
-      createUndoNotice: (viewName: string, undoLabel: string) => {
-        const notice = new Notice("", 8000);
-        notice.messageEl.empty();
-        notice.messageEl.createSpan({ text: tr("notice.deleted", { name: viewName }) });
-
-        const undoBtn = notice.messageEl.createSpan({
-          text: `  ${undoLabel}`,
-          cls: "bt-notice-undo",
-        });
-
-        let undone = false;
-        return {
-          onUndoClick: (handler: () => Promise<void>) => {
-            undoBtn.addEventListener("click", () => {
-              if (undone) return;
-              undone = true;
-              void handler();
-            });
-          },
-          close: () => notice.hide(),
-        };
-      },
-      showRestoredNotice: (viewName: string) => {
-        new Notice(tr("notice.undoRestored", { name: viewName }), 3000);
-      },
-    };
-
-    const result = await executeDeleteQueryPresetFlow(
-      this.plugin.settings.queryPresets,
-      view,
-      this.plugin.settings.defaultSavedViewId,
-      this.state.savedViewId,
-      flowCallbacks,
-    );
-
-    if (!result.confirmed) return;
-
-    // Compute post-delete state from pure functions
-    const deleteState = computeDeleteQueryPresetState({
-      result,
-      visibleTabs: visible,
-      view,
-    });
-
-    // Apply the deletion to plugin state
-    this.plugin.settings.queryPresets = deleteState.presetsAfter;
-    this.tabDrafts.delete(view.id);
-    // US-109l: tombstone a deleted builtin so it is not re-seeded on next load.
-    if (view.builtin && !this.plugin.settings.deletedBuiltinIds.includes(view.id)) {
-      this.plugin.settings.deletedBuiltinIds = [...this.plugin.settings.deletedBuiltinIds, view.id];
-    }
-
-    if (deleteState.newDefaultId !== null) {
-      this.plugin.settings.defaultSavedViewId = deleteState.newDefaultId;
-    }
-    if (deleteState.shouldSwitchActive && deleteState.nextActiveView) {
-      this.applySavedView(deleteState.nextActiveView);
-    }
-
-    await this.plugin.saveSettings();
-    this.render();
-
-    // Wire the undo handler to restore state
-    result.undoNotice?.onUndoClick(async () => {
-      result.undoNotice?.close();
-
-      // Compute post-undo state from pure functions
-      const undoState = computeUndoQueryPresetState({
-        presets: this.plugin.settings.queryPresets,
-        undoPlan: result.undoPlan!,
-        wasDefault: result.wasDefault,
-        wasActive: result.wasActive,
-      });
-
-      this.plugin.settings.queryPresets = undoState.presetsRestored;
-      this.tabDrafts.delete(result.undoPlan!.snapshot.id);
-      // US-109l: undoing a builtin delete lifts its tombstone.
-      if (view.builtin) {
-        this.plugin.settings.deletedBuiltinIds =
-          this.plugin.settings.deletedBuiltinIds.filter((id) => id !== view.id);
-      }
-
-      if (undoState.restoredDefaultId !== null) {
-        this.plugin.settings.defaultSavedViewId = undoState.restoredDefaultId;
-      }
-      if (undoState.shouldRestoreActive && undoState.restoredView) {
-        this.applySavedView(undoState.restoredView);
-      }
-
-      await this.plugin.saveSettings();
-      this.render();
-      new Notice(tr("notice.undoRestored", { name: result.undoPlan!.snapshot.name }), 3000);
-    });
-  }
-
-  private async restoreBuiltinSavedView(view: QueryPreset): Promise<void> {
-    this.plugin.settings.queryPresets = restoreBuiltinQueryPresetById(
-      this.plugin.settings.queryPresets,
-      view.id,
-      this.savedViewLabels(),
-      this.plugin.settings.deletedBuiltinIds,
-    );
-    // US-109l: restoring a builtin (incl. a previously-deleted one) lifts its
-    // tombstone so it survives the next load.
-    this.plugin.settings.deletedBuiltinIds =
-      this.plugin.settings.deletedBuiltinIds.filter((id) => id !== view.id);
-    this.tabDrafts.delete(view.id);
-    const restored = this.plugin.settings.queryPresets.find((item) => item.id === view.id);
-    if (restored && this.state.savedViewId === view.id) {
-      this.applySavedView(restored);
-    }
-    await this.plugin.saveSettings();
-    this.render();
-  }
-
-  private async restoreAllBuiltinSavedViews(): Promise<void> {
-    this.plugin.settings.queryPresets = restoreBuiltinQueryPresets(this.plugin.settings.queryPresets, this.savedViewLabels());
-    for (const id of [
-      builtinSavedViewId("today"),
-      builtinSavedViewId("week"),
-      builtinSavedViewId("month"),
-      builtinSavedViewId("completed"),
-      builtinSavedViewId("unscheduled"),
-    ]) {
-      this.tabDrafts.delete(id);
-    }
-    const active = this.plugin.settings.queryPresets.find((item) => item.id === this.state.savedViewId);
-    if (active) {
-      this.applySavedView(active);
-    }
-    await this.plugin.saveSettings();
     this.render();
   }
 
@@ -3812,33 +3554,6 @@ export class TaskCenterView extends ItemView {
     this.filterPopoverOpen = null;
   }
 
-  private suggestSavedViewName(): string {
-    return suggestSavedViewNameForFilters(
-      { tags: this.state.savedViewTag, status: this.state.savedViewStatus },
-      tr("savedViews.defaultName"),
-    );
-  }
-
-  private askSavedViewName(initialName = this.suggestSavedViewName()): Promise<string | null> {
-    return new Promise((resolve) => {
-      new SavedViewNameModal(this.app, initialName, resolve).open();
-    });
-  }
-
-  private async saveCurrentView(name: string): Promise<void> {
-    const active = this.activeSavedView();
-    const view = normalizeQueryPreset({
-      ...this.currentQuerySnapshot(active, name),
-      id: createSavedViewId(),
-      builtin: false,
-      hidden: false,
-    });
-    this.plugin.settings.queryPresets = upsertQueryPreset(this.plugin.settings.queryPresets, view);
-    this.tabDrafts.delete(view.id);
-    this.applySavedView(view);
-    await this.plugin.saveSettings();
-  }
-
   private async saveCurrentViewFromDsl(view: QueryPreset): Promise<void> {
     const normalized = normalizeQueryPreset({
       ...view,
@@ -3932,7 +3647,7 @@ export class TaskCenterView extends ItemView {
       filterTime: this.state.savedViewTime,
       filterStatus: this.state.savedViewStatus,
       fallbackView: () => this.currentQueryPresetViewConfig(),
-      name: name ?? (existing ? undefined : this.suggestSavedViewName()),
+      name: name ?? (existing ? undefined : suggestSavedViewName(this)),
     });
   }
 
@@ -3948,7 +3663,7 @@ export class TaskCenterView extends ItemView {
       if (mode === "update") {
         await this.updateCurrentSavedViewFromDsl(selected, text);
       } else {
-        const parsed = parseQueryDsl(text, { name: this.suggestSavedViewName() });
+        const parsed = parseQueryDsl(text, { name: suggestSavedViewName(this) });
         await this.saveCurrentViewFromDsl(parsed);
       }
       this.refreshFilterControls(rerenderControls);
