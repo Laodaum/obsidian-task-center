@@ -29,7 +29,7 @@ import { UndoStack, UndoEntry, UndoOp } from "./view/undo";
 import { BottomSheet } from "./view/bottom-sheet";
 import { openMobileDatePicker, openMobileTagEditor, type TagEditResult } from "./view/mobile-task-sheet";
 import { weekdayLabel } from "./weekday";
-import { attachCardGestures, attachLongPress } from "./view/touch";
+import { attachLongPress } from "./view/touch";
 import { shouldCloseFilterPopoverOnPointerDown, isClickInsideFilterControls } from "./view/filter-popover";
 import { isMobileMode } from "./platform";
 import { weekMinHeightFromViewHeightPx } from "./view/layout";
@@ -39,9 +39,8 @@ import { renderMigrationGate } from "./view/migration-gate";
 import type { FilterPopoverKey, TabKey, ViewState } from "./view/state";
 import { taskDisplayTags } from "./tags";
 import { taskMatchesTimeToken, timeTokenAppliesToField } from "./time-filter";
-import { deriveEffectiveTasks, countTopLevel, recomputeTopLevelInQuery, countDescendants } from "./task-tree";
+import { deriveEffectiveTasks, countTopLevel, recomputeTopLevelInQuery } from "./task-tree";
 import type { EffectiveTask } from "./task-tree";
-import { renderTaskTags } from "./view/render/card-bits";
 import { projectListArea } from "./query/projection";
 import { applyQueryFilters, queryFilterHasActiveConditions } from "./query/filter";
 import { columnStats, buildWeekDays, buildMonthGrid } from "./view/render/calendar-grid";
@@ -61,8 +60,8 @@ import {
 } from "./view/saved-view-actions";
 import { openManageTabsSheet, openManageTabRowMenu } from "./view/manage-tabs";
 import { openParentPickerForTask } from "./view/parent-picker";
-import { openSourceEditShell, openContextMenu, openQuickAdd } from "./view/source-actions";
-import { compactPath } from "./view/paths";
+import { openSourceEditShell, openQuickAdd } from "./view/source-actions";
+import { renderCard, wireCardEvents } from "./view/render/card";
 import { statusFilterLabel } from "./view/area-filter-model";
 import {
   applyQueryPresetFilters,
@@ -206,7 +205,7 @@ export class TaskCenterView extends ItemView {
   // they're scriptable and idempotent enough that auto-undo would be more
   // confusing than helpful (UX.md §6.7). Capped at 20 entries (UndoStack.MAX).
   // see USER_STORIES.md
-  private undoStack: UndoStack;
+  undoStack: UndoStack;
   // US-153: ids of tasks the user just marked done via the ✔ check *in this
   // view session*. They bypass the status filter (filter.ts exemptStatusIds),
   // so a freshly-completed card lingers in place — rendered in its done state
@@ -214,7 +213,7 @@ export class TaskCenterView extends ItemView {
   // checked off. Cleared on every genuine "re-enter view" (onOpen / tab switch
   // / cache-driven full refresh), never by the in-place re-render that the
   // completion toggle itself triggers.
-  private justCompletedIds = new Set<string>();
+  justCompletedIds = new Set<string>();
   // US-153: our own ✔ write triggers a cache `changed` → debounced
   // scheduleRefresh. That refresh must NOT clear `justCompletedIds` (it isn't a
   // user re-entering the view, it's the echo of the completion we just made).
@@ -1762,7 +1761,7 @@ export class TaskCenterView extends ItemView {
       // `simulateDrag()` never reaches it.
       this.makeDropZone(col, day);
       for (const t of topLevel) {
-        this.renderCard(list, t, day);
+        renderCard(this, list, t, day);
       }
     }
   }
@@ -1919,7 +1918,7 @@ export class TaskCenterView extends ItemView {
           if (deadlineDays < 0) chip.addClass("overdue");
           else if (deadlineDays <= 3) chip.addClass("near-deadline");
         }
-        this.wireCardEvents(chip, t);
+        wireCardEvents(this, chip, t);
       }
       if (dayTasks.length > 6) {
         list.createDiv({ text: `+${dayTasks.length - 6} more`, cls: "bt-mini-more" });
@@ -1966,7 +1965,7 @@ export class TaskCenterView extends ItemView {
       list.createDiv({ cls: "bt-month-day-empty", text: tr("sheet.empty") });
       return;
     }
-    for (const t of dayTasks) this.renderCard(list, t, day);
+    for (const t of dayTasks) renderCard(this, list, t, day);
   }
 
   /**
@@ -1980,7 +1979,7 @@ export class TaskCenterView extends ItemView {
    * explicit action. This keeps the touch path small while still preserving
    * US-168's source-edit capability.
    */
-  private openMobileTaskDetailSheet(t: EffectiveTask): void {
+  openMobileTaskDetailSheet(t: EffectiveTask): void {
     let sheet: BottomSheet | null = null;
     const run = async (op: () => Promise<unknown>) => {
       sheet?.close();
@@ -2347,7 +2346,7 @@ export class TaskCenterView extends ItemView {
         if (sectionTasks.length === 0) {
           sectionBody.createDiv({ cls: "bt-list-section-empty", text: section.emptyText ?? tr("today.groupEmpty") });
         } else {
-          for (const task of sectionTasks) this.renderCard(sectionBody, task);
+          for (const task of sectionTasks) renderCard(this, sectionBody, task);
         }
       }
       if (totalVisible === 0 && !area.onDrop) {
@@ -2367,7 +2366,7 @@ export class TaskCenterView extends ItemView {
       else wrap.createDiv({ text: tr("filters.empty"), cls: "bt-empty" });
       return;
     }
-    for (const task of list) this.renderCard(wrap, task);
+    for (const task of list) renderCard(this, wrap, task);
   }
 
   // US-109w: per-area empty state. An area empty because of *its own* `when`
@@ -2494,450 +2493,6 @@ export class TaskCenterView extends ItemView {
     await this.plugin.cache.forFlush();
     await this.reloadTasks();
     this.render();
-  }
-
-  // ---------- Card ----------
-
-  /**
-   * Render a top-level task card.
-   *
-   * `contextDate` (US-150): if the card is being rendered inside a column
-   * whose day already represents the task's `⏳`, the meta-row `⏳ {date}`
-   * badge is suppressed — it'd just repeat what the column header says.
-   * Pass the column's ISO date for week / month tabs; pass `null` (the
-   * default) for unscheduled / completed views, where the date isn't
-   * implied by position and the badge is useful.
-   */
-  private renderCard(
-    parent: HTMLElement,
-    t: EffectiveTask,
-    contextDate: string | null = null,
-  ) {
-    const card = parent.createDiv({ cls: "bt-card" });
-    card.dataset.taskId = t.id;
-    if (this.contentEl.dataset.mobileLayout !== "true") card.draggable = true;
-    if (this.state.selectedTaskId === t.id) card.addClass("selected");
-
-    // US-115: deadline 已过 → red (`bt-overdue`); 3 days or fewer → yellow
-    // (`bt-near-deadline`). Both a CSS hook AND a data attribute so e2e
-    // selectors can read `[data-overdue]` / `[data-near-deadline]` per
-    // ARCHITECTURE.md §8.6 (CSS class names are not part of the contract).
-    // see USER_STORIES.md
-    //
-    // Only annotate active (todo) tasks. A done / dropped task that happens
-    // to have a past deadline shouldn't render with the urgency styling — its
-    // outcome is already settled.
-    if (t.effectiveDeadline && t.effectiveStatus === "todo") {
-      const today = todayISO();
-      const dd = daysBetween(today, t.effectiveDeadline);
-      if (dd < 0) {
-        card.addClass("bt-overdue");
-        card.dataset.overdue = "true";
-      } else if (dd <= 3) {
-        card.addClass("bt-near-deadline");
-        card.dataset.nearDeadline = "true";
-      }
-    }
-
-    // Title row
-    const titleRow = card.createDiv({ cls: "bt-card-title-row" });
-    const check = titleRow.createDiv({ cls: "bt-check" });
-    check.addClass(`bt-check-${t.effectiveStatus}`);
-    check.setText(statusIcon(t.effectiveStatus));
-    check.title = "Toggle done (space)";
-    check.addEventListener("click", (e) => {
-      void (async () => {
-        e.stopPropagation();
-        await this.toggleDone(t);
-      })();
-    });
-
-    const title = titleRow.createDiv({ cls: "bt-card-title", text: t.title });
-    title.title = t.title; // tooltip for long titles
-    if (t.effectiveStatus === "done") card.addClass("done");
-    // US-153: mark cards that are only still here because they were just
-    // completed in this session, so the in-place re-render keeps them and e2e
-    // can assert "it lingered". Plain done cards (e.g. in the Completed view)
-    // are not flagged.
-    if (this.justCompletedIds.has(t.id)) card.dataset.justCompleted = "true";
-
-    renderTaskTags(card, t.tags, "bt-card-tags");
-
-    // Meta row
-    const meta = card.createDiv({ cls: "bt-card-meta" });
-    // task #43: route est/act labels through tr() so a CN session reads
-    // "预估 30m / 实际 25m" instead of the raw English literals.
-    if (t.estimate) meta.createSpan({ text: tr("meta.est", { dur: formatMinutes(t.estimate) }), cls: "bt-meta-est" });
-    if (t.effectiveDeadline) meta.createSpan({ text: `📅${t.effectiveDeadline}`, cls: "bt-meta-deadline" });
-    if (t.actual) meta.createSpan({ text: tr("meta.act", { dur: formatMinutes(t.actual) }), cls: "bt-meta-actual" });
-    // US-150: hide the `⏳ {date}` badge when the card is rendered in a
-    // column whose day already implies it. Otherwise (unscheduled pool /
-    // completed view / etc.) the badge stays — date isn't implied by
-    // position there, and the user needs to see when it was scheduled.
-    if (t.effectiveScheduled && t.effectiveScheduled !== contextDate) {
-      meta.createSpan({ text: `⏳${t.effectiveScheduled}`, cls: "bt-meta-sched" });
-    }
-    const path = meta.createSpan({ text: compactPath(t.path), cls: "bt-meta-path" });
-    path.title = t.path;
-
-    // Children expansion — uses the EffectiveTask tree's renderParentId
-    // to determine which children render inline under this card.
-    const effectiveTasksForChildren = this.getEffectiveTasks();
-    const children = effectiveTasksForChildren.filter((e) => e.renderParentId === t.id);
-    if (children.length > 0) {
-      const expander = card.createDiv({ cls: "bt-card-children" });
-      for (const c of children) this.renderSubcard(expander, c, t.effectiveScheduled);
-    }
-
-    this.wireCardEvents(card, t);
-    // Mobile gestures still need the pointer controller; source/context
-    // editing is now the single-click source shell on every platform.
-    if (isMobileMode()) {
-      // Unified mobile gesture controller (UX-mobile §13 #6): long-press,
-      // scroll cancellation, and swipe share one state machine.
-      //   US-506: hold N ms still → openMobileTaskDetailSheet (same grouped
-      //           sheet a tap opens; long-press is just a second way in, so
-      //           there is no cryptic flat duplicate action menu anymore).
-      //   US-507: no mobile drag/drop; movement routes to scroll/swipe.
-      //   US-508: swipe ≥ 50% left → done; ≥ 50% right → drop. Visual
-      //           feedback appears only after crossing the half-card threshold.
-      //   US-510: swipe is opt-out via settings (platform-conditional UI).
-      // see USER_STORIES.md
-      const settings = this.plugin.settings;
-      attachCardGestures(card, {
-        longPressMs: settings.mobileLongPressMs,
-        moveThresholdPx: 4,
-        swipeThresholdRatio: 0.5,
-        onLongPress: () => this.openMobileTaskDetailSheet(t),
-        onSwipeProgress: (el, direction, progress) => {
-          if (direction === null || progress < 1) {
-            delete el.dataset.swipeReady;
-            delete el.dataset.swipeDirection;
-            delete el.dataset.swipeLabel;
-            return;
-          }
-          el.dataset.swipeReady = "true";
-          el.dataset.swipeDirection = direction;
-          el.dataset.swipeLabel = direction === "left" ? tr("sheet.done") : tr("sheet.drop");
-        },
-        // Per US-510, swipe is opt-out via settings. When disabled the
-        // gesture controller still parses left/right but never commits.
-        onSwipeLeft: settings.mobileSwipeEnabled
-          ? () => { void this.swipeAction(t, "done"); }
-          : undefined,
-        onSwipeRight: settings.mobileSwipeEnabled
-          ? () => { void this.swipeAction(t, "drop"); }
-          : undefined,
-      });
-    }
-  }
-
-  /**
-   * US-508: commit a swipe action. Pushes the resulting byte-level diff to
-   * the undo stack so the user can recover via the long-press menu (M-3
-   * step 3 will surface an explicit undo button there). Notice toast is
-   * 1s — short enough not to block, long enough to register what happened.
-   */
-  private async swipeAction(t: ParsedTask, kind: "done" | "drop"): Promise<void> {
-    try {
-      if (kind === "done") {
-        const r = await this.api.done(t.id);
-        if (!r.unchanged) {
-          this.undoStack.push({
-            label: "swipe done",
-            ops: [{ path: t.path, line: t.line, before: [r.before], after: [r.after] }],
-          });
-        }
-      } else {
-        const r = await this.api.drop(t.id);
-        if (!r.unchanged) {
-          // fix-m4-abandon-undo-cascade: record one UndoOp per affected
-          // line (parent + cascaded children) so undo restores the
-          // entire cascade atomically.
-          const ops = (r.results ?? []).map((d) => ({
-            path: d.path,
-            line: d.line,
-            before: [d.before],
-            after: [d.after],
-          }));
-          this.undoStack.push({ label: "swipe drop", ops });
-        }
-      }
-      new Notice(kind === "done" ? "✓ Done" : tr("trash.dropped"), 1000);
-    } catch (err) {
-      new Notice(tr("notice.error", { msg: (err as Error).message }), 4000);
-    }
-    this.scheduleRefresh();
-  }
-
-  // Renders a subcard + its own children recursively. The nested
-  // `.bt-card-children` block is a sibling of the subcard so each level
-  // inherits the 22px margin-left from CSS, producing a staircase indent.
-  //
-  // No `parent` parameter: cross-day subtasks are surfaced as top-level
-  // cards on their own day (US-148), so by the time we reach this
-  // function the subtask either rides with its parent's `⏳` or has none
-  // — no `parent` comparison needed.
-  //
-  // US-142: subcards render recursively (this fn calls itself for each
-  // grandchild that's still in scope), so nested subtasks display all
-  // levels under their visible parent on desktop.
-  // US-149: subtask `⏳` badge rules — child sharing parent's date never
-  // shows a badge here (parent's column already implies it); cross-day
-  // children are filtered out before reaching this function (US-148).
-  // US-505: on mobile, deeper-than-1-level subtrees collapse to a `+N`
-  // chip that opens a bottom sheet (see Platform.isMobile branch below)
-  // rather than rendering inline — keeps card height bounded on phones.
-  //
-  // Task #36: `effectiveScheduled` is the date inherited from the
-  // visible card chain — top card's `⏳` for direct children, propagated
-  // through subcards that don't carry their own `⏳`. The recursive
-  // grandchild filter compares against this inherited value, so a
-  // grandchild whose `⏳` matches the TOP card still renders even if
-  // the middle subcard has no `⏳` of its own.
-  // see USER_STORIES.md
-  private renderSubcard(
-    container: HTMLElement,
-    c: EffectiveTask,
-    effectiveScheduled: string | null,
-  ) {
-    const subCard = container.createDiv({ cls: "bt-subcard" });
-    subCard.dataset.taskId = c.id;
-    if (this.contentEl.dataset.mobileLayout !== "true") subCard.draggable = true;
-    if (this.state.selectedTaskId === c.id) subCard.addClass("selected");
-
-    const check = subCard.createEl("button", { cls: "bt-sub-check", text: statusIcon(c.effectiveStatus) });
-    check.type = "button";
-    check.addClass(`bt-sub-check-${c.effectiveStatus}`);
-    check.dataset.cardAction = "done";
-    check.title = c.effectiveStatus === "done" ? tr("ctx.markTodo") : tr("ctx.markDone");
-    check.setAttr("aria-label", check.title);
-    const toggleInPlace = (e: Event) => {
-      void (async () => {
-        e.stopPropagation();
-        try {
-          if (c.effectiveStatus === "done") await this.api.undone(c.id);
-          else await this.api.done(c.id);
-          this.scheduleRefresh();
-        } catch (err) {
-          new Notice(tr("notice.error", { msg: (err as Error).message }), 4000);
-          this.scheduleRefresh();
-        }
-      })();
-    };
-    check.addEventListener("click", toggleInPlace);
-
-    const title = subCard.createDiv({ cls: "bt-subcard-title", text: c.title });
-    title.dataset.cardAction = "open";
-    title.title = c.title;
-
-    // (Previous `bt-sub-sched` badge for cross-day subtasks removed —
-    //  US-148 now surfaces such subtasks as standalone top-level cards
-    //  on their own day, so the inline badge can never trigger. Subcards
-    //  reaching this branch always share their parent's `⏳` or have
-    //  none of their own; no badge needed in either case.)
-    if (c.estimate) subCard.createDiv({ cls: "bt-sub-est", text: formatMinutes(c.estimate) });
-    if (c.effectiveStatus === "done") subCard.addClass("done");
-    // task #37: subcards are drag SOURCES but not nest drop targets. The
-    // browser's hit-test lands on the deepest DOM node under the cursor, so
-    // a drop visually aimed at the parent card's body would otherwise nest
-    // under the subcard the cursor happened to be over. Letting the drop
-    // event bubble up to the enclosing `.bt-card` makes the drop land where
-    // the user expects (the parent). To explicitly nest under a subcard the
-    // user can still drop onto its top-level card rendering on its own day
-    // when it has its own ⏳.
-    this.wireCardEvents(subCard, c, { acceptNestDrop: false });
-
-    // Grandchildren — use the EffectiveTask tree's renderParentId to
-    // determine which grandchildren render inline.
-    const effectiveTasksForGrand = this.getEffectiveTasks();
-    const grand = effectiveTasksForGrand.filter((e) => e.renderParentId === c.id);
-    if (grand.length > 0) {
-      if (Platform.isMobile) {
-        // US-505: mobile collapses to 1 level.
-        const total = countDescendants(c, this._taskIndex);
-        const more = subCard.createDiv({ cls: "bt-subcard-more" });
-        more.setText(`+${total}`);
-        more.addEventListener("click", (e) => {
-          e.stopPropagation();
-          this.openSubtreeSheet(c);
-        });
-      } else {
-        const inheritedDown = c.effectiveScheduled ?? effectiveScheduled;
-        const sub = container.createDiv({ cls: "bt-card-children" });
-        for (const g of grand) this.renderSubcard(sub, g, inheritedDown);
-      }
-    }
-  }
-
-  /**
-   * Mobile-only: open a bottom-sheet preview of a subtree. Each descendant
-   * renders as one row, indented by depth. Used by the `+N` chip on
-   * subcards (US-505 second sentence — visual collapse to 1 level, full
-   * tree available on demand).
-   */
-  private openSubtreeSheet(root: ParsedTask): void {
-    // Walk the subtree depth-first, recording each task with its depth
-    // relative to the root. Same-file children only (ARCHITECTURE §1.4).
-    // Cycle guard mirrors `countDescendants` — production data shouldn't
-    // produce cycles, but parser bugs / hand-edited files could, and a
-    // BottomSheet that hangs is worse than one that under-counts.
-    const rows: Array<{ task: ParsedTask; depth: number }> = [];
-    const seen = new Set<number>();
-    const walk = (parent: ParsedTask, depth: number) => {
-      for (const line of parent.childrenLines) {
-        if (seen.has(line)) continue;
-        seen.add(line);
-        const child = this._taskIndex.get(`${parent.path}:L${line + 1}`);
-        if (!child) continue;
-        rows.push({ task: child, depth });
-        walk(child, depth + 1);
-      }
-    };
-    walk(root, 0);
-
-    const sheet = new BottomSheet(this.app, {
-      title: root.title,
-      populate: (el) => {
-        if (rows.length === 0) {
-          el.createDiv({ cls: "bt-sheet-empty", text: tr("sheet.empty") });
-          return;
-        }
-        for (const { task, depth } of rows) {
-          const row = el.createDiv({ cls: "bt-sheet-task" });
-          row.dataset.taskId = task.id;
-          // Indent visually by depth — uses padding-left so the row stays
-          // a normal flex container for the title + meta.
-          row.style.paddingLeft = `${8 + depth * 16}px`;
-          row.createSpan({
-            cls: "bt-sheet-task-title",
-            text: `${statusIcon(task.status)} ${task.title}`,
-          });
-          if (task.scheduled) {
-            row.createSpan({
-              cls: "bt-sheet-task-meta",
-              text: `⏳ ${task.scheduled}`,
-            });
-          }
-          row.addEventListener("click", () => {
-            sheet.close();
-            this.state.selectedTaskId = task.id;
-            this.render();
-          });
-        }
-      },
-    });
-    sheet.open();
-  }
-
-  private wireCardEvents(
-    el: HTMLElement,
-    t: EffectiveTask,
-    opts: { acceptNestDrop?: boolean } = {},
-  ) {
-    const acceptNestDrop = opts.acceptNestDrop ?? true;
-    // Drag source
-    el.addEventListener("dragstart", (e) => {
-      if (!e.dataTransfer) return;
-      e.stopPropagation();
-      e.dataTransfer.setData("text/task-id", t.id);
-      e.dataTransfer.effectAllowed = "move";
-      el.addClass("dragging");
-      // View-wide "a drag is in progress" marker so drop zones (esp. the
-      // abandon target can attract attention without waiting for direct hover.
-      this.contentEl.addClass("dragging-active");
-    });
-    el.addEventListener("dragend", (e) => {
-      e.stopPropagation();
-      el.removeClass("dragging");
-      this.contentEl.removeClass("dragging-active");
-    });
-
-    // Drop target: dropping another card onto this one nests it as a subtask
-    // (works cross-file). stopPropagation prevents the underlying day column
-    // from also receiving the drop and just rescheduling.
-    //
-    // Skipped for subcards (task #37): subcards live inside a parent card's
-    // visible area, so registering them as drop targets would steal drops
-    // aimed at the parent. Letting the event bubble up to the enclosing
-    // `.bt-card` matches the user's visual intent (they see the parent card,
-    // not the inner sub-row, as the drop target).
-    if (acceptNestDrop) {
-      el.addEventListener("dragover", (e) => {
-        const dt = e.dataTransfer;
-        if (!dt || !dt.types.includes("text/task-id")) return;
-        if (el.classList.contains("dragging")) return; // self
-        e.preventDefault();
-        e.stopPropagation();
-        dt.dropEffect = "move";
-        el.addClass("nest-target");
-      });
-      el.addEventListener("dragleave", (e) => {
-        // dragleave fires for child elements as the cursor moves between them;
-        // only clear the class when the cursor truly leaves this card.
-        const related = e.relatedTarget as Node | null;
-        if (related && el.contains(related)) return;
-        el.removeClass("nest-target");
-      });
-      el.addEventListener("drop", (e) => {
-        void (async () => {
-          const dt = e.dataTransfer;
-          if (!dt) return;
-          const droppedId = dt.getData("text/task-id");
-          if (!droppedId || droppedId === t.id) return;
-          e.preventDefault();
-          e.stopPropagation();
-          el.removeClass("nest-target");
-          // Nest writes to one or two files (cross-file). Wait for metadataCache to
-          // reparse them before rendering so the new parent shows the new child.
-          const droppedTask = this.tasks.find((x) => x.id === droppedId);
-          const awaitCachePaths = [t.path];
-          if (droppedTask && droppedTask.path !== t.path) awaitCachePaths.push(droppedTask.path);
-          try {
-            await this.runWithRemoveAnim(droppedId, async () => {
-              const r = await this.api.nest(droppedId, t.id);
-              if (!r.unchanged) {
-                if (r.undoOps && r.undoOps.length > 0) {
-                  this.undoStack.push({
-                    label: `nest under "${t.title.slice(0, 20)}"`,
-                    ops: r.undoOps,
-                  });
-                }
-                new Notice(
-                  tr("notice.nested", {
-                    title: t.title,
-                    where: r.crossFile ? tr("notice.crossFile") : "",
-                  }),
-                );
-              }
-            }, { awaitCachePaths });
-          } catch (err) {
-            new Notice(tr("notice.error", { msg: (err as Error).message }), 6000);
-            this.scheduleRefresh();
-          }
-        })();
-      });
-    }
-
-    // Click → source edit shell. US-168 replaces hover previews and
-    // double-click source jumps with one primary card action. On mobile,
-    // the primary action is a compact task detail sheet; editing source
-    // Markdown is still available there as an explicit action.
-    el.addEventListener("click", (e) => {
-      e.stopPropagation();
-      if (this.contentEl.dataset.mobileLayout === "true") {
-        this.openMobileTaskDetailSheet(t);
-      } else {
-        void openSourceEditShell(this, t);
-      }
-    });
-
-    // Right-click context menu
-    el.addEventListener("contextmenu", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      openContextMenu(this, e, t);
-    });
   }
 
   private makeDropZone(el: HTMLElement, targetDate: string | null) {
@@ -3448,11 +3003,4 @@ export class TaskCenterView extends ItemView {
     return this.tasks.find((t) => t.id === this.state.selectedTaskId) ?? null;
   }
 
-}
-
-function statusIcon(s: string): string {
-  if (s === "done") return "✔";
-  if (s === "dropped") return "✕";
-  if (s === "in_progress") return "◐";
-  return "○";
 }
