@@ -809,20 +809,16 @@ export class TaskCenterView extends ItemView {
     const bar = parent.createDiv({ cls: "bt-tabbar" });
     const tabs = this.visibleQueryTabs();
     const mobileLayout = this.contentEl.dataset.mobileLayout === "true";
-    // VAL-GUI-005 / US-109q: overflow tabs go into a "更多" button while keeping
-    // order, badges, default behavior, and keyboard shortcuts. Two regimes:
-    //  - Mobile: the strip pans horizontally, capped at MAX_VISIBLE_TABS before
-    //    the "更多" bottom sheet (US-117b / US-510 — no desktop affordances).
+    // VAL-GUI-005 / US-109q / US-117a: overflow handling differs by regime:
+    //  - Mobile: the strip pans horizontally and shows ALL tabs — no "更多"
+    //    overflow button (US-117a: one compact strip that scrolls; no desktop
+    //    affordances). CSS gives `.bt-tabbar` `overflow-x: auto` on mobile.
     //  - Desktop: width-driven. `fittedVisibleTabCount` (measured after layout,
     //    see scheduleTabOverflowMeasure) caps how many leading tabs fit so the
-    //    bar never scrolls horizontally; null means "render all then measure".
-    // Desktop has no fixed tab ceiling: width decides how many show, the rest
-    // go into "更多" (tabs 10+ simply have no ⌃1–9 shortcut). Mobile pans the
-    // strip horizontally, still capped at MAX_VISIBLE_TABS before the sheet.
+    //    bar never scrolls horizontally; the rest go into the "更多" button.
     // ⌃1–⌃9 map to the first 9 of `visibleQueryTabs()` regardless of the split.
-    const MAX_VISIBLE_TABS = 9;
     const visibleCount = mobileLayout
-      ? Math.min(tabs.length, MAX_VISIBLE_TABS)
+      ? tabs.length
       : (this.fittedVisibleTabCount ?? tabs.length);
     const visibleTabs = tabs.slice(0, visibleCount);
     const overflowTabs = tabs.slice(visibleCount);
