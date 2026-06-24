@@ -6,6 +6,9 @@
 /* src/styles/base.css */
 .task-center-modal .modal-title,
 .task-center-bottom-sheet .modal-title {
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0;
   padding-right: 2.5rem;
 }
 .task-center-view {

@@ -1,9 +1,14 @@
 /* Task Center plugin styles */
 
-/* All task-center modals use Obsidian's titleEl. Give it padding-right so the
- * text never runs under the absolutely-positioned .modal-close-button. */
+/* All task-center modals use Obsidian's titleEl.
+ * Force full-width + clear auto-margin (bottom-sheet flex column has
+ * align-items:flex-end which otherwise shrinks+right-aligns the title).
+ * padding-right reserves space for the absolutely-positioned close button. */
 .task-center-modal .modal-title,
 .task-center-bottom-sheet .modal-title {
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0;
   padding-right: 2.5rem;
 }
 
