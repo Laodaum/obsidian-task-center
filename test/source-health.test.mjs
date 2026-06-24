@@ -69,7 +69,9 @@ test("US-602 quality gate rejects duplicate unscheduled CSS selectors", async ()
 });
 
 test("US-102/US-305: month mini cards expose distinct todo/done/dropped states", async () => {
-  const source = await read("src/view.ts");
+  // Month rendering lives in the extracted calendar render module
+  // (ARCHITECTURE §7.14 step9); the mini-card status contract is asserted there.
+  const source = await read("src/view/render/calendar.ts");
   const css = await read("styles.css");
 
   assert.match(
