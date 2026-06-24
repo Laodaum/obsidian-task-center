@@ -77,6 +77,8 @@ import type {
   GridAreaConfig,
   LayoutNode,
   ListAreaConfig,
+  WeekAreaConfig,
+  MonthAreaConfig,
   UnknownAreaConfig,
   QueryPreset,
   QueryPresetFilters,
@@ -168,6 +170,23 @@ class SwitchTabConfirmModal extends Modal {
 
   onClose() { this.contentEl.empty(); }
 }
+
+// Per-area render dispatch as a total registry, mirroring query/projection.ts
+// AREA_PROJECTORS and areas.ts HANDLERS. Record<AreaType,…> keeps the renderer
+// set exhaustive: a new AreaType with no renderer fails to compile. list/grid
+// share renderListArea (grid is the multi-column CSS variant), same as
+// AREA_PROJECTORS routes both to projectListArea. The `as XxxConfig` casts
+// mirror AREA_PROJECTORS — the union is already narrowed by node.type at the
+// call site. (REFACTOR.md §4.7: only this render-registry core was adopted.)
+type AreaRenderer = (v: TaskCenterView, el: HTMLElement, area: AreaConfig, areaIndex: number) => void;
+const AREA_RENDERERS: Record<AreaType | "unknown", AreaRenderer> = {
+  list: (v, el, area, i) => v.renderListArea(el, area as ListAreaConfig, false, i),
+  grid: (v, el, area, i) => v.renderListArea(el, area as GridAreaConfig, true, i),
+  week: (v, el, area, i) => renderWeek(v, el, area as WeekAreaConfig, i),
+  month: (v, el, area, i) => renderMonth(v, el, area as MonthAreaConfig, i),
+  drop: (v, el) => v.renderTrashZone(el),
+  unknown: (v, el, area) => v.renderUnknownArea(el, area as UnknownAreaConfig),
+};
 
 export class TaskCenterView extends ItemView {
   plugin: TaskCenterPlugin;
@@ -1234,7 +1253,7 @@ export class TaskCenterView extends ItemView {
   // UI intentionally avoids trash/delete wording. Mobile does not render an
   // abandon drop zone.
   // see USER_STORIES.md
-  private renderTrashZone(parent: HTMLElement) {
+  renderTrashZone(parent: HTMLElement) {
     // US-109p9: drop zone has no query (no title / 编辑 entry), but reserves an
     // equal-height empty head so it lines up with sibling areas that do.
     parent.addClass("bt-has-head");
@@ -1318,7 +1337,7 @@ export class TaskCenterView extends ItemView {
    * the old `matrix`). Shows a "未知类型" notice plus the raw node JSON so the
    * user can see and fix what they wrote, instead of silently dropping it.
    */
-  private renderUnknownArea(parent: HTMLElement, area: UnknownAreaConfig): void {
+  renderUnknownArea(parent: HTMLElement, area: UnknownAreaConfig): void {
     const wrapper = parent.createDiv({ cls: "bt-unknown-area" });
     wrapper.dataset.view = "unknown";
     wrapper.createDiv({
@@ -1373,26 +1392,14 @@ export class TaskCenterView extends ItemView {
     if (node.weight) areaEl.style.flexGrow = String(node.weight);
     // DFS index aligned with collectAreas order; increment for every area node.
     const areaIndex = this.renderAreaCounter++;
-    switch (node.type) {
-      case "list":
-        this.renderListArea(areaEl, node, false, areaIndex);
-        break;
-      case "grid":
-        this.renderListArea(areaEl, node, true, areaIndex);
-        break;
-      case "week":
-        renderWeek(this, areaEl, node, areaIndex);
-        break;
-      case "month":
-        renderMonth(this, areaEl, node, areaIndex);
-        break;
-      case "drop":
-        this.renderTrashZone(areaEl);
-        break;
-      case "unknown":
-        this.renderUnknownArea(areaEl, node);
-        break;
-    }
+    // Render dispatch via the AREA_RENDERERS total registry (mirrors
+    // query/projection.ts AREA_PROJECTORS and areas.ts HANDLERS) instead of a
+    // switch(node.type): adding an AreaType without a renderer now fails to
+    // compile, where the former switch silently skipped it. (REFACTOR.md §4.7 —
+    // only this render-registry core was adopted; the AreaKind / AreaView /
+    // AreaSettingsSpec framework was reviewed and rejected as over-engineering
+    // for a single-host plugin, see ARCHITECTURE §7.13/§7.14.)
+    AREA_RENDERERS[node.type](this, areaEl, node, areaIndex);
   }
 
   // list area：today / TODO / completed / unscheduled / 周月 tray 都走这里。
@@ -1416,7 +1423,7 @@ export class TaskCenterView extends ItemView {
     return fallback ?? "";
   }
 
-  private renderListArea(
+  renderListArea(
     parent: HTMLElement,
     area: ListAreaConfig | GridAreaConfig,
     grid: boolean,
