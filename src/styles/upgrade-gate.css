@@ -1,0 +1,781 @@
+/* US-415: full-view upgrade gate — covers the entire view, no board behind it */
+.task-center-view .tc-migration-gate {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  overflow-y: auto;
+  background: var(--background-primary);
+  z-index: 20;
+}
+
+.task-center-view .tc-migration-card {
+  max-width: 720px;
+  width: 100%;
+  margin: auto;
+}
+
+/* ── Header ── */
+.task-center-view .tc-migration-badge {
+  display: inline-block;
+  margin-bottom: 12px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-semibold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-on-accent);
+  background: var(--interactive-accent);
+}
+
+.task-center-view .tc-migration-title {
+  margin: 0 0 8px;
+  font-size: 1.7em;
+  line-height: 1.2;
+  font-weight: var(--font-bold);
+}
+
+.task-center-view .tc-migration-lead {
+  margin: 0 0 24px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+
+.task-center-view .tc-migration-subhead {
+  margin: 0 0 12px;
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+/* ── Bento grid of features ── */
+.task-center-view .tc-migration-bento {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.task-center-view .tc-bento-cell {
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-l, 12px);
+  background: var(--background-secondary);
+  transition: border-color 120ms ease, transform 120ms ease;
+}
+
+.task-center-view .tc-bento-cell:hover {
+  border-color: var(--interactive-accent);
+  transform: translateY(-1px);
+}
+
+/* Column spans give the bento its rhythm: 1 (square) / 2 / 3 (banner). */
+.task-center-view .tc-bento-cell--span2 {
+  grid-column: span 2;
+}
+.task-center-view .tc-bento-cell--span3 {
+  grid-column: span 3;
+}
+
+/* Wide tiles (span ≥ 2) lay out horizontally — art left, text right — so they
+   read as banners instead of half-empty boxes. */
+.task-center-view .tc-bento-cell--wide {
+  flex-direction: row;
+  align-items: center;
+  gap: 18px;
+}
+.task-center-view .tc-bento-cell--wide .tc-bento-art {
+  flex: 0 0 clamp(150px, 32%, 280px);
+  height: 104px;
+  margin-bottom: 0;
+}
+.task-center-view .tc-bento-text {
+  min-width: 0;
+}
+.task-center-view .tc-bento-cell--wide .tc-bento-text {
+  flex: 1 1 auto;
+}
+
+.task-center-view .tc-bento-art {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 96px;
+  margin-bottom: 14px;
+  border-radius: var(--radius-m);
+  border: 1px solid var(--background-modifier-border);
+  background-color: var(--background-primary);
+  /* Faint dot grid — kept for texture but dimmed so the art reads as finished,
+     not as a wireframe placeholder. */
+  background-image: radial-gradient(
+    circle at 1px 1px,
+    color-mix(in srgb, var(--background-modifier-border) 35%, transparent) 0.5px,
+    transparent 0
+  );
+  background-size: 16px 16px;
+  overflow: hidden;
+}
+
+.task-center-view .tc-bento-cell--layout .tc-bento-art {
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 16px;
+}
+
+.task-center-view .tc-bento-title {
+  margin: 0 0 4px;
+  font-size: var(--font-ui-medium);
+  font-weight: var(--font-semibold);
+}
+
+.task-center-view .tc-bento-desc {
+  margin: 0;
+  font-size: var(--font-ui-small);
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+/* Feature 1 illustration: a mini board of composable area cards */
+.task-center-view .tc-art-area {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 5px;
+  padding: 7px 9px;
+  border-radius: 6px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+}
+
+.task-center-view .tc-art-area.is-wide {
+  width: 100%;
+  border-color: var(--interactive-accent);
+}
+
+.task-center-view .tc-art-area-bar {
+  width: 40%;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--interactive-accent);
+  opacity: 0.85;
+}
+
+.task-center-view .tc-art-area.is-wide .tc-art-area-bar {
+  width: 28%;
+}
+
+.task-center-view .tc-art-area-line {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--text-faint);
+  opacity: 0.5;
+}
+
+.task-center-view .tc-art-row {
+  display: flex;
+  gap: 6px;
+  width: 100%;
+}
+
+.task-center-view .tc-art-row .tc-art-area {
+  flex: 1;
+}
+
+/* Feature 2 illustration: GUI ⇄ { } ⇄ CLI */
+.task-center-view .tc-art-chip {
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-semibold);
+  color: var(--text-normal);
+  background: var(--background-modifier-hover);
+  border: 1px solid var(--background-modifier-border);
+}
+
+.task-center-view .tc-art-chip.is-dsl {
+  font-family: var(--font-monospace);
+  color: var(--text-on-accent);
+  background: var(--interactive-accent);
+  border-color: transparent;
+}
+
+.task-center-view .tc-art-link {
+  width: 14px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--text-faint);
+}
+
+/* Feature 3 illustration: built-in tab duplicated into a preset */
+.task-center-view .tc-art-tab {
+  width: 56px;
+  height: 40px;
+  border-radius: 8px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-modifier-hover);
+}
+
+.task-center-view .tc-art-tab.is-back {
+  transform: translate(8px, 8px) rotate(-6deg);
+  opacity: 0.5;
+}
+
+.task-center-view .tc-art-tab.is-front {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: -36px;
+  border-color: var(--interactive-accent);
+  background: var(--background-primary);
+}
+
+.task-center-view .tc-art-plus {
+  font-size: 1.3em;
+  font-weight: var(--font-bold);
+  line-height: 1;
+  color: var(--interactive-accent);
+}
+
+/* Feature 4 illustration: a refreshed UI window with a sparkle */
+.task-center-view .tc-bento-art[data-art="ui"] {
+  position: relative;
+}
+
+.task-center-view .tc-art-window {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 72px;
+  padding: 7px;
+  border-radius: 8px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-modifier-hover);
+}
+
+.task-center-view .tc-art-winbar {
+  display: flex;
+  gap: 4px;
+}
+
+.task-center-view .tc-art-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--text-faint);
+}
+
+.task-center-view .tc-art-winrow {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.task-center-view .tc-art-fill {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--interactive-accent);
+  opacity: 0.85;
+}
+
+.task-center-view .tc-art-fill.is-muted {
+  width: 60%;
+  background: var(--text-faint);
+  opacity: 0.6;
+}
+
+.task-center-view .tc-art-sparkle {
+  position: absolute;
+  top: 22px;
+  right: 30%;
+  font-size: 1.1em;
+  color: var(--interactive-accent);
+}
+
+/* area-edit art: before → after — scattered icons collapse into one edit panel */
+.task-center-view .tc-bento-art[data-art="toolbar"] {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+}
+.task-center-view .tc-art-ba {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1 1 0;
+  min-width: 0;
+}
+.task-center-view .tc-art-ba.is-before {
+  opacity: 0.7;
+}
+.task-center-view .tc-art-ba-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.task-center-view .tc-art-ba-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  color: var(--text-faint);
+}
+.task-center-view .tc-art-ba-icon svg {
+  width: 11px;
+  height: 11px;
+}
+.task-center-view .tc-art-ba-line {
+  height: 5px;
+  border-radius: 3px;
+  background: var(--background-modifier-border);
+}
+.task-center-view .tc-art-ba-line.is-grow {
+  flex: 1 1 auto;
+}
+.task-center-view .tc-art-ba-arrow {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  font-weight: var(--font-bold);
+}
+.task-center-view .tc-art-editbtn {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 18px;
+  border-radius: 5px;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+.task-center-view .tc-art-editbtn svg {
+  width: 12px;
+  height: 12px;
+}
+.task-center-view .tc-art-ba-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 5px;
+  border-radius: 6px;
+  border: 1px solid var(--interactive-accent);
+  background: var(--background-secondary);
+}
+.task-center-view .tc-art-ba-seg {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--text-faint);
+  opacity: 0.5;
+}
+.task-center-view .tc-art-ba-seg:first-child {
+  width: 70%;
+}
+.task-center-view .tc-art-ba-seg:last-child {
+  width: 50%;
+}
+
+/* done art: a list of task rows, the top one checked + dimmed (stays in place) */
+.task-center-view .tc-bento-art[data-art="done"] {
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 22px;
+}
+.task-center-view .tc-art-task {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 9px;
+  border-radius: 6px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+}
+.task-center-view .tc-art-task.is-done {
+  opacity: 0.6;
+  border-color: var(--interactive-accent);
+}
+.task-center-view .tc-art-task-check {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1.5px solid var(--text-faint);
+  color: var(--text-on-accent);
+}
+.task-center-view .tc-art-task.is-done .tc-art-task-check {
+  border-color: transparent;
+  background: var(--interactive-accent);
+}
+.task-center-view .tc-art-task-check svg {
+  width: 10px;
+  height: 10px;
+}
+.task-center-view .tc-art-task-line {
+  flex: 1 1 auto;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--text-faint);
+  opacity: 0.5;
+}
+
+/* ── Migrated views list ── */
+.task-center-view .tc-migration-views {
+  margin-bottom: 24px;
+}
+
+.task-center-view .tc-migration-view-list {
+  list-style: none;
+  margin: 0;
+  padding: 6px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  background: var(--background-secondary);
+}
+
+.task-center-view .tc-migration-view-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: var(--radius-s);
+}
+
+.task-center-view .tc-migration-view-item + .tc-migration-view-item {
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.task-center-view .tc-migration-view-dot {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--interactive-accent);
+}
+
+.task-center-view .tc-migration-view-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-center-view .tc-migration-view-tag {
+  flex: 0 0 auto;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  background: var(--background-modifier-hover);
+}
+
+.task-center-view .tc-migration-view-tag.is-builtin {
+  color: var(--text-accent);
+  background: var(--background-modifier-hover);
+}
+
+.task-center-view .tc-migration-note {
+  margin: 0 0 24px;
+  font-size: var(--font-ui-small);
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+
+/* ── Roadmap ── rendered as bento tiles too (planned = dashed) */
+.task-center-view .tc-migration-roadmap {
+  margin: 0 0 24px;
+}
+.task-center-view .tc-migration-roadmap-bento {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.task-center-view .tc-roadmap-cell {
+  padding: 14px 16px;
+  border: 1px dashed var(--background-modifier-border);
+  border-radius: var(--radius-l, 12px);
+  background: var(--background-secondary);
+  transition: border-color 120ms ease, transform 120ms ease;
+}
+.task-center-view .tc-roadmap-cell:hover {
+  border-color: var(--interactive-accent);
+  transform: translateY(-1px);
+}
+
+/* Roadmap illustration — "planned": dashed + desaturated, quieter than shipped tiles */
+.task-center-view .tc-roadmap-art {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 84px;
+  margin-bottom: 12px;
+  padding: 0 16px;
+  border-radius: var(--radius-m);
+  border: 1px dashed var(--background-modifier-border);
+  background-color: var(--background-primary);
+  background-image: radial-gradient(
+    circle at 1px 1px,
+    color-mix(in srgb, var(--background-modifier-border) 30%, transparent) 0.5px,
+    transparent 0
+  );
+  background-size: 16px 16px;
+  opacity: 0.85;
+}
+
+/* data area: stat tile + mini bar chart + ratio ring */
+.task-center-view .tc-rart-tile {
+  display: flex;
+  border-radius: 6px;
+  border: 1px dashed var(--background-modifier-border);
+  background: var(--background-secondary);
+}
+.task-center-view .tc-rart-stat {
+  flex-direction: column;
+  justify-content: center;
+  gap: 5px;
+  width: 46px;
+  height: 52px;
+  padding: 8px;
+}
+.task-center-view .tc-rart-num {
+  width: 60%;
+  height: 12px;
+  border-radius: 3px;
+  background: var(--text-muted);
+  opacity: 0.55;
+}
+.task-center-view .tc-rart-cap {
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--text-faint);
+  opacity: 0.5;
+}
+.task-center-view .tc-rart-chart {
+  align-items: flex-end;
+  gap: 5px;
+  height: 52px;
+  padding: 8px;
+}
+.task-center-view .tc-rart-bar {
+  width: 6px;
+  border-radius: 2px 2px 0 0;
+  background: var(--text-faint);
+  opacity: 0.6;
+}
+.task-center-view .tc-rart-bar:nth-child(1) { height: 40%; }
+.task-center-view .tc-rart-bar:nth-child(2) { height: 72%; }
+.task-center-view .tc-rart-bar:nth-child(3) { height: 52%; }
+.task-center-view .tc-rart-bar:nth-child(4) { height: 88%; }
+.task-center-view .tc-rart-ring {
+  width: 36px;
+  height: 36px;
+  border: 4px solid var(--background-modifier-border);
+  border-top-color: var(--text-muted);
+  border-radius: 50%;
+}
+
+/* graphical layout editing: nested blocks with a drag handle */
+.task-center-view .tc-rart-node {
+  border-radius: 6px;
+  border: 1px dashed var(--background-modifier-border);
+  background: var(--background-secondary);
+}
+.task-center-view .tc-rart-node.is-outer {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 120px;
+  padding: 8px;
+}
+.task-center-view .tc-rart-handle {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-faint);
+}
+.task-center-view .tc-rart-handle svg {
+  width: 12px;
+  height: 12px;
+}
+.task-center-view .tc-rart-node-row {
+  display: flex;
+  gap: 6px;
+}
+.task-center-view .tc-rart-node.is-inner {
+  flex: 1;
+  height: 18px;
+}
+
+.task-center-view .tc-roadmap-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.task-center-view .tc-roadmap-title {
+  font-weight: var(--font-semibold);
+}
+.task-center-view .tc-roadmap-tag {
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  background: var(--background-modifier-hover);
+  border: 1px dashed var(--background-modifier-border);
+}
+.task-center-view .tc-roadmap-desc {
+  margin: 0;
+  font-size: var(--font-ui-small);
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+/* Scroll-down hint so the confirm button (below the tall bento) is findable. */
+.task-center-view .tc-migration-scrollhint {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 22px;
+  padding: 3px 12px;
+  border-radius: 999px;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  background: var(--background-modifier-hover);
+}
+.task-center-view .tc-migration-scrollhint-arrow {
+  font-weight: var(--font-bold);
+  color: var(--interactive-accent);
+  animation: tc-scrollhint-bounce 1.4s ease-in-out infinite;
+}
+@keyframes tc-scrollhint-bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(2px); }
+}
+
+/* AI-skill heads-up callout — accent-tinted so the DSL-changed warning stands out */
+.task-center-view .tc-migration-aitip {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin: 0 0 20px;
+  padding: 14px 16px;
+  border: 1px solid var(--interactive-accent);
+  border-radius: var(--radius-l, 12px);
+  background: color-mix(in srgb, var(--interactive-accent) 8%, var(--background-secondary));
+}
+.task-center-view .tc-migration-aitip-icon {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  color: var(--text-on-accent);
+  background: var(--interactive-accent);
+}
+.task-center-view .tc-migration-aitip-icon svg {
+  width: 16px;
+  height: 16px;
+}
+.task-center-view .tc-migration-aitip-body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.task-center-view .tc-migration-aitip-title {
+  display: block;
+  margin-bottom: 4px;
+  font-weight: var(--font-semibold);
+}
+.task-center-view .tc-migration-aitip-desc {
+  margin: 0 0 10px;
+  font-size: var(--font-ui-small);
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+.task-center-view .tc-migration-aitip-code {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: var(--radius-s);
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-smaller);
+  color: var(--text-normal);
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  user-select: all;
+}
+
+.task-center-view .tc-migration-actions {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 28px;
+}
+
+.task-center-view .tc-migration-actions .mod-cta {
+  min-width: 240px;
+  padding: 10px 28px;
+  font-size: var(--font-ui-medium);
+  font-weight: var(--font-semibold);
+}
+
+@media (max-width: 600px) {
+  /* Narrow: single column; every tile spans 1 and stacks vertically again. */
+  .task-center-view .tc-migration-bento,
+  .task-center-view .tc-migration-roadmap-bento {
+    grid-template-columns: 1fr;
+  }
+  .task-center-view .tc-bento-cell--span2,
+  .task-center-view .tc-bento-cell--span3 {
+    grid-column: auto;
+  }
+  .task-center-view .tc-bento-cell--wide {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+  }
+  .task-center-view .tc-bento-cell--wide .tc-bento-art {
+    flex: none;
+    height: 96px;
+    margin-bottom: 14px;
+  }
+  .task-center-view .tc-migration-actions .mod-cta {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
+@media (max-width: 640px) {
+  .task-center-view .bt-date-popover {
+    grid-template-columns: 1fr;
+    width: min(340px, calc(100vw - 32px));
+  }
+  .task-center-view .bt-date-presets {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding-right: 0;
+    padding-bottom: 10px;
+    border-right: 0;
+    border-bottom: 1px solid var(--background-modifier-border);
+  }
+  .task-center-view .bt-date-presets .bt-date-section-title {
+    grid-column: 1 / -1;
+  }
+  .task-center-view .bt-date-range-grid {
+    grid-template-columns: 1fr;
+  }
+}
+

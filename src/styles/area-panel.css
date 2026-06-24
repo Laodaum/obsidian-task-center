@@ -1,0 +1,416 @@
+/* ──────────────────────────────────────────────────────────────────────────
+   US-109p10 / US-109p11: two-panel view editor (Tab panel / Area panel) +
+   visual layout tree. Scoped to the bottom-sheet shell (desktop & mobile both
+   render the editor inside .task-center-bottom-sheet).
+   ────────────────────────────────────────────────────────────────────────── */
+
+/* User feedback: no cards — flat sections with consistent vertical rhythm, the
+   same on the Tab panel and the Area panel. Sections are separated by spacing
+   (the sheet's flex gap) + a faint top divider, not boxes. */
+.task-center-bottom-sheet .bt-query-controls-sheet .bt-query-editor-section,
+.task-center-bottom-sheet .bt-mobile-query-sheet .bt-query-editor-section {
+  gap: 10px;
+  padding: 0;
+  background: transparent;
+  border: none;
+}
+.task-center-bottom-sheet .bt-query-editor-panel > .bt-query-editor-section {
+  padding: 0;
+}
+
+/* Top toolbar row (Tab panel): tab-level actions as a compact flat row with a
+   divider below — like the board toolbar, not a card. */
+.task-center-bottom-sheet .bt-query-editor-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-bottom: 12px;
+  margin-bottom: 2px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+/* Root-level add-area button under the layout tree. */
+.task-center-bottom-sheet .bt-layout-add--root {
+  margin-top: 8px;
+}
+
+/* ── Breadcrumb (Area panel header) ── */
+.task-center-bottom-sheet .bt-query-editor-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0 12px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  font-size: 13px;
+  color: var(--text-muted);
+  min-width: 0;
+}
+.task-center-bottom-sheet .bt-query-editor-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 4px 8px;
+  border: none;
+  border-radius: var(--radius-s);
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+  font-size: 13px;
+  font-weight: var(--font-semibold);
+  cursor: pointer;
+  flex: 0 0 auto;
+  max-width: 50%;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.task-center-bottom-sheet .bt-query-editor-back:hover {
+  background: var(--background-modifier-active-hover);
+}
+.task-center-bottom-sheet .bt-query-editor-back-icon { display: inline-flex; }
+.task-center-bottom-sheet .bt-query-editor-back-icon svg { width: 15px; height: 15px; }
+.task-center-bottom-sheet .bt-query-editor-breadcrumb-sep { color: var(--text-faint); flex: 0 0 auto; }
+.task-center-bottom-sheet .bt-query-editor-breadcrumb-area {
+  color: var(--text-normal);
+  font-weight: var(--font-semibold);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+/* ── Layout tree (布局) ── */
+.task-center-bottom-sheet .bt-layout-tree {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.task-center-bottom-sheet .bt-layout-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px dashed var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  background: var(--background-primary);
+  min-width: 0;
+}
+.task-center-bottom-sheet .bt-layout-stack-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.task-center-bottom-sheet .bt-layout-stack-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.task-center-bottom-sheet .bt-layout-stack-dir {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.task-center-bottom-sheet .bt-layout-stack-dir:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+.task-center-bottom-sheet .bt-layout-stack-dir svg { width: 15px; height: 15px; }
+.task-center-bottom-sheet .bt-layout-stack-children {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+}
+.task-center-bottom-sheet .bt-layout-stack-col > .bt-layout-stack-children { flex-direction: column; }
+.task-center-bottom-sheet .bt-layout-stack-row > .bt-layout-stack-children { flex-direction: row; }
+.task-center-bottom-sheet .bt-layout-stack-children > * { flex: 1 1 0; min-width: 0; }
+
+/* Area row */
+.task-center-bottom-sheet .bt-layout-area {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: var(--radius-s);
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  min-width: 0;
+}
+.task-center-bottom-sheet .bt-layout-area:hover { background: var(--background-modifier-hover); }
+.task-center-bottom-sheet .bt-layout-area-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--text-muted);
+}
+.task-center-bottom-sheet .bt-layout-area-icon svg { width: 16px; height: 16px; }
+.task-center-bottom-sheet .bt-layout-area-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.task-center-bottom-sheet .bt-layout-area-title {
+  font-weight: var(--font-semibold);
+  color: var(--text-normal);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.task-center-bottom-sheet .bt-layout-area-when {
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.task-center-bottom-sheet .bt-layout-area-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+}
+.task-center-bottom-sheet .bt-layout-area-edit,
+.task-center-bottom-sheet .bt-layout-area-more {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.task-center-bottom-sheet .bt-layout-area-edit:hover,
+.task-center-bottom-sheet .bt-layout-area-more:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+.task-center-bottom-sheet .bt-layout-area-edit svg,
+.task-center-bottom-sheet .bt-layout-area-more svg { width: 16px; height: 16px; }
+
+/* Add-area button (per container) */
+.task-center-bottom-sheet .bt-layout-add {
+  align-self: flex-start;
+  margin-top: 2px;
+  padding: 5px 12px;
+  border: 1px dashed var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+.task-center-bottom-sheet .bt-layout-add:hover {
+  color: var(--text-normal);
+  border-color: var(--interactive-accent);
+}
+
+/* ── Base-set hint (Area panel footer) ── */
+.task-center-bottom-sheet .bt-query-editor-baseset-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  padding: 8px 12px;
+  border-radius: var(--radius-s);
+  background: var(--background-secondary);
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.task-center-bottom-sheet .bt-query-editor-baseset-text { min-width: 0; }
+.task-center-bottom-sheet .bt-query-editor-baseset-link {
+  padding: 2px 8px;
+  border: none;
+  border-radius: var(--radius-s);
+  background: var(--background-modifier-hover);
+  color: var(--text-accent);
+  font-size: 12px;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+.task-center-bottom-sheet .bt-query-editor-baseset-link:hover { color: var(--text-accent-hover); }
+
+/* Area-panel type buttons wrap nicely (5 options now: list/grid/week/month/drop) */
+.task-center-bottom-sheet .bt-query-editor-panel .bt-query-editor-view-row {
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* ── US-109z2: area filter — searchable tag list + per-field date range ── */
+.task-center-bottom-sheet .bt-area-date-or {
+  color: var(--text-faint);
+  font-size: 11px;
+  margin-top: 2px;
+}
+.task-center-bottom-sheet .bt-area-date-range {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+.task-center-bottom-sheet .bt-area-date-input {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 4px 8px;
+  border-radius: var(--radius-s);
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  color: var(--text-normal);
+  font-size: 12px;
+}
+.task-center-bottom-sheet .bt-area-date-sep {
+  color: var(--text-muted);
+  font-size: 12px;
+  flex: 0 0 auto;
+}
+.task-center-bottom-sheet .bt-area-tag-search {
+  width: 100%;
+  margin: 6px 0;
+  padding: 6px 10px;
+  border-radius: var(--radius-s);
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  color: var(--text-normal);
+  font-size: 13px;
+}
+.task-center-bottom-sheet .bt-area-tag-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 240px;
+  overflow-y: auto;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  padding: 4px;
+}
+.task-center-bottom-sheet .bt-area-tag-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 8px;
+  border: none;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text-normal);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.task-center-bottom-sheet .bt-area-tag-row:hover { background: var(--background-modifier-hover); }
+.task-center-bottom-sheet .bt-area-tag-row.active { background: var(--background-modifier-active-hover); }
+.task-center-bottom-sheet .bt-area-tag-check {
+  flex: 0 0 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--interactive-accent);
+}
+.task-center-bottom-sheet .bt-area-tag-check svg { width: 14px; height: 14px; }
+.task-center-bottom-sheet .bt-area-tag-row-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.task-center-bottom-sheet .bt-area-tag-row-count {
+  flex: 0 0 auto;
+  color: var(--text-faint);
+  font-size: 11px;
+}
+.task-center-bottom-sheet .bt-area-tag-more {
+  padding: 6px 8px;
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+/* US-109z2: "add date filter" — addable secondary time fields shown inline as
+   chips (not a dropdown), so the user sees what's available. */
+.task-center-bottom-sheet .bt-area-add-field-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+.task-center-bottom-sheet .bt-area-add-field-label {
+  color: var(--text-faint);
+  font-size: 12px;
+  margin-right: 2px;
+}
+.task-center-bottom-sheet .bt-area-add-field {
+  padding: 4px 10px;
+  border: 1px dashed var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+.task-center-bottom-sheet .bt-area-add-field:hover {
+  color: var(--text-normal);
+  border-color: var(--interactive-accent);
+}
+
+/* US-109z2: tag filter — a click-to-open select, so a big tag set doesn't make
+   the panel endless. Trigger shows the selection summary; popover holds the
+   searchable list. */
+.task-center-bottom-sheet .bt-area-tag-trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  background: var(--background-primary);
+  color: var(--text-normal);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.task-center-bottom-sheet .bt-area-tag-trigger:hover { background: var(--background-modifier-hover); }
+.task-center-bottom-sheet .bt-area-tag-trigger-summary {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.task-center-bottom-sheet .bt-area-tag-trigger-summary.is-empty { color: var(--text-muted); }
+.task-center-bottom-sheet .bt-area-tag-caret { flex: 0 0 auto; display: inline-flex; color: var(--text-muted); }
+.task-center-bottom-sheet .bt-area-tag-caret svg { width: 14px; height: 14px; }
+.task-center-bottom-sheet .bt-area-tag-popover {
+  margin-top: 6px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  padding: 6px;
+  background: var(--background-primary);
+}
+/* Floating variant: overlays instead of growing the sheet (anchored via JS). */
+.task-center-bottom-sheet .bt-area-tag-popover--float {
+  position: fixed;
+  margin-top: 0;
+  z-index: var(--layer-menu, 100);
+  max-height: 320px;
+  overflow: hidden auto;
+  background: var(--background-primary);
+  box-shadow: var(--shadow-l);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}

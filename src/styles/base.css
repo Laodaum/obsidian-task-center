@@ -1,0 +1,13 @@
+/* Task Center plugin styles */
+
+.task-center-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 8px 12px 12px 12px;
+  overflow: hidden;
+  outline: none;
+  /* anchor for the full-view upgrade gate overlay (US-415) */
+  position: relative;
+}
+

@@ -1,0 +1,73 @@
+/* Header */
+.task-center-view .bt-header {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+.task-center-view .bt-tabbar {
+  display: flex;
+  gap: 2px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  /* US-109q: desktop overflow is width-driven — the measure pass collapses
+     extra tabs into "更多" so the row never needs to scroll. Do NOT clip here:
+     the "更多" dropdown is an absolutely-positioned child that hangs BELOW the
+     bar, and overflow:hidden would clip it away (the bug where 更多 opened but
+     showed nothing). nowrap keeps tabs on one line during the measure frame. */
+  flex-wrap: nowrap;
+}
+.task-center-view .bt-tab {
+  padding: 6px 12px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: var(--radius-s) var(--radius-s) 0 0;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.task-center-view .bt-tab-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.task-center-view .bt-tab-name {
+  white-space: nowrap;
+}
+.task-center-view .bt-tab-dirty-dot {
+  color: var(--interactive-accent);
+  font-size: 14px;
+  line-height: 1;
+}
+.task-center-view .bt-tab-menu-btn {
+  padding: 0 4px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+.task-center-view .bt-tab-menu-btn:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+.task-center-view .bt-tab:hover {
+  color: var(--text-normal);
+  background: var(--background-modifier-hover);
+}
+.task-center-view .bt-tab.active {
+  color: var(--text-normal);
+  background: var(--background-primary);
+  border-color: var(--background-modifier-border);
+  border-bottom: 1px solid var(--background-primary);
+  margin-bottom: -1px;
+  font-weight: var(--font-semibold);
+}
+.task-center-view .bt-tab.drag-hover {
+  outline: 2px dashed var(--interactive-accent);
+  outline-offset: -1px;
+  position: relative;
+}

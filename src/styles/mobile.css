@@ -1,0 +1,877 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   Mobile layout (UX-mobile.md §2 / §13).
+   Decision is by viewport WIDTH, not platform — a 600px split pane on a
+   desktop should still get the desktop layout. The 600px breakpoint is
+   the orientation/size split, not a mobile/desktop probe (§13 #1, #8).
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* Status row (mirrors the desktop status bar widget) — mobile only. */
+.task-center-view[data-mobile-layout="true"] {
+  padding: 0 8px;
+}
+
+.task-center-view .bt-mobile-status {
+  display: none;
+}
+  .task-center-view[data-mobile-layout="true"] .bt-mobile-status {
+    display: block;
+    padding: 4px 8px 6px 8px;
+    font-size: 12px;
+    color: var(--text-muted);
+    border-bottom: 1px solid var(--background-modifier-border);
+  }
+
+/* Bottom sticky action bar (Unscheduled + ➕) — mobile only. */
+.task-center-view .bt-mobile-action-bar {
+  display: none;
+}
+  .task-center-view[data-mobile-layout="true"] .bt-mobile-action-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    position: sticky;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 8px 12px calc(8px + env(safe-area-inset-bottom, 0px));
+    background: var(--background-primary);
+    border-top: 1px solid var(--background-modifier-border);
+    box-shadow: 0 -2px 6px rgba(0, 0, 0, 0.06);
+    z-index: 10;
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-mobile-add-btn {
+    flex: 0 0 auto;
+    padding: 6px 14px;
+    border-radius: 8px;
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+    border: none;
+    font-weight: 600;
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-mobile-unscheduled-btn {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 6px 12px;
+    border-radius: 8px;
+    background: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
+    color: var(--text-normal);
+    font-weight: 600;
+  }
+
+  /* Desktop pool trash hidden on mobile — abandon is swipe / action sheet. */
+  .task-center-view[data-mobile-layout="true"] .bt-trash {
+    display: none;
+  }
+
+  /* Toolbar `+ Add` is duplicated by the action bar; hide on mobile so the
+     thumb-reachable bottom button is the canonical entry. */
+  .task-center-view[data-mobile-layout="true"] .bt-toolbar .bt-add-btn {
+    display: none;
+  }
+
+  .task-center-view[data-mobile-layout="true"] .bt-toolbar {
+    padding: 4px 0;
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-toolbar-row {
+    flex-wrap: nowrap;
+    overflow-x: clip;
+    max-width: 100%;
+    min-width: 0;
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-toolbar-main {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .task-center-view[data-mobile-layout="true"] .bt-toolbar .bt-search {
+    display: none;
+  }
+
+  .task-center-view[data-mobile-layout="true"] .bt-toolbar > .bt-saved-views {
+    display: none;
+  }
+
+  .task-center-view[data-mobile-layout="true"] .bt-toolbar .bt-mobile-filter-btn {
+    flex: 0 0 auto;
+    min-width: 0;
+    max-width: 112px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-height: 44px;
+  }
+
+  .task-center-view[data-mobile-layout="true"] .bt-toolbar-utility {
+    margin-left: 0;
+    min-width: 0;
+  }
+
+  .task-center-view[data-mobile-layout="true"] .bt-gear {
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    padding: 0;
+  }
+
+  .task-center-view[data-mobile-layout="true"] .bt-nav {
+    display: grid;
+    grid-template-columns: 36px minmax(56px, auto) 36px minmax(0, 1fr);
+    align-items: center;
+    min-width: 0;
+    gap: 4px;
+  }
+
+  .task-center-view[data-mobile-layout="true"] .bt-nav button {
+    min-width: 36px;
+    min-height: 44px;
+    padding: 0 8px;
+  }
+
+  .task-center-view[data-mobile-layout="true"] .bt-nav-label {
+    min-width: 0;
+    margin-left: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .task-center-view[data-mobile-layout="true"] .bt-body {
+    width: 100%;
+    min-width: 0;
+    padding-bottom: calc(76px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .task-center-view[data-mobile-layout="true"] .bt-card {
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+
+  /* Tab bar: mobile may pan horizontally across query tabs, but the strip
+     itself is never a vertical scroll surface. */
+  .task-center-view[data-mobile-layout="true"] .bt-tabbar {
+    overflow-x: auto;
+    overflow-y: hidden;
+    flex-wrap: nowrap;
+    height: 40px;
+    max-height: 40px;
+    align-items: stretch;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: contain;
+    touch-action: pan-x;
+    scrollbar-width: none;
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-tabbar::-webkit-scrollbar {
+    display: none;
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-tab {
+    flex: 0 0 auto;
+    justify-content: center;
+    min-width: 0;
+    max-width: 132px;
+    padding: 7px 6px;
+    gap: 6px;
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-tab-label,
+  .task-center-view[data-mobile-layout="true"] .bt-tab-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-hotkey {
+    display: none;
+  }
+
+  /* ───── Card compact mode (US-505 / UX-mobile §4) ───── */
+
+  /* Hide the path footnote on mobile — it's noise at this width and the
+     full path lives in long-press source info anyway. */
+  .task-center-view[data-mobile-layout="true"] .bt-meta-path {
+    display: none;
+  }
+
+  /* Meta row: single line, truncate with ellipsis if too many fields. */
+  .task-center-view[data-mobile-layout="true"] .bt-card-meta {
+    flex-wrap: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Bigger touch target for the checkbox toggle (≥ 32px hit area while
+     keeping the visible icon the same size). */
+  .task-center-view[data-mobile-layout="true"] .bt-check,
+  .task-center-view[data-mobile-layout="true"] .bt-sub-check {
+    min-width: 32px;
+    min-height: 32px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-card-title,
+  .task-center-view[data-mobile-layout="true"] .bt-subcard-title {
+    padding-top: 7px;
+  }
+
+  /* `+N` chip on subcards with deeper subtrees (US-505). Tap → bottom
+     sheet with full tree. Visual: small pill at the right of the subcard. */
+  .task-center-view[data-mobile-layout="true"] .bt-subcard-more {
+    flex: 0 0 auto;
+    margin-left: auto;
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: var(--background-modifier-border);
+    color: var(--text-muted);
+    font-size: 10px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-subcard-more:active {
+    background: var(--background-modifier-hover);
+  }
+
+  /* Swipe confirm feedback (US-508): below 50% the card stays visually
+     quiet. Once the user crosses half the card width, JS marks the card
+     ready and we show a clear action label. Moving back under 50% removes
+     the marker and cancels if released. */
+  .task-center-view[data-mobile-layout="true"] .bt-card[data-swipe-ready="true"] {
+    position: relative;
+    overflow: hidden;
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-card[data-swipe-ready="true"]::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 50%;
+    pointer-events: none;
+    opacity: 0.35;
+    animation: tc-swipe-confirm 120ms ease-out;
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-card[data-swipe-ready="true"]::before {
+    content: attr(data-swipe-label);
+    position: absolute;
+    top: 50%;
+    z-index: 1;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: var(--background-primary);
+    color: var(--text-normal);
+    font-size: 12px;
+    font-weight: 700;
+    transform: translateY(-50%);
+    pointer-events: none;
+    box-shadow: var(--shadow-s);
+    animation: tc-swipe-confirm 120ms ease-out;
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-card[data-swipe-direction="left"]::after {
+    left: auto;
+    right: 0;
+    background: var(--color-green);
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-card[data-swipe-direction="left"]::before {
+    right: 12px;
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-card[data-swipe-direction="right"]::after {
+    left: 0;
+    background: var(--color-red);
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-card[data-swipe-direction="right"]::before {
+    left: 12px;
+  }
+  @keyframes tc-swipe-confirm {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  /* ───── Week view: vertical collapsible list (US-503) ───── */
+
+  /* Stack the 7 day rows top-to-bottom instead of side-by-side. */
+  .task-center-view[data-mobile-layout="true"] .bt-week {
+    display: flex;
+    flex-direction: column;
+    grid-template-columns: 1fr;
+    gap: 4px;
+    overflow-x: visible;
+    min-height: 0;
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-week-col {
+    min-height: 0;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 0;
+    overflow: hidden;
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-week-head {
+    min-height: 44px;
+    padding: 0 10px;
+    border-bottom: 0;
+    align-items: center;
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-week-dow {
+    font-size: 15px;
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-week-date {
+    font-size: 12px;
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-week-stats {
+    margin-left: auto;
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-week-list {
+    flex: 0 0 auto;
+    min-height: 0;
+    padding: 0 6px 6px;
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-week-list:empty {
+    display: none;
+  }
+  /* Body collapsed by default; today and explicitly-expanded show it. */
+  .task-center-view[data-mobile-layout="true"] .bt-week-col:not(.today):not(.expanded) .bt-week-list {
+    display: none;
+  }
+  /* Tap target hint on the row head. */
+  .task-center-view[data-mobile-layout="true"] .bt-week-col:not(.today) .bt-week-head {
+    cursor: pointer;
+    user-select: none;
+  }
+  /* Caret indicator (▸ collapsed / ▾ expanded). Today is implicitly open. */
+  .task-center-view[data-mobile-layout="true"] .bt-week-col:not(.today):not(.expanded) .bt-week-head::after {
+    content: "▸";
+    margin-left: 4px;
+    color: var(--text-faint);
+    font-size: 10px;
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-week-col.expanded:not(.today) .bt-week-head::after {
+    content: "▾";
+    margin-left: 4px;
+    color: var(--text-faint);
+    font-size: 10px;
+  }
+
+  /* ───── Month view: dots + numbers (US-504) ───── */
+
+  /* Cells stop showing chip lists; tap opens a bottom sheet instead. */
+  .task-center-view[data-mobile-layout="true"] .bt-month-cell-list,
+  .task-center-view[data-mobile-layout="true"] .bt-mini-card,
+  .task-center-view[data-mobile-layout="true"] .bt-mini-more {
+    display: none;
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-month-cell {
+    cursor: pointer;
+    padding: 2px;
+    min-height: 36px;
+  }
+  /* D6: selected day uses the canonical soft-mix + inset accent treatment,
+     matching today / week-col instead of a bespoke outline. */
+  .task-center-view[data-mobile-layout="true"] .bt-month-cell.selected {
+    background: color-mix(in srgb, var(--interactive-accent) 12%, var(--background-secondary));
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-month-cell-head {
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+  }
+  /* Reduce the count badge to a small dot — presence is what matters. */
+  .task-center-view[data-mobile-layout="true"] .bt-month-cell-count {
+    width: 6px;
+    height: 6px;
+    min-width: 6px;
+    padding: 0;
+    border-radius: 50%;
+    font-size: 0;
+    line-height: 0;
+    overflow: hidden;
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-month-day-panel {
+    margin-top: 10px;
+    padding: 10px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 8px;
+    background: var(--background-secondary);
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-month-day-panel-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--background-modifier-border);
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-month-day-panel-title {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 14px;
+    font-weight: 700;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-month-day-panel-count {
+    flex: 0 0 auto;
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-month-day-panel-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding-top: 8px;
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-month-day-empty {
+    padding: 10px 2px 2px;
+    color: var(--text-faint);
+    font-size: 13px;
+  }
+
+
+/* ───── Bottom sheet primitive (used by US-504 day list, M-3 long-press) ───── */
+.modal-container.task-center-bottom-sheet,
+.task-center-bottom-sheet.modal {
+  /* Anchor at the bottom of the viewport. Inherits modal backdrop / focus
+     trap from Obsidian. */
+  align-items: flex-end;
+}
+.task-center-bottom-sheet.modal .modal-content {
+  width: min(560px, 100%);
+  max-height: min(70vh, calc(100dvh - env(safe-area-inset-top) - 12px));
+  border-radius: 14px 14px 0 0;
+  padding: 10px 18px max(18px, env(safe-area-inset-bottom));
+  margin: 0;
+  overflow-y: auto;
+}
+.task-center-bottom-sheet .bt-sheet-handle {
+  width: 36px;
+  height: 4px;
+  background: var(--background-modifier-border);
+  border-radius: 2px;
+  margin: 4px auto 8px;
+}
+.task-center-bottom-sheet .bt-sheet-title {
+  margin: 0 0 8px 0;
+  font-size: 13px;
+  color: var(--text-muted);
+  text-align: center;
+  font-weight: 600;
+}
+.task-center-bottom-sheet .bt-sheet-empty {
+  padding: 24px 8px;
+  text-align: center;
+  color: var(--text-faint);
+  font-size: 13px;
+}
+.task-center-bottom-sheet .bt-sheet-task {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 8px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  cursor: pointer;
+}
+.task-center-bottom-sheet .bt-sheet-task:active {
+  background: var(--background-modifier-hover);
+}
+.task-center-bottom-sheet .bt-sheet-task-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.task-center-bottom-sheet .bt-sheet-task-meta {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+/* Long-press card action sheet (UX-mobile.md §5.1 / US-506). */
+.task-center-bottom-sheet .bt-sheet-source {
+  font-size: 11px;
+  color: var(--text-faint);
+  text-align: center;
+  margin: 4px 0 12px;
+  font-family: var(--font-monospace);
+}
+.task-center-bottom-sheet .bt-sheet-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.task-center-bottom-sheet .bt-sheet-action {
+  width: 100%;
+  padding: 12px 14px;
+  text-align: left;
+  font-size: 14px;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  color: var(--text-normal);
+  cursor: pointer;
+}
+.task-center-bottom-sheet .bt-sheet-action:active {
+  background: var(--background-modifier-hover);
+}
+.task-center-bottom-sheet .bt-sheet-action-danger {
+  border-color: color-mix(in srgb, var(--color-red) 35%, var(--background-modifier-border));
+  color: var(--color-red);
+}
+.task-center-bottom-sheet .bt-sheet-action-secondary {
+  background: var(--background-primary);
+}
+.task-center-bottom-sheet .bt-sheet-action-disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.task-center-bottom-sheet .bt-mobile-task-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.task-center-bottom-sheet .bt-mobile-task-detail-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.task-center-bottom-sheet .bt-mobile-task-detail-meta span {
+  max-width: 100%;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--background-secondary);
+  color: var(--text-muted);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.task-center-bottom-sheet .bt-mobile-task-detail-actions,
+.task-center-bottom-sheet .bt-mobile-task-detail-secondary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+}
+.task-center-bottom-sheet .bt-mobile-date-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.task-center-bottom-sheet .bt-mobile-date-quick {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+.task-center-bottom-sheet .bt-mobile-date-quick-btn {
+  min-height: 44px;
+  padding: 6px 8px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.task-center-bottom-sheet .bt-mobile-date-quick-btn.active,
+.task-center-bottom-sheet .bt-date-calendar-day.active {
+  border-color: var(--interactive-accent);
+  background: color-mix(in srgb, var(--interactive-accent) 18%, transparent);
+}
+.task-center-bottom-sheet .bt-mobile-date-calendar {
+  display: grid;
+  gap: 10px;
+}
+.task-center-bottom-sheet .bt-mobile-date-calendar-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.task-center-bottom-sheet .bt-mobile-date-calendar .bt-date-calendar-weekdays,
+.task-center-bottom-sheet .bt-mobile-date-calendar .bt-date-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+}
+.task-center-bottom-sheet .bt-mobile-date-calendar .bt-date-calendar-weekday {
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  text-align: center;
+}
+.task-center-bottom-sheet .bt-mobile-date-sheet .bt-date-calendar-day {
+  width: 100%;
+  min-width: 0;
+  min-height: 38px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  text-align: center;
+}
+.task-center-bottom-sheet .bt-mobile-date-sheet .bt-date-calendar-day.today {
+  border-color: var(--background-modifier-border);
+}
+.task-center-bottom-sheet .bt-mobile-date-sheet .bt-date-calendar-day.other-month {
+  color: var(--text-faint);
+  background: transparent;
+}
+
+/* Parent picker for mobile nest action (UX-mobile §8.3) */
+.task-center-bottom-sheet .bt-parent-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.task-center-bottom-sheet .bt-parent-picker-subtitle {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+.task-center-bottom-sheet .bt-parent-picker-search {
+  width: 100%;
+  margin-bottom: 8px;
+}
+.task-center-bottom-sheet .bt-parent-picker-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 48vh;
+  overflow-y: auto;
+}
+.task-center-bottom-sheet .bt-parent-picker-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.task-center-bottom-sheet .bt-parent-picker-group-title {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+.task-center-bottom-sheet .bt-parent-candidate {
+  width: 100%;
+  min-height: 52px;
+  padding: 9px 10px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  text-align: left;
+}
+.task-center-bottom-sheet .bt-parent-candidate.is-selected {
+  border-color: var(--interactive-accent);
+  background: color-mix(in srgb, var(--interactive-accent) 14%, var(--background-secondary));
+}
+.task-center-bottom-sheet .bt-parent-candidate.is-disabled {
+  opacity: 0.55;
+}
+.task-center-bottom-sheet .bt-parent-candidate-title {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-height: 1.3;
+  font-size: 14px;
+  font-weight: 600;
+}
+.task-center-bottom-sheet .bt-parent-candidate-meta {
+  margin-top: 4px;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.task-center-bottom-sheet .bt-parent-picker-footer {
+  position: sticky;
+  bottom: calc(-1 * max(16px, env(safe-area-inset-bottom)));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 0 max(16px, env(safe-area-inset-bottom));
+  background: var(--background-primary);
+  border-top: 1px solid var(--background-modifier-border);
+}
+.task-center-bottom-sheet .bt-parent-picker-effect {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+.task-center-bottom-sheet .bt-parent-picker-confirm {
+  min-height: 44px;
+  font-weight: 700;
+  text-align: center;
+}
+
+/* Tag editor for mobile edit-tag action (UX-mobile §8.1 / US-506b) */
+.task-center-bottom-sheet .bt-mobile-tag-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-bottom: 2px;
+}
+.task-center-bottom-sheet .bt-tag-editor-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.task-center-bottom-sheet .bt-tag-editor-label {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.task-center-bottom-sheet .bt-tag-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.task-center-bottom-sheet .bt-tag-editor-chip {
+  min-height: 44px;
+  max-width: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 999px;
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  font-size: 13px;
+}
+.task-center-bottom-sheet .bt-tag-editor-chip-active {
+  border-color: color-mix(in srgb, var(--interactive-accent) 45%, var(--background-modifier-border));
+  background: color-mix(in srgb, var(--interactive-accent) 14%, var(--background-secondary));
+}
+.task-center-bottom-sheet .bt-tag-editor-chip-remove {
+  color: var(--text-muted);
+  font-size: 18px;
+  line-height: 1;
+}
+.task-center-bottom-sheet .bt-tag-editor-empty {
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  color: var(--text-faint);
+  font-size: 12px;
+}
+.task-center-bottom-sheet .bt-tag-editor-input-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+.task-center-bottom-sheet .bt-tag-editor-input {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+}
+.task-center-bottom-sheet .bt-tag-editor-add,
+.task-center-bottom-sheet .bt-tag-editor-cancel,
+.task-center-bottom-sheet .bt-tag-editor-save {
+  min-height: 44px;
+  padding: 8px 14px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background: var(--background-secondary);
+  color: var(--text-normal);
+}
+.task-center-bottom-sheet .bt-tag-editor-footer {
+  position: sticky;
+  bottom: calc(-1 * max(16px, env(safe-area-inset-bottom)));
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+  padding: 10px 0 max(2px, env(safe-area-inset-bottom));
+  background: var(--modal-background);
+}
+.task-center-bottom-sheet .bt-tag-editor-save {
+  border-color: var(--interactive-accent);
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.task-center-bottom-sheet .bt-mobile-filter-sheet .bt-saved-views {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.task-center-bottom-sheet .bt-mobile-filter-sheet .bt-tag-filter {
+  width: 100%;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.task-center-bottom-sheet .bt-mobile-filter-sheet .bt-filter-popover,
+.task-center-bottom-sheet .bt-mobile-filter-sheet .bt-tag-popover {
+  position: static;
+  width: 100%;
+  max-height: 50vh;
+}
+
+.task-center-bottom-sheet .bt-mobile-filter-sheet .bt-saved-view-select,
+.task-center-bottom-sheet .bt-mobile-filter-sheet .bt-saved-view-filter,
+.task-center-bottom-sheet .bt-mobile-filter-sheet .bt-tag-filter-trigger,
+.task-center-bottom-sheet .bt-mobile-filter-sheet .bt-saved-view-save {
+  width: 100%;
+  min-height: 36px;
+}
+
+.task-center-bottom-sheet .bt-mobile-filter-sheet .bt-filter-popover-wrap {
+  width: 100%;
+}
+.task-center-bottom-sheet .bt-query-controls-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.task-center-bottom-sheet .bt-query-editor-help {
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.task-center-bottom-sheet .bt-query-editor-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.task-center-bottom-sheet .bt-query-editor-section-title {
+  color: var(--text-faint);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+.task-center-bottom-sheet .bt-query-editor-section-note {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.task-center-bottom-sheet .bt-query-controls-sheet .bt-saved-view-filters,
+.task-center-bottom-sheet .bt-query-controls-sheet .bt-saved-view-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.task-center-bottom-sheet .bt-query-controls-sheet .bt-filter-popover-wrap,
+.task-center-bottom-sheet .bt-query-controls-sheet .bt-tag-filter {
+  min-width: 0;
+}
+.task-center-bottom-sheet .bt-query-controls-sheet .bt-saved-view-save,
+.task-center-bottom-sheet .bt-query-controls-sheet .bt-saved-view-filter,
+.task-center-bottom-sheet .bt-query-controls-sheet .bt-tag-filter-trigger {
+  min-height: 34px;
+}
+.task-center-bottom-sheet .bt-manage-tabs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}

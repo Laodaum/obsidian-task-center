@@ -1,0 +1,146 @@
+/* ============================================================================
+ * Mobile repair pass: Obsidian Mobile chrome, query editor, toolbar, cards.
+ * These rules are scoped to Task Center mobile layout and do not change the
+ * Query / ViewModel data path.
+ * ============================================================================ */
+
+.task-center-view[data-obsidian-mobile="true"] {
+  --tc-obsidian-mobile-toolbar-height: 72px;
+}
+
+.task-center-view[data-mobile-layout="true"] {
+  --tc-mobile-action-height: 64px;
+}
+
+.task-center-view[data-mobile-layout="true"][data-obsidian-mobile="true"] .bt-body {
+  padding-bottom: calc(
+    var(--tc-mobile-action-height) +
+    var(--tc-obsidian-mobile-toolbar-height) +
+    env(safe-area-inset-bottom, 0px) +
+    16px
+  );
+}
+
+.task-center-view[data-mobile-layout="true"][data-obsidian-mobile="true"] .bt-mobile-action-bar {
+  bottom: calc(var(--tc-obsidian-mobile-toolbar-height) + env(safe-area-inset-bottom, 0px));
+  padding-bottom: 8px;
+}
+
+.task-center-view[data-mobile-layout="true"][data-obsidian-mobile="true"] .bt-footer {
+  padding-bottom: calc(
+    var(--tc-mobile-action-height) +
+    var(--tc-obsidian-mobile-toolbar-height) +
+    env(safe-area-inset-bottom, 0px)
+  );
+}
+
+.task-center-view[data-mobile-layout="true"] .bt-toolbar-main {
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px 8px;
+}
+
+.task-center-view[data-mobile-layout="true"] .bt-toolbar-main .bt-nav {
+  grid-column: 1 / -1;
+  width: 100%;
+  grid-template-columns: 44px minmax(64px, auto) 44px minmax(0, 1fr);
+}
+
+.task-center-view[data-mobile-layout="true"] .bt-toolbar-main .bt-mobile-filter-btn {
+  grid-column: 1;
+  justify-self: stretch;
+  max-width: none;
+}
+
+.task-center-view[data-mobile-layout="true"] .bt-toolbar-main .bt-toolbar-utility {
+  grid-column: 2;
+  justify-self: end;
+}
+
+.task-center-view[data-mobile-layout="true"] .bt-nav button {
+  border-radius: 999px;
+  font-size: 13px;
+}
+
+.task-center-view[data-mobile-layout="true"] .bt-nav-label {
+  font-size: 13px;
+  color: var(--text-normal);
+}
+
+.task-center-view[data-mobile-layout="true"] .bt-tabbar {
+  height: 44px;
+  max-height: 44px;
+  gap: 6px;
+  padding: 0 2px;
+  border-bottom-color: color-mix(in srgb, var(--background-modifier-border) 70%, transparent);
+}
+
+.task-center-view[data-mobile-layout="true"] .bt-tab {
+  max-width: none;
+  min-height: 38px;
+  padding: 7px 9px;
+  border-radius: 8px 8px 0 0;
+}
+
+.task-center-view[data-mobile-layout="true"] .bt-tab.active {
+  background: color-mix(in srgb, var(--interactive-accent) 14%, var(--background-primary));
+  border-color: color-mix(in srgb, var(--interactive-accent) 42%, var(--background-modifier-border));
+}
+
+.task-center-view[data-mobile-layout="true"] .bt-tab-name {
+  font-size: 13px;
+}
+
+.task-center-view[data-mobile-layout="true"] .bt-tab-count {
+  flex: 0 0 auto;
+  min-width: 20px;
+  padding: 1px 6px;
+  text-align: center;
+}
+
+.task-center-view[data-mobile-layout="true"] .bt-card {
+  padding: 8px 9px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.task-center-view[data-mobile-layout="true"] .bt-card.selected {
+  outline: none;
+  border-color: color-mix(in srgb, var(--interactive-accent) 70%, var(--background-modifier-border));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--interactive-accent) 28%, transparent) inset;
+}
+
+.task-center-view[data-mobile-layout="true"] .bt-card-title-row {
+  gap: 8px;
+}
+
+.task-center-view[data-mobile-layout="true"] .bt-check,
+.task-center-view[data-mobile-layout="true"] .bt-sub-check {
+  margin: -5px 0 -5px -4px;
+}
+
+.task-center-view[data-mobile-layout="true"] .bt-card-title {
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.task-center-view[data-mobile-layout="true"] .bt-card-tags,
+.task-center-view[data-mobile-layout="true"] .bt-card-meta,
+.task-center-view[data-mobile-layout="true"] .bt-card-children {
+  margin-left: 34px;
+}
+
+.task-center-view[data-mobile-layout="true"] .bt-task-tag {
+  font-size: 10.5px;
+  line-height: 1.45;
+}
+
+.task-center-view[data-mobile-layout="true"] .bt-week-col {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background: var(--background-secondary);
+}
+
+.task-center-view[data-mobile-layout="true"] .bt-week-col.today {
+  background: color-mix(in srgb, var(--interactive-accent) 10%, var(--background-secondary));
+}
+

@@ -1,0 +1,469 @@
+/* §3.0: range nav rendered inside the week / month component (desktop). */
+.task-center-view .bt-area-nav {
+  display: flex;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.task-center-view .bt-nav button {
+  padding: 2px 8px;
+  font-size: var(--font-ui-small);
+}
+.task-center-view .bt-nav-label {
+  margin-left: 6px;
+  font-size: var(--font-ui-small);
+  color: var(--text-muted);
+}
+.task-center-view .bt-search {
+  flex: 1 1 240px;
+  min-width: 200px;
+  max-width: 520px;
+  padding: 4px 10px;
+  font-size: var(--font-ui-small);
+}
+.task-center-view .bt-toolbar-utility {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+.task-center-view .bt-add-btn {
+  padding: 0 14px;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+}
+.task-center-view .bt-saved-view-save {
+  padding: 0 8px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  cursor: pointer;
+  font-weight: 600;
+}
+.task-center-view .bt-saved-view-save:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.task-center-view .bt-saved-view-save:hover {
+  background: var(--background-modifier-hover);
+}
+.task-center-view .bt-saved-view-save.bt-saved-view-save--primary {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-color: var(--interactive-accent);
+}
+.task-center-view .bt-saved-view-save.bt-saved-view-save--primary:hover {
+  background: var(--interactive-accent-hover, var(--interactive-accent));
+  border-color: var(--interactive-accent-hover, var(--interactive-accent));
+}
+.task-center-view .bt-mobile-filter-btn {
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  font-weight: 600;
+}
+.task-center-view .bt-gear {
+  padding: 0 10px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-secondary);
+  cursor: pointer;
+  color: var(--text-muted);
+}
+.task-center-view .bt-saved-views {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px 12px;
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.task-center-view .bt-saved-view-filters,
+.task-center-view .bt-saved-view-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.task-center-view .bt-saved-view-filters {
+  flex: 1 1 420px;
+  min-width: 280px;
+}
+.task-center-view .bt-saved-view-actions {
+  flex: 0 0 auto;
+  justify-content: flex-end;
+  position: relative;
+  z-index: 21; /* above filter popovers (z-index: 20) so save/update buttons are clickable */
+}
+.task-center-view .bt-list-view {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* ── View = area 布局树（ARCHITECTURE §1.3）── */
+.task-center-view .bt-view-root {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+}
+.task-center-view .bt-stack {
+  display: flex;
+  gap: 12px;
+  min-width: 0;
+  min-height: 0;
+}
+.task-center-view .bt-stack-col {
+  flex-direction: column;
+}
+.task-center-view .bt-stack-row {
+  flex-direction: row;
+}
+.task-center-view .bt-area {
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+/* drop area：始终是一个固定大小的正方形格子，不随容器拉伸。
+   row 里在右侧（同行的 list / 网格 flex-1 占满剩余）；col 里在下方左对齐。 */
+.task-center-view .bt-area-drop {
+  flex: 0 0 auto;
+  align-self: flex-start;
+}
+.task-center-view .bt-area-drop .bt-trash {
+  width: var(--tc-drop-size, 140px);
+  aspect-ratio: 1 / 1;
+  min-height: 0;
+}
+.task-center-view .bt-stack-row > .bt-area:not(.bt-area-drop) {
+  flex: 1 1 0;
+}
+/* Header-less areas in a row that has a titled sibling get a matching top
+   offset so their content aligns with the titled area's content. */
+.task-center-view .bt-stack-row.bt-row-has-head > .bt-area:not(.bt-has-head) {
+  margin-top: var(--tc-area-head-h, 27px);
+}
+.task-center-view .bt-stack-row > .bt-area-drop .bt-trash {
+  aspect-ratio: 1 / 1;
+  min-height: 0;
+}
+
+/* grid area：响应式多列任务卡（未排期 tray 用） */
+.task-center-view .bt-list-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 6px;
+  align-content: start;
+}
+.task-center-view .bt-list-grid > .bt-card {
+  margin: 0;
+}
+
+/* list area / section 标题：小号、字距、muted，带计数胶囊感的分组头 */
+.task-center-view .bt-list-area-head,
+.task-center-view .bt-list-section-title {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.task-center-view .bt-list-area-head {
+  line-height: 19px;
+  margin: 0 0 8px;
+}
+.task-center-view .bt-list-section {
+  margin: 0 0 14px;
+}
+.task-center-view .bt-list-section:last-child {
+  margin-bottom: 0;
+}
+.task-center-view .bt-list-section-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 6px;
+  /* No divider line — section heads read as plain muted labels, consistent
+     with the area head (which has no underline). Spacing alone separates them;
+     no section-only special styling. */
+}
+.task-center-view .bt-list-section-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.task-center-view .bt-list-section-empty {
+  padding: 4px 2px;
+  font-size: 11px;
+  color: var(--text-faint);
+  font-style: italic;
+}
+
+.task-center-view .bt-filter-popover-wrap {
+  position: relative;
+  display: inline-flex;
+  min-width: 0;
+}
+.task-center-view .bt-saved-view-select {
+  flex: 0 1 auto;
+  min-width: 104px;
+  max-width: 150px;
+  padding: 4px 8px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-semibold);
+  cursor: pointer;
+}
+.task-center-view .bt-tag-filter {
+  position: relative;
+  flex: 0 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.task-center-view .bt-tag-filter-trigger {
+  min-width: 76px;
+  max-width: 136px;
+  padding: 4px 8px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-semibold);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.task-center-view .bt-filter-popover,
+.task-center-view .bt-tag-popover {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 4px);
+  left: 0;
+  width: min(340px, calc(100vw - 32px));
+  max-height: 360px;
+  padding: 8px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background: var(--background-primary);
+  box-shadow: var(--shadow-l);
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+.task-center-view .bt-view-popover,
+.task-center-view .bt-date-popover,
+.task-center-view .bt-status-popover {
+  display: flex;
+  flex-direction: column;
+  width: min(260px, calc(100vw - 32px));
+}
+.task-center-view .bt-time-more-popover {
+  display: flex;
+  flex-direction: column;
+  width: min(300px, calc(100vw - 32px));
+  gap: 6px;
+}
+.task-center-view .bt-date-popover {
+  display: grid;
+  width: min(540px, calc(100vw - 32px));
+  max-height: min(520px, calc(100vh - 120px));
+  grid-template-columns: 148px minmax(320px, 1fr);
+  align-items: stretch;
+  gap: 12px;
+  padding: 12px;
+}
+.task-center-view .bt-time-more-popover.bt-date-popover {
+  width: min(640px, calc(100vw - 32px));
+}
+.task-center-view .bt-time-back {
+  grid-column: 1 / -1;
+  justify-self: start;
+  padding: 3px 8px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-secondary);
+  color: var(--text-muted);
+}
+.task-center-view .bt-time-more-row {
+  display: grid;
+  grid-template-columns: minmax(64px, auto) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+}
+.task-center-view .bt-time-more-label {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+.task-center-view .bt-time-more-pick,
+.task-center-view .bt-time-more-clear {
+  min-height: 28px;
+  padding: 3px 8px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-secondary);
+  color: var(--text-normal);
+}
+.task-center-view .bt-time-more-pick {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+.task-center-view .bt-time-more-clear {
+  width: 28px;
+  color: var(--text-muted);
+}
+.task-center-settings-command {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  user-select: text;
+}
+.task-center-view .bt-menu-option {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 30px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-normal);
+  text-align: left;
+}
+.task-center-view .bt-menu-option[aria-selected="true"] {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+.task-center-view .bt-menu-option:hover {
+  background: var(--background-modifier-hover);
+}
+.task-center-view .bt-menu-empty {
+  padding: 6px 8px;
+  color: var(--text-faint);
+  font-size: 12px;
+}
+.task-center-view .bt-tag-search {
+  min-width: 0;
+  padding: 4px 8px;
+}
+.task-center-view .bt-tag-clear {
+  padding: 4px 8px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-secondary);
+  color: var(--text-muted);
+}
+.task-center-view .bt-tag-options {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  grid-column: 1 / -1;
+  max-height: 290px;
+  overflow: auto;
+}
+.bt-confirm-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+.bt-confirm-btn {
+  padding: 6px 14px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  cursor: pointer;
+  font-weight: 600;
+}
+.bt-confirm-btn:hover {
+  background: var(--background-modifier-hover);
+}
+.bt-confirm-btn.bt-confirm-btn--primary {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-color: var(--interactive-accent);
+}
+.bt-confirm-btn.bt-confirm-btn--primary:hover {
+  background: var(--interactive-accent-hover, var(--interactive-accent));
+}
+.task-center-view .bt-tag-empty {
+  padding: 8px 12px;
+  color: var(--text-muted);
+  font-size: 0.875em;
+  line-height: 1.4;
+}
+.task-center-view .bt-tag-option {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 28px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-normal);
+  text-align: left;
+}
+.task-center-view .bt-tag-option:hover {
+  background: var(--background-modifier-hover);
+}
+.task-center-view .bt-tag-option-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.task-center-view .bt-tag-option-count {
+  color: var(--text-faint);
+  font-size: 11px;
+}
+.task-center-view .bt-tag-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 5px;
+  color: var(--text-on-accent);
+  font-weight: 700;
+}
+.task-center-view .bt-tag-option[aria-checked="true"] .bt-tag-check {
+  background: var(--interactive-accent);
+  border-color: var(--interactive-accent);
+}
+.task-center-view .bt-saved-view-filter {
+  flex: 0 1 auto;
+  min-width: 84px;
+  max-width: 136px;
+  padding: 4px 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

@@ -1,0 +1,202 @@
+/* Cards */
+.task-center-view .bt-card {
+  background: var(--background-primary);
+  /* No coloured left spine: a uniform 1px border reads cleaner. Risk states
+     (overdue / near-deadline) carry their colour via a soft background tint +
+     the deadline pill text instead of a left bar (UX.md §「颜色不是唯一信号」). */
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  padding: 7px 10px;
+  font-size: 12px;
+  cursor: grab;
+  touch-action: pan-y;
+  will-change: transform;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.08);
+  transition:
+    transform 0.12s ease,
+    border-color 0.12s ease,
+    background-color 0.12s ease,
+    box-shadow 0.12s ease;
+}
+.task-center-view .bt-card:hover {
+  border-color: var(--interactive-accent-hover, var(--interactive-accent));
+  background: color-mix(in srgb, var(--interactive-accent) 4%, var(--background-primary));
+  box-shadow:
+    0 8px 18px rgba(0, 0, 0, 0.16),
+    0 0 0 1px color-mix(in srgb, var(--interactive-accent) 24%, transparent);
+  transform: translateY(-1px);
+}
+.task-center-view .bt-card:active {
+  cursor: grabbing;
+}
+.task-center-view .bt-card.dragging {
+  opacity: 0.4;
+}
+/* D6: selection feedback (US-168c) uses the canonical soft-mix + inset accent
+   bar rather than a hard 2px outline. The inset bar sits on the left to
+   reinforce the card spine. */
+.task-center-view .bt-card.selected {
+  background: color-mix(in srgb, var(--interactive-accent) 8%, var(--background-primary));
+  box-shadow: inset 2px 0 0 var(--interactive-accent);
+}
+.task-center-view .bt-card.bt-overdue {
+  border-color: color-mix(in srgb, var(--color-red) 30%, var(--background-modifier-border));
+  background: color-mix(in srgb, var(--color-red) 6%, var(--background-primary));
+}
+.task-center-view .bt-card.bt-near-deadline {
+  border-color: color-mix(in srgb, var(--color-orange) 30%, var(--background-modifier-border));
+  background: color-mix(in srgb, var(--color-orange) 5%, var(--background-primary));
+}
+/* US-152: a done card is expressed by muted text + the ✔ status icon, not a
+   strike-through. Keep title / date / meta legible (the user may still want to
+   undo it or read it), so use a muted color and a light opacity rather than a
+   line crossing the whole card. */
+.task-center-view .bt-card.done {
+  opacity: 0.7;
+  color: var(--text-muted);
+}
+.task-center-view .bt-card.done .bt-card-title {
+  color: var(--text-muted);
+}
+.task-center-view .bt-card-title-row {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+}
+.task-center-view .bt-check {
+  flex: 0 0 auto;
+  cursor: pointer;
+  width: 18px;
+  height: 18px;
+  text-align: center;
+  color: var(--text-muted);
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.12s ease;
+}
+.task-center-view .bt-check:hover {
+  color: var(--interactive-accent);
+}
+.task-center-view .bt-card-title {
+  flex: 1;
+  min-width: 0;
+  font-weight: 500;
+  font-size: 12px;
+  line-height: 1.4;
+  word-break: break-word;
+  cursor: pointer;
+  padding: 0;
+  margin: 0;
+  box-sizing: border-box;
+}
+.task-center-view .bt-card-title:hover {
+  color: var(--text-accent);
+}
+.task-center-view .bt-task-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 5px;
+  min-width: 0;
+}
+.task-center-view .bt-card-tags {
+  margin-top: 3px;
+  margin-left: 22px;
+}
+.task-center-view .bt-task-tag {
+  max-width: 100%;
+  padding: 1px 5px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 999px;
+  background: var(--background-secondary);
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.task-center-view .bt-card-meta {
+  margin-top: 3px;
+  margin-left: 22px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+.task-center-view .bt-meta-est { color: var(--text-muted); }
+.task-center-view .bt-meta-deadline { color: var(--color-orange); }
+.task-center-view .bt-meta-actual { color: var(--color-green); }
+.task-center-view .bt-meta-sched { color: var(--color-blue); }
+.task-center-view .bt-meta-path { color: var(--text-faint); font-size: 9px; }
+
+.task-center-view .bt-card-children {
+  margin-top: 4px;
+  margin-left: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.task-center-view .bt-subcard {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 4px 7px 4px 8px;
+  font-size: 11px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  transition:
+    background-color 0.12s ease,
+    border-color 0.12s ease,
+    box-shadow 0.12s ease,
+    transform 0.12s ease;
+}
+/* US-168c: subtask hover reads as a soft tinted box — no left accent bar
+   (the cheap-looking left border is gone, matching the flat-bordered cards). */
+.task-center-view .bt-subcard:hover {
+  background: color-mix(in srgb, var(--interactive-accent) 7%, transparent);
+  border-color: color-mix(in srgb, var(--interactive-accent) 22%, var(--background-modifier-border));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--interactive-accent) 12%, transparent) inset;
+}
+.task-center-view .bt-subcard.dragging {
+  opacity: 0.72;
+}
+.task-center-view .bt-sub-check {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  min-width: 18px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 50%;
+  box-shadow: none;
+  background: transparent;
+  appearance: none;
+  color: var(--text-faint);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.12s ease;
+}
+.task-center-view .bt-sub-check:hover,
+.task-center-view .bt-sub-check:focus-visible {
+  color: var(--interactive-accent);
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  outline: none;
+}
+.task-center-view .bt-subcard-title { flex: 1; min-width: 0; }
+.task-center-view .bt-sub-est { color: var(--text-faint); font-size: 10px; }
+.task-center-view .bt-sub-sched { color: var(--color-blue); font-size: 10px; }
+/* US-152: completed subcards match the main card — muted, no strike-through. */
+.task-center-view .bt-subcard.done { opacity: 0.7; color: var(--text-muted); }
+.task-center-view .bt-subcard.done .bt-subcard-title { color: var(--text-muted); }
+

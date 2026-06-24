@@ -1,0 +1,20 @@
+/* Quick add modal */
+.task-center-quick-add .task-center-quick-add-input {
+  font-size: 14px;
+  padding: 10px;
+  margin: 10px 0;
+}
+.task-center-quick-add .task-center-quick-add-hint {
+  color: var(--text-muted);
+  font-size: 12px;
+  margin-top: 8px;
+}
+.task-center-quick-add .task-center-err {
+  color: var(--color-red);
+  font-size: 12px;
+  margin-top: 8px;
+  padding: 6px 10px;
+  background: rgba(255, 0, 0, 0.08);
+  border-radius: 4px;
+}
+

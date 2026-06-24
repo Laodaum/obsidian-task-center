@@ -1,0 +1,247 @@
+/* D7 / §5.3: filter chips share one size + radius + font rhythm. */
+.task-center-view button.bt-saved-view-filter {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-semibold);
+  cursor: pointer;
+}
+.task-center-view .bt-status-popover {
+  width: fit-content;
+  min-width: 0;
+  gap: 3px;
+  padding: 4px;
+}
+.task-center-view .bt-status-option {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+  min-height: 28px;
+  width: auto;
+  min-width: 88px;
+  padding: 3px 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-normal);
+  text-align: left;
+}
+.task-center-view .bt-status-option:hover {
+  background: var(--background-modifier-hover);
+}
+.task-center-view .bt-status-option[aria-selected="true"] {
+  border-color: var(--interactive-accent);
+  background: color-mix(in srgb, var(--interactive-accent) 18%, transparent);
+}
+.task-center-view .bt-status-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  flex: 0 0 14px;
+  color: var(--interactive-accent);
+  font-weight: 700;
+}
+.task-center-view .bt-status-option-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.task-center-view .bt-date-presets,
+.task-center-view .bt-date-custom-panel,
+.task-center-view .bt-date-calendar {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+}
+.task-center-view .bt-date-presets {
+  padding-right: 10px;
+  border-right: 1px solid var(--background-modifier-border);
+}
+.task-center-view .bt-date-section-title,
+.task-center-view .bt-date-field-label {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+.task-center-view .bt-date-section-title {
+  padding: 1px 2px 3px;
+}
+.task-center-view .bt-date-preset {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  min-height: 30px;
+  width: 100%;
+  padding: 4px 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-normal);
+  text-align: left;
+}
+.task-center-view .bt-date-preset:hover {
+  background: var(--background-modifier-hover);
+}
+.task-center-view .bt-date-preset[aria-selected="true"] {
+  border-color: var(--interactive-accent);
+  background: color-mix(in srgb, var(--interactive-accent) 18%, transparent);
+  color: var(--text-normal);
+}
+.task-center-view .bt-date-preset-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.task-center-view .bt-date-custom-panel {
+  gap: 8px;
+}
+.task-center-view .bt-date-custom-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.task-center-view .bt-date-clear {
+  padding: 2px 6px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.task-center-view .bt-date-clear:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+.task-center-view .bt-date-clear:disabled {
+  opacity: 0.45;
+}
+.task-center-view .bt-date-input {
+  width: 100%;
+  min-height: 30px;
+}
+.task-center-view .bt-date-range-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+  align-items: end;
+  padding-top: 2px;
+}
+.task-center-view .bt-date-field {
+  display: grid;
+  gap: 4px;
+}
+.task-center-view .bt-date-apply {
+  width: 100%;
+  min-height: 30px;
+  grid-column: 1 / -1;
+  padding: 4px 8px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-secondary);
+  color: var(--text-normal);
+}
+.task-center-view .bt-date-apply:hover {
+  background: var(--background-modifier-hover);
+}
+.task-center-view .bt-date-calendar {
+  gap: 10px;
+}
+.task-center-view .bt-date-calendar-head,
+.task-center-view .bt-date-calendar-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.task-center-view .bt-date-month-nav {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 20px;
+  line-height: 1;
+}
+.task-center-view .bt-date-month-nav:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+.task-center-view .bt-date-month-label {
+  color: var(--text-normal);
+  font-weight: 650;
+}
+.task-center-view .bt-date-calendar-weekdays,
+.task-center-view .bt-date-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(32px, 1fr));
+}
+.task-center-view .bt-date-calendar-weekdays {
+  gap: 2px;
+}
+.task-center-view .bt-date-calendar-weekday {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  text-align: center;
+}
+.task-center-view .bt-date-calendar-grid {
+  gap: 3px 2px;
+}
+.task-center-view .bt-date-calendar-day {
+  position: relative;
+  min-width: 0;
+  height: 32px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-normal);
+  text-align: center;
+}
+.task-center-view .bt-date-calendar-day:hover {
+  background: var(--background-modifier-hover);
+}
+.task-center-view .bt-date-calendar-day.other-month {
+  color: var(--text-faint);
+}
+.task-center-view .bt-date-calendar-day.today {
+  border-color: var(--background-modifier-border);
+}
+.task-center-view .bt-date-calendar-day.in-range {
+  background: color-mix(in srgb, var(--interactive-accent) 18%, transparent);
+  border-radius: 0;
+}
+.task-center-view .bt-date-calendar-day.range-start,
+.task-center-view .bt-date-calendar-day.range-end,
+.task-center-view .bt-date-calendar-day[aria-selected="true"],
+.task-center-view .bt-date-calendar-day.pending {
+  border-color: var(--interactive-accent);
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-radius: 7px;
+}
+.task-center-saved-view-name-modal {
+  display: grid;
+  gap: 10px;
+}
+.task-center-saved-view-name-modal h3 {
+  margin: 0;
+}
+.task-center-saved-view-name-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
