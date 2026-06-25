@@ -6,10 +6,10 @@
 /* src/styles/base.css */
 .task-center-modal .modal-title,
 .task-center-bottom-sheet .modal-title {
-  width: 100%;
+  align-self: flex-start;
+  width: calc(100% - 2.5rem);
   box-sizing: border-box;
   margin: 0;
-  padding-right: 2.5rem;
 }
 .task-center-view {
   display: flex;
@@ -4699,6 +4699,9 @@
 }
 .task-center-bottom-sheet .bt-layout-area:hover {
   background: var(--background-modifier-hover);
+}
+.task-center-bottom-sheet .bt-layout-area {
+  cursor: pointer;
 }
 .task-center-bottom-sheet .bt-layout-area-icon {
   display: inline-flex;

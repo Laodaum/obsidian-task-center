@@ -19,6 +19,16 @@ describe("Task Center — modal title layout", function () {
   });
 
   it("manage-tabs modal: title is left-aligned and not overlapping close button", async function () {
+    // Open the board first so there is a task-center-board leaf to drive.
+    await browser.executeObsidianCommand("task-center:open");
+    await browser.waitUntil(
+      () =>
+        browser.execute(
+          () => !!(window as unknown as { app: any }).app.workspace.getLeavesOfType("task-center-board")[0],
+        ),
+      { timeout: 5000, interval: 100, timeoutMsg: "board leaf did not open" },
+    );
+
     // Open the manage tabs sheet via the plugin API.
     await browser.executeObsidian(async ({ app }) => {
       const plugin = (app as any).plugins.plugins["task-center"];
@@ -26,7 +36,7 @@ describe("Task Center — modal title layout", function () {
       // public method is `openManageTabs()` (it delegates to openManageTabsSheet
       // in view/manage-tabs.ts); the old `view.openManageTabsSheet` never existed
       // on the view, so the optional call silently no-op'd and the modal never opened.
-      const leaf = app.workspace.getLeavesOfType("task-center-view")[0];
+      const leaf = app.workspace.getLeavesOfType("task-center-board")[0];
       if (!leaf) return;
       const view = leaf.view as any;
       view.openManageTabs?.();
@@ -53,9 +63,14 @@ describe("Task Center — modal title layout", function () {
 
       // Title right edge should be clearly to the left of close button left edge.
       const gap = closeBtnRect.left - titleRect.right;
-      // Title left edge should be near the modal left edge (left-aligned).
       const modalRect = modal.getBoundingClientRect();
-      const leftOffset = titleRect.left - modalRect.left;
+      // Title left edge should be near the VISIBLE sheet's left edge. The sheet
+      // (.modal-content, ~560px) is centered inside the full-width outer .modal,
+      // so the title is left-aligned WITHIN the sheet — measure against the
+      // sheet, not the outer modal (which would falsely report the centering gap).
+      const content = modal.querySelector(".modal-content") as HTMLElement | null;
+      const sheetRect = (content ?? modal).getBoundingClientRect();
+      const leftOffset = titleRect.left - sheetRect.left;
 
       return {
         ok: gap >= 0,
