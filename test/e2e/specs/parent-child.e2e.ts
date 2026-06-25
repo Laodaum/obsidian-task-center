@@ -77,6 +77,15 @@ async function writeAndWait(path: string, body: string) {
     path,
     body,
   );
+  // Rebuild the plugin TaskCache for this path: write verbs resolve refs via
+  // cache.resolveRef, and repeated rewrites of the same path otherwise leave a
+  // stale path:Ln→hash entry → "not a task line". See _journeys.writeAndWait.
+  await browser.executeObsidian(async ({ app }, p: string) => {
+    // @ts-expect-error — runtime plugin
+    await (app as any).plugins.plugins["task-center"].cache.invalidateFile(p);
+    // @ts-expect-error — runtime plugin
+    await (app as any).plugins.plugins["task-center"].__forFlush();
+  }, path);
 }
 
 async function forFlush() {
