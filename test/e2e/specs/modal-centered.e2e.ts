@@ -2,12 +2,21 @@ import { browser, $ } from "@wdio/globals";
 import { obsidianPage } from "wdio-obsidian-service";
 import assert from "node:assert/strict";
 
-// Regression guard: the Query editor is a BottomSheet whose bottom-anchoring CSS
-// (`.modal-container.task-center-bottom-sheet { align-items: flex-end }`) had no
-// `.is-mobile` guard, so on DESKTOP it stuck to the viewport bottom and got cut
-// off instead of centering (see the "编辑当前视图" off-screen bug). The existing
-// area-filter / saved-views e2e only asserted *content* elements, never the
-// modal's *geometry*, so the regression shipped. This asserts the geometry.
+// Why the existing filter journeys (saved-views / area-filter / mobile-filter-ui)
+// never caught this: they open the same `.task-center-bottom-sheet` modal but
+// interact via the DOM (wdio scrolls to + clicks elements regardless of visual
+// clipping) and assert DOM/data outcomes — never the modal's GEOMETRY. So when
+// the modal bottom-anchored on desktop (cut off) and then collapsed its content
+// to the title sliver (clipping the 另存为新 tab / 管理 Tabs row), every journey
+// still passed. This spec opens the exact reported "编辑当前视图" (scope:tab)
+// modal and asserts it is centered, on-screen, and its content is not collapsed
+// or clipped.
+//
+// TODO(test-quality): the broader gap remains — the filter/edit-view USER
+// JOURNEYS (saved-views.e2e / area-filter.e2e / mobile-filter-ui.e2e) still only
+// assert clickability + data, never visual layout. Consider a shared
+// "assert modal usable" geometry helper invoked from those journeys so a future
+// visual regression fails the journey that exercises it, not only this spec.
 
 const VAULT = "test/e2e/vaults/simple";
 
@@ -39,10 +48,7 @@ async function writeAndWait(path: string, body: string) {
       await new Promise<void>((resolve) => {
         // @ts-expect-error — runtime metadataCache
         const ref = app.metadataCache.on("changed", (file) => {
-          if (file.path === p) {
-            app.metadataCache.offref(ref);
-            resolve();
-          }
+          if (file.path === p) { app.metadataCache.offref(ref); resolve(); }
         });
         window.setTimeout(resolve, 1500);
       });
@@ -52,45 +58,76 @@ async function writeAndWait(path: string, body: string) {
   );
 }
 
-describe("Query editor modal centering (desktop)", function () {
+describe("Query editor modal — centered & content visible (desktop)", function () {
   beforeEach(async function () {
     await obsidianPage.resetVault(VAULT);
   });
+  afterEach(async function () {
+    for (let i = 0; i < 5 && (await $(".modal-bg").isExisting()); i++) {
+      await browser.keys(["Escape"]);
+      await $(".modal-bg").waitForExist({ reverse: true, timeout: 1000 }).catch(() => undefined);
+    }
+  });
 
-  it("is vertically centered, not anchored to / cut off at the viewport bottom", async function () {
+  it("the 编辑当前视图 (scope:tab) modal is centered, on-screen, and its content is not collapsed/clipped", async function () {
     const today = todayISO();
-    await writeAndWait(
-      "Tasks/Inbox.md",
-      [`- [ ] Alpha task #alpha ⏳ ${today}`, `- [ ] Beta task #beta ⏳ ${today}`].join("\n") + "\n",
-    );
+    await writeAndWait("Tasks/Inbox.md", `- [ ] Fixture alpha #alpha ⏳ ${today}\n`);
 
     await browser.executeObsidianCommand("task-center:open");
     await forFlush();
     await $("[data-saved-views], .task-center-view").waitForExist({ timeout: 5000 });
 
-    // Open the Query editor sheet (the shared `.task-center-bottom-sheet` modal).
-    const areaEdit = await $('[data-action="edit-area"]');
-    await areaEdit.waitForExist({ timeout: 5000 });
-    await areaEdit.click();
-    await $(".task-center-bottom-sheet.modal").waitForExist({ timeout: 5000 });
+    // Open the exact reported modal — the tab-level Query editor ("编辑当前视图").
+    await browser.executeObsidian(({ app }) => {
+      const leaf = app.workspace.getLeavesOfType("task-center-board")[0];
+      // @ts-expect-error — runtime view method
+      leaf?.view?.openQueryControlsSheet?.({ scope: "tab" });
+    });
+    await $(".task-center-bottom-sheet.modal .modal-content").waitForExist({ timeout: 5000 });
 
-    const geo = await browser.execute(() => {
-      const el = document.querySelector(".task-center-bottom-sheet.modal");
-      if (!el) return null;
-      const r = el.getBoundingClientRect();
-      return { top: r.top, bottom: r.bottom, vh: window.innerHeight };
+    const m = await browser.execute(() => {
+      const box = (el: Element | null) => {
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return { top: r.top, bottom: r.bottom, left: r.left, right: r.right, w: r.width, h: r.height };
+      };
+      const modal = document.querySelector(".task-center-bottom-sheet.modal");
+      const content = modal?.querySelector(".modal-content") ?? null;
+      const btns = Array.from(content?.querySelectorAll("button") ?? []);
+      const firstBtn = btns[0] ?? null;
+      return {
+        vh: window.innerHeight,
+        vw: window.innerWidth,
+        modal: box(modal),
+        content: box(content),
+        firstBtn: box(firstBtn),
+        firstBtnText: (firstBtn?.textContent ?? "").trim(),
+        btnCount: btns.length,
+      };
     });
 
-    assert.ok(geo, "modal element not found");
-    // A centered modal leaves a real gap below it; a bottom-anchored sheet sits
-    // flush against (gap ≈ 0) or overflows (bottom > vh) the viewport bottom.
+    assert.ok(m.modal && m.content, "modal / modal-content not found");
+
+    // 1. Horizontally centered — catches the original off-screen bottom-RIGHT bug.
+    const cx = (m.modal.left + m.modal.right) / 2;
     assert.ok(
-      geo.bottom <= geo.vh + 1,
-      `modal is cut off at the bottom: bottom=${Math.round(geo.bottom)} vh=${geo.vh}`,
+      cx > m.vw * 0.25 && cx < m.vw * 0.75,
+      `modal not horizontally centered (center-x=${Math.round(cx)}, vw=${m.vw})`,
     );
+    // 2. Fully on-screen vertically — not cut off at top or bottom.
     assert.ok(
-      geo.vh - geo.bottom > 24,
-      `modal is anchored to the viewport bottom (gap below = ${Math.round(geo.vh - geo.bottom)}px); expected it centered`,
+      m.modal.top >= -1 && m.modal.bottom <= m.vh + 1,
+      `modal not fully on-screen: top=${Math.round(m.modal.top)} bottom=${Math.round(m.modal.bottom)} vh=${m.vh}`,
+    );
+    // 3. Content not collapsed to the title sliver (the second bug).
+    assert.ok(m.content.h > 80, `modal content collapsed (height=${Math.round(m.content.h)}px)`);
+    // 4. The top toolbar button (另存为新 tab) is rendered and fully visible — not clipped.
+    assert.ok(m.btnCount > 0 && m.firstBtn, "no toolbar buttons rendered in the modal");
+    assert.ok(
+      m.firstBtn.top >= m.content.top - 1 && m.firstBtn.bottom <= m.vh + 1,
+      `top toolbar button "${m.firstBtnText}" is clipped: ` +
+        `btn[top=${Math.round(m.firstBtn.top)} bottom=${Math.round(m.firstBtn.bottom)}] ` +
+        `content.top=${Math.round(m.content.top)} vh=${m.vh}`,
     );
   });
 });

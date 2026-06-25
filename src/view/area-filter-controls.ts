@@ -185,7 +185,10 @@ function renderAreaTagList(
   // ≥2 tags, where the mode matters) + clear. Kept ABOVE the trigger so the
   // downward-floating tag popover never overlaps / intercepts it.
   const headRight = head.createDiv({ cls: "bt-area-tag-head-right" });
-  if (selectedTags.length >= 2) {
+  // Only when the tag popover is CLOSED: while it's open (floating, anchored to
+  // the trigger) it can flip up and cover the head, hiding/intercepting this
+  // toggle. Showing it after the popover closes keeps it always usable.
+  if (selectedTags.length >= 2 && !v.areaTagPopoverOpen) {
     const seg = headRight.createDiv({ cls: "bt-area-tag-mode" });
     seg.setAttribute("aria-label", tr("savedViews.tagMatchMode"));
     for (const opt of tagModeOptions()) {

@@ -90,6 +90,11 @@ describe("tag match mode (AND/OR) toggle", function () {
     await $('.bt-area-tag-row[data-area-tag="#alpha"]').click();
     await $('.bt-area-tag-row[data-area-tag="#beta"]').click();
 
+    // Close the popover so the match-mode toggle (shown only when the popover is
+    // closed, to avoid the floating popover covering it) appears in the head.
+    await $(".bt-area-tag-trigger").click();
+    await $(".bt-area-tag-list").waitForExist({ reverse: true, timeout: 5000 });
+
     // Segmented toggle appears and defaults to AND (全部).
     await $(".bt-area-tag-mode").waitForExist({ timeout: 5000 });
     await browser.waitUntil(async () => (await hasActiveMode("and")) && !(await hasActiveMode("or")), {
