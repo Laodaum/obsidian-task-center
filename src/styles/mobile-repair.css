@@ -113,9 +113,15 @@
   gap: 8px;
 }
 
+/* US-505: the check circle must vertically align with the FIRST title line.
+   The row is `align-items: flex-start`, so any top margin shifts the check off
+   the first line — a `-5px` top margin pulled it ~5px above the title's line
+   center. Keep only the `-4px` horizontal nudge (aligns the check's optical
+   left with the card padding); leave the vertical margin at 0 so the 18px
+   check (center +9) and the 13px/1.45 title line (center +9.4) coincide. */
 .task-center-view[data-mobile-layout="true"] .bt-check,
 .task-center-view[data-mobile-layout="true"] .bt-sub-check {
-  margin: -5px 0 -5px -4px;
+  margin: 0 0 0 -4px;
 }
 
 .task-center-view[data-mobile-layout="true"] .bt-card-title {

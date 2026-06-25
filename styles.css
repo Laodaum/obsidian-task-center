@@ -4073,7 +4073,7 @@
 }
 .task-center-view[data-mobile-layout=true] .bt-check,
 .task-center-view[data-mobile-layout=true] .bt-sub-check {
-  margin: -5px 0 -5px -4px;
+  margin: 0 0 0 -4px;
 }
 .task-center-view[data-mobile-layout=true] .bt-card-title {
   font-size: 13px;
