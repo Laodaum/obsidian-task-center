@@ -4,7 +4,7 @@
 // layer: the dependency points saved-views → query/schema, never the reverse.
 // (ARCHITECTURE.md §2.1 依赖规则; REFACTOR.md D5)
 
-import type { QueryPresetFilters, TaskStatus } from "../types";
+import type { TaskStatus } from "../types";
 
 export const KNOWN_STATUS_VALUES: TaskStatus[] = [
   "todo",
@@ -28,7 +28,7 @@ export function isKnownTaskStatus(value: unknown): value is TaskStatus {
  * own); empty / malformed input degrades to `{ values: [], mode: "and" }`.
  */
 export function resolveTagFilter(
-  tags: QueryPresetFilters["tags"] | unknown,
+  tags: unknown,
 ): { values: string[]; mode: "and" | "or" } {
   if (!tags) return { values: [], mode: "and" };
   if (Array.isArray(tags)) {
