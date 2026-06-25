@@ -1,5 +1,6 @@
 import { browser, expect, $ } from "@wdio/globals";
 import { obsidianPage } from "wdio-obsidian-service";
+import { setWriteFlavor } from "./_journeys";
 
 /**
  * task #44 (US-501–510): mobile e2e coverage gap-fill.
@@ -82,6 +83,18 @@ async function writeAndWait(path: string, body: string) {
     path,
     body,
   );
+  // Rebuild the plugin TaskCache for this path. Many specs in this file rewrite
+  // the SAME `Tasks/Inbox.md` with different content; without an invalidate the
+  // cache keeps a prior spec's stale `path:Ln→hash` entry, so a later
+  // `api.done`/`api.drop`/`api.schedule`/`api.nest` resolveRef reports "not a
+  // task line" and silently no-ops (the gesture fires but nothing is written).
+  // Same fix as cli.e2e.ts's writeAndWait. See ARCHITECTURE.md "TaskCache".
+  await browser.executeObsidian(async ({ app }, p: string) => {
+    // @ts-expect-error — runtime plugin
+    await (app as any).plugins.plugins["task-center"].cache.invalidateFile(p);
+    // @ts-expect-error — runtime plugin
+    await (app as any).plugins.plugins["task-center"].__forFlush();
+  }, path);
 }
 
 async function readFile(path: string): Promise<string> {
@@ -154,6 +167,14 @@ async function openMobileBoardWeek() {
 describe("Task Center — mobile coverage gap-fill (task #44)", function () {
   beforeEach(async function () {
     await obsidianPage.resetVault(VAULT);
+    // `resetVault` does NOT reset `.obsidian` plugin settings, so a sibling
+    // spec that flips `taskFormatFlavor` to "dataview" (dataview-format /
+    // format-matrix run alphabetically earlier) leaks it here — then `done`
+    // writes `[completion:: …]` and `drop` writes `[cancelled:: …]` instead
+    // of the `✅` / `❌` US-508 asserts. Pin the write flavor to emoji so the
+    // gesture assertions are deterministic regardless of leak. See
+    // wdio.conf.mts "Test isolation" + _journeys.resetForWriteFlavor.
+    await setWriteFlavor("tasks");
     // Default: mobile gestures off. Each gesture test flips the hook on
     // explicitly so a missed reset would surface fast.
     await setTestForceMobile(false);
