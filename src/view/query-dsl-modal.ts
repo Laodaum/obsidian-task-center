@@ -1,6 +1,7 @@
-import { App, Modal } from "obsidian";
+import { App } from "obsidian";
 import { t as tr, getLocale } from "../i18n";
 import { parseQueryDsl } from "../saved-views";
+import { TcBaseModal } from "./tc-modal";
 
 export type QueryDslSubmitMode = "update" | "saveAs";
 
@@ -17,7 +18,8 @@ interface DslValidation {
   message: string;
 }
 
-export class QueryDslModal extends Modal {
+export class QueryDslModal extends TcBaseModal {
+  protected readonly modalContentClass = "task-center-query-dsl-modal";
   private value: string;
   private readonly hasExisting: boolean;
   private readonly onSubmit: (mode: QueryDslSubmitMode, text: string) => Promise<void>;
@@ -36,11 +38,8 @@ export class QueryDslModal extends Modal {
     this.onSubmit = onSubmit;
   }
 
-  onOpen(): void {
+  protected populate(): void {
     const { contentEl } = this;
-    this.modalEl.addClass("task-center-modal");
-    contentEl.empty();
-    contentEl.addClass("task-center-query-dsl-modal");
 
     this.titleEl.setText(tr("savedViews.dslTitle"));
     const docs = this.titleEl.createEl("a", {

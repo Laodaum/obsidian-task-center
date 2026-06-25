@@ -37,8 +37,9 @@ export class BottomSheet extends Modal {
   }
 
   onOpen(): void {
-    const { contentEl, modalEl } = this;
+    const { contentEl, modalEl, containerEl } = this;
     modalEl.addClass("task-center-bottom-sheet");
+    containerEl.addClass("task-center-bottom-sheet");
     if (this.opts.sheetClass) modalEl.addClass(this.opts.sheetClass);
     if (Platform.isMobile) modalEl.addClass("task-center-obsidian-mobile-sheet");
     contentEl.empty();

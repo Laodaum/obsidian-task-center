@@ -458,16 +458,25 @@
 
 
 /* ───── Bottom sheet primitive (used by US-504 day list, M-3 long-press) ───── */
-.modal-container.task-center-bottom-sheet,
-.task-center-bottom-sheet.modal {
-  /* Anchor at the bottom of the viewport. Inherits modal backdrop / focus
-     trap from Obsidian. */
+/* Container anchors the sheet at the bottom. */
+.modal-container.task-center-bottom-sheet {
   align-items: flex-end;
 }
-.task-center-bottom-sheet.modal .modal-content {
-  width: min(560px, 100%);
+/* The modal element itself is the visual sheet: flex column so title + content
+   together never exceed max-height. Without this, .modal-title (outside
+   .modal-content) adds unconstrained height that overflows the viewport. */
+.task-center-bottom-sheet.modal {
+  display: flex;
+  flex-direction: column;
   max-height: min(70vh, calc(100dvh - env(safe-area-inset-top) - 12px));
   border-radius: 14px 14px 0 0;
+  overflow: hidden;
+}
+/* Content fills remaining space below the title and scrolls. */
+.task-center-bottom-sheet.modal .modal-content {
+  flex: 1 1 0;
+  min-height: 0;
+  width: min(560px, 100%);
   padding: 10px 18px max(18px, env(safe-area-inset-bottom));
   margin: 0;
   overflow-y: auto;
