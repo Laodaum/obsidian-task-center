@@ -35,6 +35,24 @@ const {
   createBuiltinQueryPresets,
 } = await import("../test/.compiled/saved-views.js");
 
+// ── tag match mode (AND default / OR object) ──
+
+test("tag selector: OR round-trips as object; AND collapses to bare array; array stays array", () => {
+  const dsl = JSON.stringify({
+    name: "T",
+    view: { layout: { dir: "col", children: [
+      { type: "list", when: { tags: { values: ["#a", "#b"], mode: "or" } } },
+      { type: "list", when: { tags: { values: ["#a", "#b"], mode: "and" } } },
+      { type: "list", when: { tags: ["#c"] } },
+    ] } },
+  });
+  const preset = parseQueryDsl(dsl);
+  const areas = preset.view.layout.children;
+  assert.deepEqual(areas[0].when.tags, { values: ["#a", "#b"], mode: "or" }, "OR preserved as object");
+  assert.deepEqual(areas[1].when.tags, ["#a", "#b"], "AND collapses to a bare array");
+  assert.deepEqual(areas[2].when.tags, ["#c"], "bare array stays a bare array");
+});
+
 // ── VAL-CORE-005: normalizeQueryPreset ──
 
 test("VAL-CORE-005: normalizeQueryPreset fills defaults and trims strings", () => {

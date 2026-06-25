@@ -146,6 +146,37 @@ test("VAL-CORE-007: tags AND — task must have ALL specified tags", async () =>
   assert.equal(result[0].id, "test.md:L1");
 });
 
+test("tags OR — { values, mode: 'or' } matches a task carrying ANY of the tags", async () => {
+  if (compileErr) throw compileErr;
+
+  const { applyQueryFilters } = await import("../test/.compiled/filter.js");
+
+  const tasks = [
+    effectiveTask({ id: "test.md:L1", tags: ["#work", "#urgent"] }),
+    effectiveTask({ id: "test.md:L2", tags: ["#work"] }),
+    effectiveTask({ id: "test.md:L3", tags: ["#urgent"] }),
+    effectiveTask({ id: "test.md:L4", tags: ["#other"] }),
+  ];
+
+  const result = applyQueryFilters(tasks, { tags: { values: ["#work", "#urgent"], mode: "or" } }, 1);
+  assert.deepEqual(result.map((t) => t.id), ["test.md:L1", "test.md:L2", "test.md:L3"]);
+});
+
+test("tags AND — { values, mode: 'and' } still requires ALL tags", async () => {
+  if (compileErr) throw compileErr;
+
+  const { applyQueryFilters } = await import("../test/.compiled/filter.js");
+
+  const tasks = [
+    effectiveTask({ id: "test.md:L1", tags: ["#work", "#urgent"] }),
+    effectiveTask({ id: "test.md:L2", tags: ["#work"] }),
+  ];
+
+  const result = applyQueryFilters(tasks, { tags: { values: ["#work", "#urgent"], mode: "and" } }, 1);
+  assert.equal(result.length, 1);
+  assert.equal(result[0].id, "test.md:L1");
+});
+
 test("VAL-CORE-007: tags match is case-insensitive", async () => {
   if (compileErr) throw compileErr;
 

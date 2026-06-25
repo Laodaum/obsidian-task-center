@@ -144,9 +144,17 @@ export interface SavedTaskView {
 // and settings storage. No migration path exists for old SavedTaskView
 // data.json entries (VAL-CORE-005 / VAL-CROSS-002).
 
+// 标签过滤的匹配模式。裸 `string[]` / 逗号串（向后兼容）= AND；对象形态
+// `{ values, mode }` 让预设表达 OR（「含任一标签」），四象限等用得上。归一化
+// 输出：AND 收敛回裸数组，只有 OR 才用对象形态。
+export interface TagSelector {
+  values: string[];
+  mode: "and" | "or";
+}
+
 export interface QueryPresetFilters {
   search?: string;
-  tags?: string[] | string;
+  tags?: string[] | string | TagSelector;
   status?: QueryStatus;
   time?: QueryTimeFilters;
 }

@@ -22,8 +22,8 @@ import { BUILTIN_VIEW_DATA } from "./builtin-views/index";
 // US-109z2 / REFACTOR.md D5: status schema lives in the query layer so the pure
 // query pipeline (filter / projection) never imports up into saved-views.
 // Re-exported here for the view layer's existing import sites.
-import { KNOWN_STATUS_VALUES, normalizeQueryStatus } from "./query/schema";
-export { normalizeQueryStatus };
+import { KNOWN_STATUS_VALUES, normalizeQueryStatus, resolveTagFilter } from "./query/schema";
+export { normalizeQueryStatus, resolveTagFilter };
 const BUILTIN_QUERY_TABS = ["today", "week", "month", "todo", "unscheduled", "completed", "dropped"] as const;
 type BuiltinQueryTab = typeof BUILTIN_QUERY_TABS[number];
 
@@ -107,16 +107,13 @@ function seededBuiltinQueryPreset(tab: BuiltinQueryTab, name: string): QueryPres
   return normalizeQueryPreset({ ...data, name } as unknown as QueryPreset);
 }
 
+// 归一化标签的值：补 # 前缀、按小写去重，返回裸数组（AND/OR 的模式不在这里
+// 决定——见 normalizeQueryPresetFilters）。接受数组 / 逗号串 / { values, mode }。
 function normalizeDslTags(value: unknown): string[] {
-  const raw = Array.isArray(value)
-    ? value
-    : typeof value === "string"
-      ? value.split(",")
-      : [];
+  const { values } = resolveTagFilter(value);
   const out: string[] = [];
   const seen = new Set<string>();
-  for (const item of raw) {
-    if (typeof item !== "string") continue;
+  for (const item of values) {
     const trimmed = item.trim();
     if (!trimmed) continue;
     const tag = trimmed.startsWith("#") ? trimmed : `#${trimmed}`;
@@ -177,12 +174,14 @@ export function normalizeQueryPreset(raw: QueryPreset): QueryPreset {
 function normalizeQueryPresetFilters(raw: unknown): QueryPresetFilters {
   const filters = isRecord(raw) ? raw : {};
   const search = typeof filters.search === "string" ? filters.search.trim() : "";
-  const tags = normalizeDslTags(filters.tags);
+  const tagValues = normalizeDslTags(filters.tags);
+  const tagMode = resolveTagFilter(filters.tags).mode;
   const status = normalizeQueryStatus(filters.status);
   const time = normalizeTimeFilters(filters.time);
   const out: QueryPresetFilters = {};
   if (search) out.search = search;
-  if (tags.length > 0) out.tags = tags;
+  // OR 用对象形态保留模式；AND（默认）收敛回裸数组，既有数据/测试不受影响。
+  if (tagValues.length > 0) out.tags = tagMode === "or" ? { values: tagValues, mode: "or" } : tagValues;
   out.status = status;
   if (Object.keys(time).length > 0) out.time = time;
   return out;
@@ -232,7 +231,7 @@ function mergeQueryFilters(base: QueryPresetFilters, local: QueryPresetFilters |
 
 function applyBaseFiltersToLayout(layout: LayoutNode, filters: QueryPresetFilters): LayoutNode {
   if (!queryFiltersHaveActiveConditions(filters)) return layout;
-  if (isStackNode(layout)) {
+  if (isStackLayout(layout)) {  // fix-forward：本地类型守卫（原提交误用了未导入的 isStackNode）
     const out: StackConfig = {
       ...layout,
       children: layout.children.map((child) => applyBaseFiltersToLayout(child, filters)),

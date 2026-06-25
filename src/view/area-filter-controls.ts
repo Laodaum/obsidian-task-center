@@ -14,8 +14,10 @@ import { normalizeQueryStatus } from "../query/schema";
 import {
   PRIMARY_TIME_FIELD,
   SECONDARY_TIME_FIELDS,
+  buildTagsField,
   statusFilterOptions,
   tagFilterSummary,
+  tagModeOptions,
   timeFieldLabel,
   timeFilterOptions,
   toggledStatus,
@@ -174,12 +176,27 @@ function renderAreaTagList(
   selectedTags: string[],
   rerenderControls?: Rerender,
 ): void {
+  // 选标签时按当前模式（AND 默认 / OR）写回 when.tags。
+  const tagMode = v.areaTagMode(when);
   const sec = parent.createDiv({ cls: "bt-area-filter-sec" });
   const head = sec.createDiv({ cls: "bt-area-filter-sec-head" });
   head.createSpan({ cls: "bt-area-filter-sec-label", text: tr("savedViews.tag") });
   if (selectedTags.length > 0) {
     const clearTags = head.createEl("button", { text: tr("savedViews.clearTags"), cls: "bt-area-filter-clear-tags" });
     clearTags.addEventListener("click", () => v.setAreaWhen(areaIndex, { ...when, tags: [] }, rerenderControls));
+  }
+  // AND/OR 切换：只有选了 ≥2 个标签时模式才有意义，所以此时才出现。
+  if (selectedTags.length >= 2) {
+    const modeRow = head.createDiv({ cls: "bt-area-tag-mode" });
+    for (const opt of tagModeOptions()) {
+      const btn = modeRow.createEl("button", {
+        text: opt.label,
+        cls: "bt-area-tag-mode-btn" + (opt.value === tagMode ? " active" : ""),
+      });
+      btn.dataset.tagMode = opt.value;
+      btn.addEventListener("click", () =>
+        v.setAreaWhen(areaIndex, { ...when, tags: buildTagsField(selectedTags, opt.value) }, rerenderControls));
+    }
   }
 
   // Click-to-open select: a trigger showing the selection summary; the
@@ -253,7 +270,7 @@ function renderAreaTagList(
         const next = checked
           ? selectedTags.filter((t) => t.toLowerCase() !== lc)
           : [...selectedTags, opt.tag];
-        v.setAreaWhen(areaIndex, { ...when, tags: next }, rerenderControls);
+        v.setAreaWhen(areaIndex, { ...when, tags: buildTagsField(next, tagMode) }, rerenderControls);
       });
     }
     if (filtered.length > CAP) {

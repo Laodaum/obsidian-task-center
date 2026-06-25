@@ -4,7 +4,7 @@
 // (REFACTOR.md Phase 2 — first pure-logic extraction.)
 
 import { t as tr } from "../i18n";
-import type { QueryStatus, QueryTimeField, TaskStatus } from "../types";
+import type { QueryStatus, QueryTimeField, TagSelector, TaskStatus } from "../types";
 
 // The scheduled field is always shown; the rest are progressive (added on
 // demand). Shared by the area filter controls and the legacy filter popovers.
@@ -46,6 +46,20 @@ export function timeFilterOptions(field: QueryTimeField): Array<readonly [string
     ["month", tr("savedViews.dateMonth")],
   );
   return base;
+}
+
+// 把选中标签 + 模式拼成可写回 `when.tags` 的形态：AND（默认）用裸数组（向后
+// 兼容），OR 用 `{ values, mode: "or" }` 对象。空选择永远回裸数组。
+export function buildTagsField(values: string[], mode: "and" | "or"): string[] | TagSelector {
+  return mode === "or" && values.length > 0 ? { values, mode: "or" } : values;
+}
+
+// 标签匹配模式的选项（全部匹配 = AND / 任一匹配 = OR）。
+export function tagModeOptions(): Array<{ value: "and" | "or"; label: string }> {
+  return [
+    { value: "and", label: tr("savedViews.tagModeAll") },
+    { value: "or", label: tr("savedViews.tagModeAny") },
+  ];
 }
 
 export function tagFilterSummary(selected: string[]): string {

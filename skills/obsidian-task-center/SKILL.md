@@ -111,99 +111,42 @@ End-of-day / weekly retrospective summary. Reports today and rolling-week window
 
 Use this for shutdown reviews, weekly reviews, and "what actually happened?" questions. Prefer text output for user-facing summaries; use `format=json` only when you need to parse it.
 
-### Query Tab / Preset verbs
+### Query Tab / preset views
 
-Query Tabs are saved QueryPreset DSL objects. The CLI uses the same storage, schema, and validation as the GUI Query editor. Always target tabs by stable `id`, not display name.
+A Query Tab is a saved QueryPreset — a `view.layout` tree (same storage/schema/validation as the GUI Query editor). Target tabs by stable `id`, never display name.
 
-Read:
+Read / run (common, read-only):
 
 ```
-obsidian task-center:query-list
-obsidian task-center:query-list hidden=true format=json
+obsidian task-center:query-list [hidden=true] [format=json]
 obsidian task-center:query-show id=preset-week
-obsidian task-center:query-run id=preset-today
-obsidian task-center:query-run id=preset-today view=week anchor=2026-05-04
-obsidian task-center:query-run id=preset-week view=month anchor=2026-05-01 format=json
+obsidian task-center:query-run  id=preset-today [view=list|week|month] [anchor=YYYY-MM-DD] [format=json]
 ```
 
-`query-list` text output includes `id`, `name`, `builtin|custom`, `default`, and `hidden|visible`. JSON output returns:
+- `query-run` renders the preset's saved view; `view=` is a temporary override (not saved back); `anchor=` is the week/month cursor (defaults to today).
+- Rows keep stable ids (`Tasks/Inbox.md:L42`) — pipe into `show` / `schedule` / `done` / `abandon`.
 
-```json
-[
-  { "id": "preset-week", "name": "Week", "builtin": true, "hidden": false, "default": false }
-]
-```
-
-`query-run` executes the preset DSL against current vault tasks and renders the result by view:
-
-- default: uses the preset's saved `view`.
-- `view=list|week|month`: temporary display override; it does not save back to the preset.
-- `anchor=YYYY-MM-DD`: week/month cursor date. Week output shows all 7 days with counts; month text output shows dated cells that contain tasks, while JSON contains all month cells.
-- all task rows keep stable ids like `Tasks/Inbox.md:L42` so you can pipe into `show`, `schedule`, `done`, or `abandon`.
-
-#### Preset DSL shape (1.0+ — a layout tree, not a flat filter)
-
-A preset is `{ name, view: { layout: <node> } }`. There is **no tab-level `filters`** and **no `summary`** — both were removed in 1.0. All filtering lives on each area's own `when`. A `<node>` is either a **stack** or an **area leaf**:
-
-> ⚠️ The old flat shape (`{filters, view:{type}, summary}`) is **not** rejected — it is accepted but its `filters` / `summary` / `view.type` are silently dropped, so the preset runs **unfiltered**. There is no error to catch; you must emit `view.layout` with per-area `when`.
-
-- **stack** — `{ "dir": "row" | "col", "children": [<node>, …], "weight"?: number }`. `col` ≈ VStack, `row` ≈ HStack; nest them for 2-D layouts (e.g. a four-quadrant grid).
-- **area leaf** — one of:
-  - `{ "type": "list",  "when"?: Filters, "sections"?: [Section], "orderBy"?: [string], "limit"?: number, "emptyText"?: string, "title"?: string }`
-  - `{ "type": "grid",  …same fields as list… }` — same config and projection as `list`, but cards lay out in a responsive multi-column grid (used for the unscheduled tray)
-  - `{ "type": "week"  | "month", "when"?: Filters, "firstDayOfWeek"?: "monday" | "sunday" }` — month also takes `"density": "compact" | "cards"`
-  - `{ "type": "drop", "onDrop": DropEffect, "title"?: string }` — a pure action drop zone, no query
-
-Filters (`when`) shape — same vocabulary as `task-center:list`:
-
-```jsonc
-{
-  "search": "示例",                 // free text
-  "tags": ["#work", "#2象限"],      // string or string[]
-  "status": ["todo"],               // ("todo"|"done"|"dropped")[]  (or "all")
-  "time": { "scheduled": "today", "deadline": "overdue" }
-  // time fields: scheduled | deadline | completed | created | dropped
-  // tokens: today | tomorrow | yesterday | week | next-week | month |
-  //         next-month | unscheduled | overdue (deadline) | YYYY-MM-DD | FROM..TO
-}
-```
-
-`Section` (list/grid only — named groups inside one area): `{ "id", "title", "when": Filters, "orderBy"?, "limit"?, "emptyText"? }`.
-
-`onDrop` (drop area required; tray optional) — exactly one of: `{ "setStatus": "dropped" }` · `{ "setScheduled": "<token>" }` · `{ "clearScheduled": true }`.
-
-Create or update DSL:
-
-```bash
-# simplest: a single list area filtered to todo
-obsidian task-center:query-create dsl='{"name":"工作","view":{"layout":{"type":"list","when":{"tags":["#work"],"status":["todo"]}}}}'
-
-# a week area stacked over an "unscheduled" grid tray + a drop area
-obsidian task-center:query-update id=sv-alpha dsl='{"name":"工作周","view":{"layout":{"dir":"col","children":[{"type":"week","when":{"tags":["#work"],"status":["todo"]}},{"dir":"row","children":[{"type":"grid","id":"unscheduled-tray","title":"未排期","when":{"time":{"scheduled":"unscheduled"},"status":["todo"]},"onDrop":{"clearScheduled":true}},{"type":"drop","title":"放弃","onDrop":{"setStatus":"dropped"}}]}]}}}'
-```
-
-To learn the exact current shape, read a builtin first: `obsidian task-center:query-show id=preset-today` (a sectioned list) or `id=preset-week` (week + tray + drop). Mirror what it returns rather than guessing.
-
-`query-save` is kept as an alias for `query-create`. Create always allocates a new id, even if the DSL contains one. Update preserves the target id and builtin/custom identity.
-
-Manage tabs:
+Create / edit a view (the DSL is a layout tree; **filtering lives only in each area's `when`**):
 
 ```
-obsidian task-center:query-rename id=sv-alpha name="深度工作"
-obsidian task-center:query-copy id=preset-week name="我的本周"
-obsidian task-center:query-hide id=preset-week hidden=true
-obsidian task-center:query-hide id=preset-week hidden=false
-obsidian task-center:query-delete id=sv-alpha
-obsidian task-center:query-set-default id=preset-week
-obsidian task-center:query-set-default id=null
+obsidian task-center:query-create dsl='…'      # new tab, always a fresh id (query-save is an alias)
+obsidian task-center:query-update id=… dsl='…' # edit existing; keeps id/builtin; invalid DSL leaves it untouched
+obsidian task-center:query-rename id=… name="…"
+obsidian task-center:query-copy   id=… [name="…"]
+obsidian task-center:query-hide   id=… hidden=true|false
+obsidian task-center:query-delete id=…
+obsidian task-center:query-set-default id=…|null
 ```
 
-Rules:
+> ⚠️ Before writing DSL: filtering belongs **only** to each area's `when`. A top-level `filters` is **silently ignored**; the old flat shape (top-level `search`/`tag`/`time`/`status`) is **rejected** with `invalid_query`; `tags` is a `string[]`/comma string (**AND**) or `{values, mode:"and"|"or"}` (**OR** = any of the tags).
 
-- Builtin tabs can be hidden/unhidden, copied, renamed, updated, and set as default, but cannot be permanently deleted.
-- Deleting a custom Query Tab deletes only that saved view, never tasks.
-- Hidden tabs cannot be set as default.
-- Invalid DSL fails with `error invalid_query` and leaves settings unchanged.
+**The DSL's SSOT is `docs/dsl/zh.md` (English `docs/dsl/en.md`) in the obsidian-task-center repo.** Before building/editing a view:
+
+- Full grammar (node types, Filters/`when`, Section, onDrop, orderBy, real factory DSL) → read `docs/dsl/zh.md` or `en.md`; a condensed skill-local mirror is `reference/queries.md`.
+- Ready-made layouts: four quadrants → `examples/four-quadrant.md`; week + unscheduled tray + drop zone → `examples/week-with-tray.md`; simple / sectioned list → `examples/simple-list.md`.
+- Unsure of the current shape? `query-show id=preset-today` (sectioned list) or `id=preset-week` (week + tray + drop), and mirror what it returns instead of guessing.
+
+Rules: builtin tabs can be hidden/copied/renamed/updated/set-default but never permanently deleted; deleting a custom tab removes only that view, never tasks; a hidden tab cannot be default; invalid DSL → `invalid_query` (settings unchanged); unknown id → `query_not_found`.
 
 ### Write verbs (idempotent, safe to retry)
 
@@ -247,7 +190,7 @@ error  <code>
     <human message>
 ```
 
-Common codes: `task_not_found`, `ambiguous_slug`, `invalid_date`, `daily_notes_unavailable`, `invalid_nest`, `nest_partial`.
+Common codes: `task_not_found`, `ambiguous_slug`, `invalid_date`, `daily_notes_unavailable`, `invalid_nest`, `nest_partial`, `invalid_query`, `query_not_found`.
 
 Recover by:
 - `task_not_found` → re-run `task-center:list` to get fresh ids
@@ -255,6 +198,8 @@ Recover by:
 - `invalid_date` → convert to `YYYY-MM-DD`
 - `daily_notes_unavailable` → enable/configure Daily Notes, or pass `to=<path>`
 - `invalid_nest` / `nest_partial` → inspect the named source/target tasks before retrying
+- `invalid_query` → the message echoes the validation failure; fix the DSL per `docs/dsl/` (filtering must be per-area `when`)
+- `query_not_found` → re-run `task-center:query-list` for fresh tab ids
 
 ## Recommended workflows
 

@@ -66,6 +66,7 @@ import {
   renameQueryPresetById,
   normalizeQueryPreset,
   normalizeQueryStatus,
+  resolveTagFilter,
   upsertQueryPreset,
   updateQueryPresetById,
   visibleQueryPresets,
@@ -1624,9 +1625,11 @@ export class TaskCenterView extends ItemView {
   }
 
   areaTags(when: QueryPresetFilters): string[] {
-    if (Array.isArray(when.tags)) return when.tags;
-    if (typeof when.tags === "string") return parseFilterTags(when.tags);
-    return [];
+    return resolveTagFilter(when.tags).values;
+  }
+
+  areaTagMode(when: QueryPresetFilters): "and" | "or" {
+    return resolveTagFilter(when.tags).mode;
   }
 
   areaFilterSummary(when: QueryPresetFilters): string {
@@ -1747,8 +1750,7 @@ export class TaskCenterView extends ItemView {
         ? ((primary as { when?: QueryPresetFilters }).when ?? {})
         : {};
     const q = (when.search ?? "").trim().toLowerCase();
-    const tagStr = Array.isArray(when.tags) ? when.tags.join(",") : (when.tags ?? "");
-    const tags = parseFilterTags(tagStr);
+    const tags = resolveTagFilter(when.tags).values;
     const time = when.time ?? {};
     const status = normalizeQueryStatus(when.status);
     if (!q && tags.length === 0 && !this.hasTimeFilters(time) && status === "all") return () => true;

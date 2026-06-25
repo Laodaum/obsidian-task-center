@@ -4,7 +4,7 @@
 // layer: the dependency points saved-views → query/schema, never the reverse.
 // (ARCHITECTURE.md §2.1 依赖规则; REFACTOR.md D5)
 
-import type { TaskStatus } from "../types";
+import type { QueryPresetFilters, TaskStatus } from "../types";
 
 export const KNOWN_STATUS_VALUES: TaskStatus[] = [
   "todo",
@@ -17,6 +17,34 @@ export const KNOWN_STATUS_VALUES: TaskStatus[] = [
 
 export function isKnownTaskStatus(value: unknown): value is TaskStatus {
   return typeof value === "string" && (KNOWN_STATUS_VALUES as readonly string[]).includes(value);
+}
+
+/**
+ * Extract a tag filter's values + match mode from any accepted DSL shape:
+ *   - `string[]`               → AND (back-compat)
+ *   - comma-separated `string` → AND (back-compat)
+ *   - `{ values, mode }`       → explicit mode ("or" only when literally "or")
+ * Values are returned verbatim (no `#`-prefixing / dedup — each layer does its
+ * own); empty / malformed input degrades to `{ values: [], mode: "and" }`.
+ */
+export function resolveTagFilter(
+  tags: QueryPresetFilters["tags"] | unknown,
+): { values: string[]; mode: "and" | "or" } {
+  if (!tags) return { values: [], mode: "and" };
+  if (Array.isArray(tags)) {
+    return { values: tags.filter((t): t is string => typeof t === "string"), mode: "and" };
+  }
+  if (typeof tags === "string") {
+    return { values: tags.split(",").map((t) => t.trim()).filter(Boolean), mode: "and" };
+  }
+  if (typeof tags === "object") {
+    const obj = tags as { values?: unknown; mode?: unknown };
+    const values = Array.isArray(obj.values)
+      ? obj.values.filter((t): t is string => typeof t === "string")
+      : [];
+    return { values, mode: obj.mode === "or" ? "or" : "and" };
+  }
+  return { values: [], mode: "and" };
 }
 
 /**

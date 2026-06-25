@@ -16,7 +16,7 @@ import type {
   QueryTimeField,
   QueryTimeFilters,
 } from "../types";
-import { normalizeQueryStatus } from "./schema";
+import { normalizeQueryStatus, resolveTagFilter } from "./schema";
 import { taskMatchesTimeToken, timeTokenAppliesToField } from "../time-filter";
 import { todayISO } from "../dates";
 
@@ -48,16 +48,6 @@ function effectiveTimeValue(
 
 // ── Normalization ──
 
-function normalizeTags(tags: QueryPresetFilters["tags"]): string[] {
-  if (!tags) return [];
-  if (Array.isArray(tags)) return tags;
-  // Comma-separated string
-  return tags
-    .split(",")
-    .map((t) => t.trim())
-    .filter(Boolean);
-}
-
 function normalizeStatusFilter(
   status: QueryPresetFilters["status"],
 ): "all" | string[] {
@@ -67,6 +57,7 @@ function normalizeStatusFilter(
 interface NormalizedQueryFilters {
   searchQ: string;
   tagList: string[];
+  tagMode: "and" | "or";
   statusFilter: "all" | string[];
   time: QueryTimeFilters;
   hasTime: boolean;
@@ -76,9 +67,11 @@ function normalizeQueryFilters(
   filters: QueryPresetFilters,
 ): NormalizedQueryFilters {
   const time = filters.time ?? {};
+  const { values: tagList, mode: tagMode } = resolveTagFilter(filters.tags);
   return {
     searchQ: (filters.search ?? "").trim().toLowerCase(),
-    tagList: normalizeTags(filters.tags),
+    tagList,
+    tagMode,
     statusFilter: normalizeStatusFilter(filters.status),
     time,
     hasTime: Object.values(time).some(
@@ -98,17 +91,19 @@ function matchesSearch(task: EffectiveTask, q: string): boolean {
   return false;
 }
 
-function matchesTags(task: EffectiveTask, wanted: string[]): boolean {
-  for (const wantedTag of wanted) {
+function matchesTags(
+  task: EffectiveTask,
+  wanted: string[],
+  mode: "and" | "or",
+): boolean {
+  const has = (wantedTag: string): boolean => {
     const normalized = wantedTag.startsWith("#")
       ? wantedTag.toLowerCase()
       : `#${wantedTag.toLowerCase()}`;
-    const found = task.tags.some(
-      (t) => t.toLowerCase() === normalized,
-    );
-    if (!found) return false;
-  }
-  return true;
+    return task.tags.some((t) => t.toLowerCase() === normalized);
+  };
+  // OR = task carries any of the tags; AND = task carries all of them.
+  return mode === "or" ? wanted.some(has) : wanted.every(has);
 }
 
 function matchesStatus(
@@ -185,7 +180,7 @@ function taskMatchesNormalizedQueryFilters(
 ): boolean {
   if (normalized.searchQ && !matchesSearch(task, normalized.searchQ))
     return false;
-  if (normalized.tagList.length > 0 && !matchesTags(task, normalized.tagList))
+  if (normalized.tagList.length > 0 && !matchesTags(task, normalized.tagList, normalized.tagMode))
     return false;
   // US-153: a task in `exemptStatusIds` (just completed in this view session)
   // bypasses the status predicate only — every other filter still applies — so

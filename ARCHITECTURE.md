@@ -8,10 +8,10 @@
 
 1. **Markdown 是唯一事实源**：任务数据只存在于 vault 的 Markdown 行中；内存缓存、Query、summary、view 都是派生结果。（US-401）
 2. **字节级写回**：改名、移动、嵌套、改期、完成、放弃都必须最小化改动目标行 / 目标块，保留未知 emoji、inline field、tag、block id、wikilink anchor 与用户原文。（US-407 / US-409）
-3. **一份 Query DSL**：filters、view、summary、tab preset、GUI 可视化编辑、GUI DSL 直编、CLI query 管理共用同一份 schema 与校验。（US-109t / US-219）
+3. **一份 Query DSL**：view（area 布局树）、tab preset、GUI 可视化编辑、GUI DSL 直编、CLI query 管理共用同一份 schema 与校验。（US-109t / US-219）
 4. **Tab 是持久 Query**：不存在独立持久化的“current query”。运行时只有 tab saved query、tab draft、effective query。（US-109u）
 5. **View 不拥有业务集合**：list / grid / week / month 只消费 Query 结果并提供对应操作；TODO、今日、未排期、已完成等都是 QueryPreset。（US-100 / US-109k）
-5a. **过滤归属 area，不是全局 live state**：没有一份作用于整个 tab 的全局过滤运行时状态。每个 `list`/`grid` area 的过滤就是它自己的 `when`；图形过滤入口直接编辑该 area 的 `when`（落进 tab draft），与 DSL 直编同一份数据。tab 级只有一个程序化应用的共享基础集 `preset.filters`。（US-109w / US-109x / US-109y / US-109z）
+5a. **过滤归属 area，不是全局 live state**：没有一份作用于整个 tab 的全局过滤运行时状态。每个 `list`/`grid` area 的过滤就是它自己的 `when`；图形过滤入口直接编辑该 area 的 `when`（落进 tab draft），与 DSL 直编同一份数据。**没有** tab 级 `filters` / 全局基础集——要整个 tab 都只看某状态，就在每个 area 的 `when` 里各写一遍。（US-109w / US-109x / US-109y / US-109z / US-109z2）
 6. **GUI 与 CLI 共用业务层**：解析、筛选、summary、写回、嵌套、QueryPreset CRUD 都必须通过同一服务层，不允许 CLI 和 GUI 各自实现。（US-201~219）
 7. **缓存是唯一读入口**：状态栏、看板、CLI 不直接扫 vault；所有任务读取经 TaskCache。（US-404）
 8. **事件增量优先**：文件变更只重解析该文件；打开看板 / list / stats / hash disambiguation 才允许显式全量 ensure。（US-404）
@@ -93,7 +93,7 @@ interface EffectiveTask extends ParsedTask {
 > 本节是 DSL 的 TypeScript 规格（架构事实源）。面向使用者、带配图与可运行示例的「怎么写」参考在 [`docs/dsl/zh.md`](docs/dsl/zh.md) / [`docs/dsl/en.md`](docs/dsl/en.md)；应用内「编辑 Query」的「DSL 文档」链接按 locale 指向对应语言页。
 
 ```ts
-type TaskStateFilter = "todo" | "done" | "dropped";
+type TaskStateFilter = "todo" | "done" | "dropped"; // GUI 暴露这三个；解析器还接受 in_progress / cancelled / custom
 
 type DateToken =
   | "all"
@@ -108,13 +108,13 @@ type DateToken =
 
 interface QueryFilters {
   search?: string;
-  tags?: { values: string[]; mode: "and" | "or" };
+  tags?: string[] | string | { values: string[]; mode: "and" | "or" }; // 数组/逗号串 = AND；对象选模式，OR = 含任一
   status?: TaskStateFilter[]; // undefined = 全部
   time?: {
     scheduled?: DateToken; // ⏳；unscheduled = is empty
     deadline?: DateToken | "overdue" | "next-7-days";
     completed?: DateToken;
-    dropped?: DateToken;
+    dropped?: DateToken; // 取消日期；DSL 归一化目前会剥除，预设里写了不生效
     created?: DateToken;
   };
 }
@@ -155,7 +155,7 @@ interface AreaBase {
   onDrop?: DropEffect;
 }
 
-// list：在 preset.filters 基础上再用 when 收窄，渲染一列任务卡。
+// list：用 when 筛出并渲染一列任务卡（无 tab 级 filters，过滤只在 area 自己的 when）。
 // 可选 sections —— 一个 list 内部按 when 再分成若干带标题的分组。
 // 今日 = 一个配了 3 个 section 的 list；TODO = 一个不分组的 list；
 // 两者是同一个组件，看起来一样，只是 DSL 不同。
@@ -209,33 +209,21 @@ interface QueryViewConfig {
   layout: LayoutNode; // 根节点：可以是 Stack，也可以直接是单个 area
 }
 
-interface QuerySummaryMetric {
-  id: string;
-  type: "count" | "sum" | "ratio" | "top-n" | "group-by";
-  field?: string;
-  numerator?: string;
-  denominator?: string;
-  by?: "tag" | string;
-  limit?: number;
-}
-
 interface QueryPreset {
   id: string;
   name: string;
   builtin: boolean;
   hidden: boolean;
-  filters: QueryFilters;     // 整个 view 的基础集合
-  view: QueryViewConfig;     // area 布局树
-  summary: QuerySummaryMetric[]; // 顶部 summary，标准位置渲染
+  view: QueryViewConfig;     // 唯一分区：area 布局树。无 tab 级 filters、无 summary（US-109z2 移除）
 }
 ```
 
 Schema 约束：
 
-- `filters / view / summary` 是一个对象的三个分区。`filters` 是 view 的基础集合，每个 list area / section 的 `when` 在此之上再收窄。
+- 一个 preset 只有 `view`（一棵 area 布局树）。**没有** tab 级 `filters`、**没有** `summary`（US-109z2 移除）：过滤只属于每个 list/grid/week/month area 与 section 自己的 `when`，写在顶层的 `filters` 会被静默忽略。
 - 没有 view 类型枚举，也没有 `preset` 判别字段。view 行为完全由 `view.layout` 布局树决定，渲染层不得按 today / completed / unscheduled 等名字分支。（US-720 / US-109k）
-- 内置 view 的布局：今日 = 一个含 3 个 section 的 `list`（与 TODO 同组件，差异只在 DSL）；未排期 = `col[ list, drop ]`；已完成 = `list` + 顶层 summary；周 / 月 = `col[ week|month, list(tray) ]`；四象限 = `col[ row[grid,grid], row[grid,grid] ]`（带 title + when 的 grid，没有专门 matrix 类型）。都是 area 组合，不是新 view 类型。（US-720 / US-103 / US-103a）
-- 未排期 tray 是一个 `list` area，数据来源是它自己的 `when`，不改变同一布局里 week / month area 的集合。（US-109j）
+- 内置 view 的布局（真实出厂见 `src/builtin-views/*.json`）：今日 = 一个含 3 个 section 的 `list`（与 TODO 同组件，差异只在 DSL）；未排期 = `col[ list ]`；已完成 / 已放弃 = 单个 `list`；周 / 月 = `col[ week|month, row[ grid(tray), drop ] ]`；四象限 = `col[ row[grid,grid], row[grid,grid] ]`（带 title + when 的 grid，没有专门 matrix 类型）。状态等过滤都落在各 area 的 `when`，不是 tab 级。都是 area 组合，不是新 view 类型。（US-720 / US-103 / US-103a）
+- 未排期 tray 是一个 `grid` area（卡片多列网格），数据来源是它自己的 `when`，不改变同一布局里 week / month area 的集合。（US-109j）
 - 「改到明天」「清空排期」「放弃」是列表卡片与 drop area 的通用能力，不是某个 preset 的专属动作。（US-103 / US-123）
 - `unscheduled` 属于 `time.scheduled is empty`，不是日期范围 token。（US-109e）
 - View 配置不能硬编码业务分类；area 的 title 和 when 条件都来自 DSL。（US-109f / US-103a）
@@ -295,7 +283,7 @@ interface PluginSettings {
 
 ### 1.5 老数据迁移与升级闸门（US-414 / US-415）
 
-新模型统一为 `QueryPreset`（嵌套 `filters` + `view.layout` 布局树）。两类旧结构需要迁移：
+新模型统一为 `QueryPreset`（只有 `view.layout` 布局树，过滤在各 area 的 `when`）。两类旧结构需要迁移：
 
 - 扁平 `SavedTaskView`：无嵌套 `filters`，顶层有 `search/tag/time/status`。
 - 旧 DSL 的 `QueryPreset`：`filters` 已嵌套，但 `view` 仍是旧写法 `{type, preset, sections, tray, matrix}`、没有 `layout`。
@@ -304,7 +292,7 @@ interface PluginSettings {
 
 - 检测：`isLegacyQueryPresetShape(obj)` —— 命中 `isLegacySavedTaskView(obj)`，或 `view` 是非空旧 DSL 形状（无 `layout` 且含 `type/preset/sections/tray/matrix` 任一）即判定为旧结构。
 - 迁移：`migrateLegacySavedTaskView(obj) → QueryPreset`（纯函数）把扁平字段收进 `filters`；旧 DSL view 由下游 `ensureBuiltinQueryPresets → normalizeQueryPreset → normalizeQueryPresetView` 的 `migrateLegacyViewToLayout` 迁成 `layout`。坏字段按默认值降级，不抛错、不中断加载。
-- 内置视图：迁移后的旧内置项（`preset-*` id）进入 `ensureBuiltinQueryPresets`——保留用户的 name/hidden/排序/filters/summary，view 布局刷新成最新出厂 JSON。自定义项（`sv-*`）整体迁移并追加在内置之后。
+- 内置视图：迁移后的旧内置项（`preset-*` id）进入 `ensureBuiltinQueryPresets`——保留用户的 name/hidden/排序，view 布局刷新成最新出厂 JSON。自定义项（`sv-*`）整体迁移并追加在内置之后。
 - 闸门与时机：`loadSettings` 在内存里完成迁移并把检测计数记到 `plugin.migratedLegacyCount`，但**不**自动写回。只要该计数 > 0，`TaskCenterView.render()` 早退渲染全屏升级闸门页，不渲染看板——确保看板渲染路径只面对一种数据结构。用户点击闸门确认后调用 `plugin.completeMigration()`：`saveSettings()` 持久化、清零计数、刷新所有打开的看板进入新版 UI。
 - 幂等：确认写回后，下次加载检测不到旧结构、计数为 0、闸门不再出现。用户不确认就退出则不写回，下次仍展示闸门。
 - 边界：迁移只改本地 `data.json`，不触碰任务 Markdown（US-403）。
