@@ -20,31 +20,36 @@ export function isKnownTaskStatus(value: unknown): value is TaskStatus {
 }
 
 /**
- * Extract a tag filter's values + match mode from any accepted DSL shape:
- *   - `string[]`               → AND (back-compat)
- *   - comma-separated `string` → AND (back-compat)
- *   - `{ values, mode }`       → explicit mode ("or" only when literally "or")
+ * Extract a tag filter's include values + match mode + exclude values from any
+ * accepted DSL shape:
+ *   - `string[]`                        → include AND, no exclude (back-compat)
+ *   - comma-separated `string`          → include AND, no exclude (back-compat)
+ *   - `{ values, mode, exclude }`       → explicit mode ("or" only when literally
+ *                                         "or"); `exclude` = US-109d3 exclude group
  * Values are returned verbatim (no `#`-prefixing / dedup — each layer does its
- * own); empty / malformed input degrades to `{ values: [], mode: "and" }`.
+ * own); empty / malformed input degrades to `{ values: [], mode: "and", exclude: [] }`.
  */
 export function resolveTagFilter(
   tags: unknown,
-): { values: string[]; mode: "and" | "or" } {
-  if (!tags) return { values: [], mode: "and" };
+): { values: string[]; mode: "and" | "or"; exclude: string[] } {
+  if (!tags) return { values: [], mode: "and", exclude: [] };
   if (Array.isArray(tags)) {
-    return { values: tags.filter((t): t is string => typeof t === "string"), mode: "and" };
+    return { values: tags.filter((t): t is string => typeof t === "string"), mode: "and", exclude: [] };
   }
   if (typeof tags === "string") {
-    return { values: tags.split(",").map((t) => t.trim()).filter(Boolean), mode: "and" };
+    return { values: tags.split(",").map((t) => t.trim()).filter(Boolean), mode: "and", exclude: [] };
   }
   if (typeof tags === "object") {
-    const obj = tags as { values?: unknown; mode?: unknown };
+    const obj = tags as { values?: unknown; mode?: unknown; exclude?: unknown };
     const values = Array.isArray(obj.values)
       ? obj.values.filter((t): t is string => typeof t === "string")
       : [];
-    return { values, mode: obj.mode === "or" ? "or" : "and" };
+    const exclude = Array.isArray(obj.exclude)
+      ? obj.exclude.filter((t): t is string => typeof t === "string")
+      : [];
+    return { values, mode: obj.mode === "or" ? "or" : "and", exclude };
   }
-  return { values: [], mode: "and" };
+  return { values: [], mode: "and", exclude: [] };
 }
 
 /**

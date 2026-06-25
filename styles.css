@@ -4924,6 +4924,13 @@
   width: 14px;
   height: 14px;
 }
+.task-center-bottom-sheet .bt-area-tag-row.excluded .bt-area-tag-row-label {
+  text-decoration: line-through;
+  color: var(--text-muted);
+}
+.task-center-bottom-sheet .bt-area-tag-row.excluded .bt-area-tag-check {
+  color: var(--text-error, var(--color-red));
+}
 .task-center-bottom-sheet .bt-area-tag-row-label {
   flex: 1 1 auto;
   min-width: 0;

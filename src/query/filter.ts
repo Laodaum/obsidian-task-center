@@ -58,6 +58,7 @@ interface NormalizedQueryFilters {
   searchQ: string;
   tagList: string[];
   tagMode: "and" | "or";
+  tagExclude: string[];
   statusFilter: "all" | string[];
   time: QueryTimeFilters;
   hasTime: boolean;
@@ -67,11 +68,12 @@ function normalizeQueryFilters(
   filters: QueryPresetFilters,
 ): NormalizedQueryFilters {
   const time = filters.time ?? {};
-  const { values: tagList, mode: tagMode } = resolveTagFilter(filters.tags);
+  const { values: tagList, mode: tagMode, exclude: tagExclude } = resolveTagFilter(filters.tags);
   return {
     searchQ: (filters.search ?? "").trim().toLowerCase(),
     tagList,
     tagMode,
+    tagExclude,
     statusFilter: normalizeStatusFilter(filters.status),
     time,
     hasTime: Object.values(time).some(
@@ -95,6 +97,7 @@ function matchesTags(
   task: EffectiveTask,
   wanted: string[],
   mode: "and" | "or",
+  exclude: string[],
 ): boolean {
   const has = (wantedTag: string): boolean => {
     const normalized = wantedTag.startsWith("#")
@@ -102,8 +105,11 @@ function matchesTags(
       : `#${wantedTag.toLowerCase()}`;
     return task.tags.some((t) => t.toLowerCase() === normalized);
   };
-  // OR = task carries any of the tags; AND = task carries all of them.
-  return mode === "or" ? wanted.some(has) : wanted.every(has);
+  // US-109d3: include group — empty = no constraint; OR = carries any; AND = all.
+  const includeOk = wanted.length === 0 || (mode === "or" ? wanted.some(has) : wanted.every(has));
+  // Exclude group — the task must carry NONE of the excluded tags.
+  const excludeOk = !exclude.some(has);
+  return includeOk && excludeOk;
 }
 
 function matchesStatus(
@@ -166,6 +172,7 @@ function normalizedQueryFilterHasActiveConditions(
   return Boolean(
     normalized.searchQ ||
       normalized.tagList.length > 0 ||
+      normalized.tagExclude.length > 0 ||
       normalized.statusFilter !== "all" ||
       normalized.hasTime,
   );
@@ -180,7 +187,10 @@ function taskMatchesNormalizedQueryFilters(
 ): boolean {
   if (normalized.searchQ && !matchesSearch(task, normalized.searchQ))
     return false;
-  if (normalized.tagList.length > 0 && !matchesTags(task, normalized.tagList, normalized.tagMode))
+  if (
+    (normalized.tagList.length > 0 || normalized.tagExclude.length > 0) &&
+    !matchesTags(task, normalized.tagList, normalized.tagMode, normalized.tagExclude)
+  )
     return false;
   // US-153: a task in `exemptStatusIds` (just completed in this view session)
   // bypasses the status predicate only — every other filter still applies — so

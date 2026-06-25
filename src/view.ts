@@ -1607,12 +1607,19 @@ export class TaskCenterView extends ItemView {
     return resolveTagFilter(when.tags).mode;
   }
 
+  areaTagExclude(when: QueryPresetFilters): string[] {
+    return resolveTagFilter(when.tags).exclude;
+  }
+
   areaFilterSummary(when: QueryPresetFilters): string {
     const parts: string[] = [];
     if (when.search?.trim()) parts.push(`🔍 ${when.search.trim()}`);
     const tags = this.areaTags(when);
     if (tags.length === 1) parts.push(tags[0]);
     else if (tags.length > 1) parts.push(`${tags[0]} +${tags.length - 1}`);
+    const excl = this.areaTagExclude(when);
+    if (excl.length === 1) parts.push(`−${excl[0]}`);
+    else if (excl.length > 1) parts.push(`−${excl[0]} +${excl.length - 1}`);
     const status = normalizeQueryStatus(when.status);
     if (status !== "all") parts.push(status.map((s) => statusFilterLabel(s)).join("/"));
     const scheduled = when.time?.scheduled?.trim();

@@ -15,6 +15,7 @@ import type {
   QueryStatus,
   QueryTimeFilters,
   StackConfig,
+  TagSelector,
   TaskStatus,
 } from "./types";
 import { BUILTIN_VIEW_DATA } from "./builtin-views/index";
@@ -108,8 +109,7 @@ function seededBuiltinQueryPreset(tab: BuiltinQueryTab, name: string): QueryPres
 
 // 归一化标签的值：补 # 前缀、按小写去重，返回裸数组（AND/OR 的模式不在这里
 // 决定——见 normalizeQueryPresetFilters）。接受数组 / 逗号串 / { values, mode }。
-function normalizeDslTags(value: unknown): string[] {
-  const { values } = resolveTagFilter(value);
+function normalizeTagArray(values: string[]): string[] {
   const out: string[] = [];
   const seen = new Set<string>();
   for (const item of values) {
@@ -122,6 +122,9 @@ function normalizeDslTags(value: unknown): string[] {
     out.push(tag);
   }
   return out;
+}
+function normalizeDslTags(value: unknown): string[] {
+  return normalizeTagArray(resolveTagFilter(value).values);
 }
 
 function parseDslRoot(text: string): Record<string, unknown> {
@@ -173,14 +176,27 @@ export function normalizeQueryPreset(raw: QueryPreset): QueryPreset {
 function normalizeQueryPresetFilters(raw: unknown): QueryPresetFilters {
   const filters = isRecord(raw) ? raw : {};
   const search = typeof filters.search === "string" ? filters.search.trim() : "";
-  const tagValues = normalizeDslTags(filters.tags);
-  const tagMode = resolveTagFilter(filters.tags).mode;
+  const resolvedTags = resolveTagFilter(filters.tags);
+  const tagValues = normalizeTagArray(resolvedTags.values);
+  // US-109d3: exclude 与 include 互斥——同一标签同时出现在两组时以 include 为准。
+  const tagExclude = normalizeTagArray(resolvedTags.exclude)
+    .filter((t) => !tagValues.some((v) => v.toLowerCase() === t.toLowerCase()));
+  const tagMode = tagValues.length > 0 ? resolvedTags.mode : "and";
   const status = normalizeQueryStatus(filters.status);
   const time = normalizeTimeFilters(filters.time);
   const out: QueryPresetFilters = {};
   if (search) out.search = search;
-  // OR 用对象形态保留模式；AND（默认）收敛回裸数组，既有数据/测试不受影响。
-  if (tagValues.length > 0) out.tags = tagMode === "or" ? { values: tagValues, mode: "or" } : tagValues;
+  // 纯 AND 包含组、无排除 → 收敛回裸数组（向后兼容，既有数据/测试不受影响）；
+  // 否则用 { values, mode, exclude? } 对象形态保留模式与排除组。
+  if (tagValues.length > 0 || tagExclude.length > 0) {
+    if (tagMode === "and" && tagExclude.length === 0) {
+      out.tags = tagValues;
+    } else {
+      const sel: TagSelector = { values: tagValues, mode: tagMode };
+      if (tagExclude.length > 0) sel.exclude = tagExclude;
+      out.tags = sel;
+    }
+  }
   out.status = status;
   if (Object.keys(time).length > 0) out.time = time;
   return out;

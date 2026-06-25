@@ -177,6 +177,66 @@ test("tags AND — { values, mode: 'and' } still requires ALL tags", async () =>
   assert.equal(result[0].id, "test.md:L1");
 });
 
+// ── US-109d3: tag exclude group ──
+
+test("US-109d3: exclude — a task carrying ANY excluded tag is filtered out", async () => {
+  if (compileErr) throw compileErr;
+
+  const { applyQueryFilters } = await import("../test/.compiled/filter.js");
+
+  const tasks = [
+    effectiveTask({ id: "test.md:L1", tags: ["#work"] }),
+    effectiveTask({ id: "test.md:L2", tags: ["#work", "#someday"] }),
+    effectiveTask({ id: "test.md:L3", tags: ["#someday"] }),
+    effectiveTask({ id: "test.md:L4", tags: [] }),
+  ];
+
+  // No include, only exclude: keep everything that does NOT carry #someday.
+  const result = applyQueryFilters(tasks, { tags: { values: [], mode: "and", exclude: ["#someday"] } }, 1);
+  assert.deepEqual(result.map((t) => t.id), ["test.md:L1", "test.md:L4"]);
+});
+
+test("US-109d3: include AND exclude — must have all includes AND none of the excludes", async () => {
+  if (compileErr) throw compileErr;
+
+  const { applyQueryFilters } = await import("../test/.compiled/filter.js");
+
+  const tasks = [
+    effectiveTask({ id: "test.md:L1", tags: ["#work"] }),
+    effectiveTask({ id: "test.md:L2", tags: ["#work", "#someday"] }),
+    effectiveTask({ id: "test.md:L3", tags: ["#home"] }),
+  ];
+
+  // Has #work, but not #someday.
+  const result = applyQueryFilters(
+    tasks,
+    { tags: { values: ["#work"], mode: "and", exclude: ["#someday"] } },
+    1,
+  );
+  assert.deepEqual(result.map((t) => t.id), ["test.md:L1"]);
+});
+
+test("US-109d3: include OR exclude — (any include) AND (no exclude)", async () => {
+  if (compileErr) throw compileErr;
+
+  const { applyQueryFilters } = await import("../test/.compiled/filter.js");
+
+  const tasks = [
+    effectiveTask({ id: "test.md:L1", tags: ["#work"] }),
+    effectiveTask({ id: "test.md:L2", tags: ["#urgent", "#someday"] }),
+    effectiveTask({ id: "test.md:L3", tags: ["#urgent"] }),
+    effectiveTask({ id: "test.md:L4", tags: ["#other"] }),
+  ];
+
+  // (#work OR #urgent) AND NOT #someday → L1, L3 (L2 has #someday, L4 has neither include).
+  const result = applyQueryFilters(
+    tasks,
+    { tags: { values: ["#work", "#urgent"], mode: "or", exclude: ["#someday"] } },
+    1,
+  );
+  assert.deepEqual(result.map((t) => t.id), ["test.md:L1", "test.md:L3"]);
+});
+
 test("VAL-CORE-007: tags match is case-insensitive", async () => {
   if (compileErr) throw compileErr;
 

@@ -148,6 +148,8 @@ export interface SavedTaskView {
 export interface TagSelector {
   values: string[];
   mode: "and" | "or";
+  // US-109d3: 排除组——任务只要带其中任一标签就被过滤掉。与 values（包含组）互斥。
+  exclude?: string[];
 }
 
 export interface QueryPresetFilters {

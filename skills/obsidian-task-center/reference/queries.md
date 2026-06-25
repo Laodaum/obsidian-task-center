@@ -46,7 +46,7 @@ obsidian task-center:query-run  id=preset-today [view=list|week|month] [anchor=Y
 ```jsonc
 {
   "search": "示例",                 // 自由文本，匹配标题 / 标签（大小写不敏感）
-  "tags": ["#work", "#2象限"],      // 数组/逗号串=AND（须全含）；或 {values,mode:"and"|"or"} 选模式，OR=含任一
+  "tags": ["#work", "#2象限"],      // 数组/逗号串=AND（须全含）；或 {values,mode:"and"|"or",exclude?:["#x"]}：mode 选与/或，exclude=排除组（任一命中即过滤掉）
   "status": ["todo"],               // 见下；或 "all"
   "time": { "scheduled": "today", "deadline": "overdue" }
 }

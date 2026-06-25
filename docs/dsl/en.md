@@ -67,12 +67,13 @@ All conditions are **AND-ed**: to enter this block a task must satisfy every key
 
 ### tags
 
-Two forms:
+An include group plus an optional exclude group. Three forms:
 
-- A string array `["a","b"]` or comma-separated string `"a,b"` → **AND** (the task must contain **all** listed tags).
-- An object `{ "values": ["a","b"], "mode": "and" | "or" }` → choose the mode explicitly. **OR** = the task carries **any** of the tags (handy for quadrants / context groups).
+- A string array `["a","b"]` or comma-separated string `"a,b"` → include group **AND** (the task must contain **all** listed tags), no exclude.
+- An object `{ "values": ["a","b"], "mode": "and" | "or" }` → choose the include mode. **OR** = the task carries **any** of the tags (handy for quadrants / context groups).
+- Add `"exclude": ["c"]` to the object → **exclude group**: a task carrying any excluded tag is filtered out. Match = (include empty, or matched per `mode`) **and** (none of the excludes present). Empty include + exclude = exclude-only.
 
-Both are auto-prefixed with `#` and deduped case-insensitively. Normalized form: AND collapses to a bare array; OR keeps the `{ values, mode: "or" }` object (the graphical filter panel shows an "All / Any" toggle once ≥2 tags are selected).
+All are auto-prefixed with `#` and deduped case-insensitively; a tag in both groups stays in include. Normalized form: a plain-AND include group with no exclude collapses to a bare array, otherwise the `{ values, mode, exclude? }` object is kept. (Graphical panel: each tag row cycles "ignore → include → exclude"; an "All / Any" toggle appears once ≥2 include tags are selected.) (US-109d3)
 
 ### time — fields and date vocabulary
 

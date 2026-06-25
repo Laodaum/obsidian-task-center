@@ -48,10 +48,20 @@ export function timeFilterOptions(field: QueryTimeField): Array<readonly [string
   return base;
 }
 
-// 把选中标签 + 模式拼成可写回 `when.tags` 的形态：AND（默认）用裸数组（向后
-// 兼容），OR 用 `{ values, mode: "or" }` 对象。空选择永远回裸数组。
-export function buildTagsField(values: string[], mode: "and" | "or"): string[] | TagSelector {
-  return mode === "or" && values.length > 0 ? { values, mode: "or" } : values;
+// 把三态选择（包含组 + 与/或模式 + 排除组）拼成可写回 `when.tags` 的形态：
+// 纯 AND 包含组、无排除 → 裸数组（向后兼容）；否则 `{ values, mode, exclude? }`
+// 对象。空包含 + 无排除 → 裸空数组。（US-109d3）
+export function buildTagsField(
+  include: string[],
+  mode: "and" | "or",
+  exclude: string[] = [],
+): string[] | TagSelector {
+  const hasExclude = exclude.length > 0;
+  const useObject = hasExclude || (mode === "or" && include.length > 0);
+  if (!useObject) return include;
+  const sel: TagSelector = { values: include, mode: include.length > 0 ? mode : "and" };
+  if (hasExclude) sel.exclude = exclude;
+  return sel;
 }
 
 // 标签匹配模式的选项（全部匹配 = AND / 任一匹配 = OR）。
@@ -62,11 +72,15 @@ export function tagModeOptions(): Array<{ value: "and" | "or"; label: string }> 
   ];
 }
 
-export function tagFilterSummary(selected: string[]): string {
-  if (selected.length === 0) return tr("savedViews.tag");
-  const first = selected[0];
-  if (selected.length === 1) return first;
-  return `${first} +${selected.length - 1}`;
+// US-109d3: trigger summary covering both include and exclude groups, e.g.
+// "#a +1 · −#c". Exclude is prefixed with a minus sign (locale-neutral).
+export function tagSelectionSummary(include: string[], exclude: string[]): string {
+  const fmt = (tags: string[]): string =>
+    tags.length === 1 ? tags[0] : `${tags[0]} +${tags.length - 1}`;
+  const parts: string[] = [];
+  if (include.length > 0) parts.push(fmt(include));
+  if (exclude.length > 0) parts.push(`−${fmt(exclude)}`);
+  return parts.length > 0 ? parts.join(" · ") : tr("savedViews.tag");
 }
 
 // Toggle a status value in/out of the current selection. "all" clears the

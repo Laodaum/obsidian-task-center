@@ -188,6 +188,40 @@ test("VAL-CORE-005: normalizeQueryPreset deduplicates tags case-insensitively", 
   assert.deepEqual(normalized.view.layout.when.tags, ["#Alpha", "#BETA"]);
 });
 
+// ── US-109d3: tag exclude group normalization ──
+
+test("US-109d3: normalizeQueryPreset keeps an include+exclude tag filter in object form", () => {
+  const normalized = normalizeQueryPreset({
+    id: "q-excl", name: "Excl", builtin: false, hidden: false,
+    view: { layout: { type: "list", when: { tags: { values: ["#work"], mode: "and", exclude: ["#someday"] } } } },
+  });
+  assert.deepEqual(normalized.view.layout.when.tags, { values: ["#work"], mode: "and", exclude: ["#someday"] });
+});
+
+test("US-109d3: normalizeQueryPreset keeps an exclude-only tag filter (empty include)", () => {
+  const normalized = normalizeQueryPreset({
+    id: "q-excl2", name: "ExclOnly", builtin: false, hidden: false,
+    view: { layout: { type: "list", when: { tags: { values: [], mode: "and", exclude: ["#done"] } } } },
+  });
+  assert.deepEqual(normalized.view.layout.when.tags, { values: [], mode: "and", exclude: ["#done"] });
+});
+
+test("US-109d3: normalizeQueryPreset — include wins when a tag is in both groups", () => {
+  const normalized = normalizeQueryPreset({
+    id: "q-excl3", name: "Mutual", builtin: false, hidden: false,
+    view: { layout: { type: "list", when: { tags: { values: ["#work"], mode: "or", exclude: ["#work", "#someday"] } } } },
+  });
+  assert.deepEqual(normalized.view.layout.when.tags, { values: ["#work"], mode: "or", exclude: ["#someday"] });
+});
+
+test("US-109d3: normalizeQueryPreset — plain AND with empty exclude still collapses to a bare array", () => {
+  const normalized = normalizeQueryPreset({
+    id: "q-excl4", name: "Bare", builtin: false, hidden: false,
+    view: { layout: { type: "list", when: { tags: { values: ["#work"], mode: "and", exclude: [] } } } },
+  });
+  assert.deepEqual(normalized.view.layout.when.tags, ["#work"]);
+});
+
 // ── VAL-CORE-006: validateQueryPreset — section-specific errors ──
 
 test("VAL-CORE-006: validateQueryPreset — valid preset returns no errors", () => {

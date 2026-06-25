@@ -118,4 +118,49 @@ describe("tag match mode (AND/OR) toggle", function () {
       timeoutMsg: "expected OR to persist in the head toggle after closing the popover",
     });
   });
+
+  it("US-109d3: clicking a tag row cycles ignore → include → exclude → ignore", async function () {
+    const today = todayISO();
+    await writeAndWait(
+      "Tasks/Inbox.md",
+      [
+        `- [ ] Work task #alpha ⏳ ${today}`,
+        `- [ ] Skip task #beta ⏳ ${today}`,
+      ].join("\n") + "\n",
+    );
+
+    await browser.executeObsidianCommand("task-center:open");
+    await forFlush();
+    await $("[data-saved-views], .task-center-view").waitForExist({ timeout: 5000 });
+
+    const areaEdit = await $('[data-action="edit-area"]');
+    await areaEdit.waitForExist({ timeout: 5000 });
+    await areaEdit.click();
+    await $('[data-query-editor-scope="area"]').waitForExist({ timeout: 5000 });
+
+    await $(".bt-area-tag-trigger").click();
+    await $(".bt-area-tag-row").waitForExist({ timeout: 5000 });
+
+    // The row is rebuilt on each rerender, so re-query it every time.
+    const stateOf = async () =>
+      (await $('.bt-area-tag-row[data-area-tag="#beta"]').getAttribute("data-area-tag-state")) ?? "";
+
+    // 1st click → include.
+    await $('.bt-area-tag-row[data-area-tag="#beta"]').click();
+    await browser.waitUntil(async () => (await stateOf()) === "include", {
+      timeout: 5000, timeoutMsg: "expected #beta → include after 1st click",
+    });
+
+    // 2nd click → exclude.
+    await $('.bt-area-tag-row[data-area-tag="#beta"]').click();
+    await browser.waitUntil(async () => (await stateOf()) === "exclude", {
+      timeout: 5000, timeoutMsg: "expected #beta → exclude after 2nd click",
+    });
+
+    // 3rd click → ignore (state attribute cleared).
+    await $('.bt-area-tag-row[data-area-tag="#beta"]').click();
+    await browser.waitUntil(async () => (await stateOf()) === "", {
+      timeout: 5000, timeoutMsg: "expected #beta → ignore after 3rd click",
+    });
+  });
 });

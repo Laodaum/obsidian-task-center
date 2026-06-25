@@ -16,7 +16,7 @@ import {
   SECONDARY_TIME_FIELDS,
   buildTagsField,
   statusFilterOptions,
-  tagFilterSummary,
+  tagSelectionSummary,
   tagModeOptions,
   timeFieldLabel,
   timeFilterOptions,
@@ -33,6 +33,7 @@ export function renderAreaFilterControls(
   rerenderControls?: Rerender,
 ): void {
   const selectedTags = v.areaTags(when);
+  const excludeTags = v.areaTagExclude(when);
   const status = normalizeQueryStatus(when.status);
   const scheduled = when.time?.scheduled?.trim() ?? "";
 
@@ -100,7 +101,7 @@ export function renderAreaFilterControls(
   }
 
   // Tags — a searchable, scrollable list (scales to thousands of tags).
-  renderAreaTagList(v, parent, areaIndex, when, selectedTags, rerenderControls);
+  renderAreaTagList(v, parent, areaIndex, when, selectedTags, excludeTags, rerenderControls);
 }
 
 // US-109z2: one time field's area controls — quick tokens + a date-range
@@ -174,6 +175,7 @@ function renderAreaTagList(
   areaIndex: number,
   when: QueryPresetFilters,
   selectedTags: string[],
+  excludeTags: string[],
   rerenderControls?: Rerender,
 ): void {
   // 选标签时按当前模式（AND 默认 / OR）写回 when.tags。
@@ -199,10 +201,10 @@ function renderAreaTagList(
       btn.dataset.tagMode = opt.value;
       btn.setAttribute("aria-pressed", String(opt.value === tagMode));
       btn.addEventListener("click", () =>
-        v.setAreaWhen(areaIndex, { ...when, tags: buildTagsField(selectedTags, opt.value) }, rerenderControls));
+        v.setAreaWhen(areaIndex, { ...when, tags: buildTagsField(selectedTags, opt.value, excludeTags) }, rerenderControls));
     }
   }
-  if (selectedTags.length > 0) {
+  if (selectedTags.length > 0 || excludeTags.length > 0) {
     const clearTags = headRight.createEl("button", { text: tr("savedViews.clearTags"), cls: "bt-area-filter-clear-tags" });
     clearTags.addEventListener("click", () => v.setAreaWhen(areaIndex, { ...when, tags: [] }, rerenderControls));
   }
@@ -211,9 +213,10 @@ function renderAreaTagList(
   // panel. Open state persists across rerenders so multi-select keeps it open.
   const trigger = sec.createEl("button", { cls: "bt-area-tag-trigger" });
   trigger.dataset.action = "tag-select";
+  const hasAnyTag = selectedTags.length > 0 || excludeTags.length > 0;
   const summary = trigger.createSpan({
-    cls: "bt-area-tag-trigger-summary" + (selectedTags.length ? "" : " is-empty"),
-    text: selectedTags.length ? tagFilterSummary(selectedTags) : tr("savedViews.tagSearch"),
+    cls: "bt-area-tag-trigger-summary" + (hasAnyTag ? "" : " is-empty"),
+    text: hasAnyTag ? tagSelectionSummary(selectedTags, excludeTags) : tr("savedViews.tagSearch"),
   });
   void summary;
   setIcon(trigger.createSpan({ cls: "bt-area-tag-caret" }), v.areaTagPopoverOpen ? "chevron-up" : "chevron-down");
@@ -267,12 +270,12 @@ function renderAreaTagList(
       btn.dataset.tagMode = opt.value;
       btn.setAttribute("aria-pressed", String(opt.value === tagMode));
       btn.addEventListener("click", () =>
-        v.setAreaWhen(areaIndex, { ...when, tags: buildTagsField(selectedTags, opt.value) }, rerenderControls));
+        v.setAreaWhen(areaIndex, { ...when, tags: buildTagsField(selectedTags, opt.value, excludeTags) }, rerenderControls));
     }
   }
   const searchInput = popover.createEl("input", { type: "text", cls: "bt-area-tag-search", placeholder: tr("savedViews.tagSearch") });
   const list = popover.createDiv({ cls: "bt-area-tag-list" });
-  const options = v.collectTagOptions(selectedTags);
+  const options = v.collectTagOptions([...selectedTags, ...excludeTags]);
   const CAP = 100;
   const renderRows = (query: string) => {
     list.empty();
@@ -284,20 +287,27 @@ function renderAreaTagList(
     }
     for (const opt of filtered.slice(0, CAP)) {
       const lc = opt.tag.toLowerCase();
-      const checked = selectedTags.some((t) => t.toLowerCase() === lc);
+      const isInclude = selectedTags.some((t) => t.toLowerCase() === lc);
+      const isExclude = excludeTags.some((t) => t.toLowerCase() === lc);
+      const state = isInclude ? "include" : isExclude ? "exclude" : "none";
       const row = list.createEl("button", {
-        cls: "bt-area-tag-row" + (checked ? " active" : ""),
+        cls: "bt-area-tag-row"
+          + (state === "include" ? " active" : state === "exclude" ? " excluded" : ""),
       });
       row.dataset.areaTag = opt.tag;
+      if (state !== "none") row.dataset.areaTagState = state;
       const check = row.createSpan({ cls: "bt-area-tag-check" });
-      if (checked) setIcon(check, "check");
+      if (state === "include") setIcon(check, "check");
+      else if (state === "exclude") setIcon(check, "ban");
       row.createSpan({ text: opt.tag, cls: "bt-area-tag-row-label" });
       if (opt.count > 0) row.createSpan({ text: String(opt.count), cls: "bt-area-tag-row-count" });
       row.addEventListener("click", () => {
-        const next = checked
-          ? selectedTags.filter((t) => t.toLowerCase() !== lc)
-          : [...selectedTags, opt.tag];
-        v.setAreaWhen(areaIndex, { ...when, tags: buildTagsField(next, tagMode) }, rerenderControls);
+        // US-109d3: cycle none → include → exclude → none.
+        const nextInclude = selectedTags.filter((t) => t.toLowerCase() !== lc);
+        const nextExclude = excludeTags.filter((t) => t.toLowerCase() !== lc);
+        if (state === "none") nextInclude.push(opt.tag);
+        else if (state === "include") nextExclude.push(opt.tag);
+        v.setAreaWhen(areaIndex, { ...when, tags: buildTagsField(nextInclude, tagMode, nextExclude) }, rerenderControls);
       });
     }
     if (filtered.length > CAP) {

@@ -108,7 +108,7 @@ type DateToken =
 
 interface QueryFilters {
   search?: string;
-  tags?: string[] | string | { values: string[]; mode: "and" | "or" }; // 数组/逗号串 = AND；对象选模式，OR = 含任一
+  tags?: string[] | string | { values: string[]; mode: "and" | "or"; exclude?: string[] }; // values=包含组（数组/逗号串=AND，对象 mode 选与/或）；exclude=排除组，任一命中即过滤掉（US-109d3）
   status?: TaskStateFilter[]; // undefined = 全部
   time?: {
     scheduled?: DateToken; // ⏳；unscheduled = is empty
@@ -455,7 +455,7 @@ TaskCache.flatten()
 `applyQueryFilters` 必须按用户故事实现：
 
 - `search`：标题关键字匹配。
-- `tags`：合法 hashtag，默认 AND。
+- `tags`：合法 hashtag。包含组（`values`）默认 AND、可切 OR；对象形态可带 `exclude` 排除组。匹配 = （包含组为空，或按 `mode` 命中）且（`exclude` 一个都不命中）。归一化：纯 AND 且无 `exclude` → 收敛成裸数组 `string[]`，否则用 `{values, mode, exclude?}` 对象形态。（US-109d2 / US-109d3）
 - `status`：todo / done / dropped 多选；undefined 表示全部。
 - `time.scheduled`：只看有效 `⏳`；`unscheduled` 表示有效排期为空。
 - `time.deadline`：只看 `📅`；`overdue` 属于 deadline。
