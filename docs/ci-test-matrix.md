@@ -2,39 +2,53 @@
 
 Date: 2026-06-25
 
-This document records the current test split. As of 2026-06-25, PR/main CI and
-the release pre-flight gate both run the full unit suite plus the stable
-WebDriverIO specs that protect the board entry path, the source Markdown editor
-path, and the task-format flavor contract (both the Dataview diagonal and the
-full write×content matrix). The wider historical e2e
-suite remains available for investigation, but is not yet stable enough to be a
-release gate.
+This document records the current test policy. As of 2026-06-25 the policy
+changed: **the e2e gate runs the FULL spec suite, not a hand-picked whitelist.**
+`pnpm run test:e2e:ci` is now `wdio run ./wdio.conf.mts` with no `--spec`
+narrowing, so every `test/e2e/specs/**/*.e2e.ts` runs under
+`OBSIDIAN_VERSIONS=latest/latest`. Flaky specs are **fixed, not quarantined**: a
+`--spec` whitelist silently hides regressions in the excluded specs (the
+original "tests too few" gap). `test/github-workflows.test.mjs` enforces that
+the gate stays whitelist-free.
+
+This is a deliberate trade: the full suite surfaces real cross-spec
+contamination and environment fragility that the old 7-spec whitelist hid. The
+backlog below tracks what must be driven to green; until it is, the gate can be
+red for reasons unrelated to the change under test, so read the failure bucket
+before assuming your diff broke something.
 
 ## Current Matrix
-
-The stable e2e gate (run by `pnpm run test:e2e:ci`, identical for PR/main and
-release preflight) currently covers these specs with `OBSIDIAN_VERSIONS=latest/latest`:
-
-- `board-basics.e2e.ts` — board entry, blank-title filter, overdue/near markers, status bar
-- `source-edit-dialog.e2e.ts` — US-168 source Markdown edit shell
-- `dataview-format.e2e.ts` — US-111 Dataview journeys (diagonal: setting=dataview, content=dataview)
-- `format-matrix.e2e.ts` — US-111 full flavor matrix (write setting × on-disk content, incl. off-diagonal read parity and cross-format mutation)
-- `saved-views.e2e.ts`, `mobile-filter-ui.e2e.ts`, `modal-centered.e2e.ts`, `tag-match-mode.e2e.ts`
-
-`drag.e2e.ts` is the next promotion candidate but is NOT yet in the gate: its
-`task #106 right-click subtask` case depends on `view.openContextMenu` being
-resolvable from the live view instance and fails intermittently under the
-gate environment (`Task Center view/openContextMenu not found`). Stabilize that
-case before promoting. Note that `format-matrix.e2e.ts` already covers the
-schedule / unschedule / done / drop *write semantics* (via the plugin API, in
-both flavors); what `drag.e2e.ts` adds is the synthetic-DnD path specifically.
 
 | Surface | Trigger | Checks | E2E coverage | Purpose |
 | --- | --- | --- | --- | --- |
 | Local quick check | Maintainer decides | Local e2e is blocked by `wdio-local-guard.mts`; run only explicit lightweight checks if requested | None | Protect the user's running Obsidian app. |
-| `CI` | Pull request and `main` push | `pnpm install --frozen-lockfile`, typecheck, lint, unit, stable e2e gate | The stable gate spec list above with `OBSIDIAN_VERSIONS=latest/latest` | Merge confidence for normal code changes; same behavioral gate as release preflight. |
-| `Release` | Strict semver tag, no `v` prefix | typecheck, lint, unit, stable e2e gate, build, GitHub Release asset upload | The stable gate spec list above with `OBSIDIAN_VERSIONS=latest/latest` | Hard release gate. A red e2e blocks publishing assets. |
+| `CI` | Pull request and `main` push | `pnpm install --frozen-lockfile`, typecheck, lint, unit, full e2e suite | The full `test/e2e/specs/**` suite with `OBSIDIAN_VERSIONS=latest/latest` | Merge confidence; same behavioral gate as release preflight. |
+| `Release` | Strict semver tag, no `v` prefix | typecheck, lint, unit, full e2e suite, build, GitHub Release asset upload | The full `test/e2e/specs/**` suite with `OBSIDIAN_VERSIONS=latest/latest` | Hard release gate. A red e2e blocks publishing assets. |
 | `CI Xvfb POC` | Manual dispatch or changes to `.github/workflows/ci-xvfb-poc.yml` only | install Xvfb/Electron deps, install deps, build | One non-timing-sensitive spec: `board-basics.e2e.ts` | Proves hosted Linux + Xvfb can boot and drive Obsidian without becoming a PR/release gate. |
+
+## Full-suite stabilization backlog
+
+First full-suite run (2026-06-25): 13/25 specs green. Failures bucket as:
+
+1. **Cross-spec cache staleness (fixing).** `cli`, `drag`, `subtask`,
+   `parent-child`, and the flavor `format-matrix` failed with
+   `not_found: <path>:L1 is not a task line` or silent write timeouts. Root
+   cause: their `writeAndWait` rewrote a shared path (`Tasks/Inbox.md`) without
+   `plugin.cache.invalidateFile`, so `cache.resolveRef` returned a stale
+   `path:Ln→hash`. Fix applied: every write helper now invalidates + flushes
+   (the proven `dataview-format` / `_journeys` pattern). `render-children`
+   already passed; left untouched.
+2. **Concurrent feature WIP (not ours).** `area-filter` (`US-109d3` tag row
+   cycles ignore→include→exclude) and `tag-match-mode` track the in-progress
+   tag-exclude query feature (`src/query/`). These go green when that feature
+   lands; do not "fix" them from the test side.
+3. **Environment / mobile fragility (open).** `quickadd` screenshot wrote to a
+   non-writable `/tmp` on the runner (EACCES) — fixed by skipping the dev-only
+   artifact under `CI`. `mobile-coverage` / `mobile-entry` fail on mobile
+   viewport emulation (`element click intercepted` by the status bar,
+   `Browser.getWindowForTarget` unknown command, swipe gestures not firing) and
+   `modal-title-layout` / `today-view` on render/timeout — these need
+   per-spec investigation under the gate and are the remaining open work.
 
 ## Existing Decisions
 
@@ -106,8 +120,9 @@ cheap mitigation that removes the common week-boundary flake.
 
 1. Keep `CI` and `Release` preflight aligned; if one gate adds or removes a
    required check, mirror it in the other workflow in the same PR.
-2. Promote additional e2e specs one at a time after they are made deterministic
-   under `OBSIDIAN_VERSIONS=latest/latest`.
+2. The gate already runs every spec (no whitelist). "Expansion" now means
+   driving the stabilization backlog above to green — fix the flaky spec, never
+   re-introduce a `--spec` subset to dodge it.
 3. Keep `CI Xvfb POC` narrow unless a follow-up task explicitly promotes it to
    a required signal.
 4. Add an Actions summary artifact for e2e failures: failed spec name,
