@@ -141,12 +141,12 @@ test("VAL-CORE-007: tags AND — task must have ALL specified tags", async () =>
     effectiveTask({ id: "test.md:L4", tags: [] }),
   ];
 
-  const result = applyQueryFilters(tasks, { tags: ["#work", "#urgent"] }, 1);
+  const result = applyQueryFilters(tasks, { tags: { expr: "#work and #urgent" } }, 1);
   assert.equal(result.length, 1);
   assert.equal(result[0].id, "test.md:L1");
 });
 
-test("tags OR — { values, mode: 'or' } matches a task carrying ANY of the tags", async () => {
+test("tags OR — expr '#a or #b' matches a task carrying ANY of the tags", async () => {
   if (compileErr) throw compileErr;
 
   const { applyQueryFilters } = await import("../test/.compiled/filter.js");
@@ -158,11 +158,11 @@ test("tags OR — { values, mode: 'or' } matches a task carrying ANY of the tags
     effectiveTask({ id: "test.md:L4", tags: ["#other"] }),
   ];
 
-  const result = applyQueryFilters(tasks, { tags: { values: ["#work", "#urgent"], mode: "or" } }, 1);
+  const result = applyQueryFilters(tasks, { tags: { expr: "#work or #urgent" } }, 1);
   assert.deepEqual(result.map((t) => t.id), ["test.md:L1", "test.md:L2", "test.md:L3"]);
 });
 
-test("tags AND — { values, mode: 'and' } still requires ALL tags", async () => {
+test("tags AND — expr '#a and #b' still requires ALL tags", async () => {
   if (compileErr) throw compileErr;
 
   const { applyQueryFilters } = await import("../test/.compiled/filter.js");
@@ -172,14 +172,14 @@ test("tags AND — { values, mode: 'and' } still requires ALL tags", async () =>
     effectiveTask({ id: "test.md:L2", tags: ["#work"] }),
   ];
 
-  const result = applyQueryFilters(tasks, { tags: { values: ["#work", "#urgent"], mode: "and" } }, 1);
+  const result = applyQueryFilters(tasks, { tags: { expr: "#work and #urgent" } }, 1);
   assert.equal(result.length, 1);
   assert.equal(result[0].id, "test.md:L1");
 });
 
-// ── US-109d3: tag exclude group ──
+// ── US-109d4: tag exclude / boolean expression ──
 
-test("US-109d3: exclude — a task carrying ANY excluded tag is filtered out", async () => {
+test("US-109d4: exclude — 'not #x' filters out tasks carrying #x", async () => {
   if (compileErr) throw compileErr;
 
   const { applyQueryFilters } = await import("../test/.compiled/filter.js");
@@ -192,11 +192,11 @@ test("US-109d3: exclude — a task carrying ANY excluded tag is filtered out", a
   ];
 
   // No include, only exclude: keep everything that does NOT carry #someday.
-  const result = applyQueryFilters(tasks, { tags: { values: [], mode: "and", exclude: ["#someday"] } }, 1);
+  const result = applyQueryFilters(tasks, { tags: { expr: "not #someday" } }, 1);
   assert.deepEqual(result.map((t) => t.id), ["test.md:L1", "test.md:L4"]);
 });
 
-test("US-109d3: include AND exclude — must have all includes AND none of the excludes", async () => {
+test("US-109d4: include and not — '#a and not #b'", async () => {
   if (compileErr) throw compileErr;
 
   const { applyQueryFilters } = await import("../test/.compiled/filter.js");
@@ -210,13 +210,13 @@ test("US-109d3: include AND exclude — must have all includes AND none of the e
   // Has #work, but not #someday.
   const result = applyQueryFilters(
     tasks,
-    { tags: { values: ["#work"], mode: "and", exclude: ["#someday"] } },
+    { tags: { expr: "#work and not #someday" } },
     1,
   );
   assert.deepEqual(result.map((t) => t.id), ["test.md:L1"]);
 });
 
-test("US-109d3: include OR exclude — (any include) AND (no exclude)", async () => {
+test("US-109d4: grouped or with not — '(#a or #b) and not #c'", async () => {
   if (compileErr) throw compileErr;
 
   const { applyQueryFilters } = await import("../test/.compiled/filter.js");
@@ -231,7 +231,7 @@ test("US-109d3: include OR exclude — (any include) AND (no exclude)", async ()
   // (#work OR #urgent) AND NOT #someday → L1, L3 (L2 has #someday, L4 has neither include).
   const result = applyQueryFilters(
     tasks,
-    { tags: { values: ["#work", "#urgent"], mode: "or", exclude: ["#someday"] } },
+    { tags: { expr: "(#work or #urgent) and not #someday" } },
     1,
   );
   assert.deepEqual(result.map((t) => t.id), ["test.md:L1", "test.md:L3"]);
@@ -247,7 +247,7 @@ test("VAL-CORE-007: tags match is case-insensitive", async () => {
     effectiveTask({ id: "test.md:L2", tags: ["#work"] }),
   ];
 
-  const result = applyQueryFilters(tasks, { tags: ["#work"] }, 1);
+  const result = applyQueryFilters(tasks, { tags: { expr: "#work" } }, 1);
   assert.equal(result.length, 2, "Both #Work and #work should match #work");
 });
 
@@ -261,7 +261,7 @@ test("VAL-CORE-007: tags from comma-separated string", async () => {
     effectiveTask({ id: "test.md:L2", tags: ["#work"] }),
   ];
 
-  const result = applyQueryFilters(tasks, { tags: "#work,#urgent" }, 1);
+  const result = applyQueryFilters(tasks, { tags: { expr: "#work and #urgent" } }, 1);
   assert.equal(result.length, 1);
   assert.equal(result[0].id, "test.md:L1");
 });
@@ -623,7 +623,7 @@ test("VAL-CORE-007: search + tags + status + time are AND-ed", async () => {
     tasks,
     {
       search: "docs",
-      tags: ["#work", "#docs"],
+      tags: { expr: "#work and #docs" },
       status: ["todo"],
       time: { scheduled: "today" },
     },

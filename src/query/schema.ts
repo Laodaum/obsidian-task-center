@@ -5,6 +5,7 @@
 // (ARCHITECTURE.md §2.1 依赖规则; REFACTOR.md D5)
 
 import type { TaskStatus } from "../types";
+import { tagSelectionToExpr } from "./tag-expr";
 
 export const KNOWN_STATUS_VALUES: TaskStatus[] = [
   "todo",
@@ -20,36 +21,51 @@ export function isKnownTaskStatus(value: unknown): value is TaskStatus {
 }
 
 /**
- * Extract a tag filter's include values + match mode + exclude values from any
- * accepted DSL shape:
- *   - `string[]`                        → include AND, no exclude (back-compat)
- *   - comma-separated `string`          → include AND, no exclude (back-compat)
- *   - `{ values, mode, exclude }`       → explicit mode ("or" only when literally
- *                                         "or"); `exclude` = US-109d3 exclude group
- * Values are returned verbatim (no `#`-prefixing / dedup — each layer does its
- * own); empty / malformed input degrades to `{ values: [], mode: "and", exclude: [] }`.
+ * Extract a tag filter's parts from any accepted DSL shape. US-109d4 unifies tag
+ * filtering on a boolean expression; the legacy three-state shapes are still
+ * accepted as input and surfaced here so callers can convert them to one:
+ *   - `string[]`                  → include AND, no exclude (back-compat)
+ *   - comma-separated `string`    → include AND, no exclude (back-compat)
+ *   - `{ values, mode, exclude }` → US-109d3 three-state; `expr` stays null
+ *   - `{ expr }`                  → US-109d4 expression; values/exclude empty
+ * Values are returned verbatim; empty / malformed input degrades to the AND-empty
+ * default with `expr: null`.
  */
 export function resolveTagFilter(
   tags: unknown,
-): { values: string[]; mode: "and" | "or"; exclude: string[] } {
-  if (!tags) return { values: [], mode: "and", exclude: [] };
+): { values: string[]; mode: "and" | "or"; exclude: string[]; expr: string | null } {
+  if (!tags) return { values: [], mode: "and", exclude: [], expr: null };
   if (Array.isArray(tags)) {
-    return { values: tags.filter((t): t is string => typeof t === "string"), mode: "and", exclude: [] };
+    return { values: tags.filter((t): t is string => typeof t === "string"), mode: "and", exclude: [], expr: null };
   }
   if (typeof tags === "string") {
-    return { values: tags.split(",").map((t) => t.trim()).filter(Boolean), mode: "and", exclude: [] };
+    return { values: tags.split(",").map((t) => t.trim()).filter(Boolean), mode: "and", exclude: [], expr: null };
   }
   if (typeof tags === "object") {
-    const obj = tags as { values?: unknown; mode?: unknown; exclude?: unknown };
+    const obj = tags as { values?: unknown; mode?: unknown; exclude?: unknown; expr?: unknown };
+    if (typeof obj.expr === "string" && obj.expr.trim()) {
+      return { values: [], mode: "and", exclude: [], expr: obj.expr };
+    }
     const values = Array.isArray(obj.values)
       ? obj.values.filter((t): t is string => typeof t === "string")
       : [];
     const exclude = Array.isArray(obj.exclude)
       ? obj.exclude.filter((t): t is string => typeof t === "string")
       : [];
-    return { values, mode: obj.mode === "or" ? "or" : "and", exclude };
+    return { values, mode: obj.mode === "or" ? "or" : "and", exclude, expr: null };
   }
-  return { values: [], mode: "and", exclude: [] };
+  return { values: [], mode: "and", exclude: [], expr: null };
+}
+
+/**
+ * US-109d4: the single canonical view of a tag filter — a boolean expression
+ * string. `{ expr }` is returned verbatim; any legacy three-state / array shape
+ * is converted to the equivalent expression. Empty filter → "".
+ */
+export function tagsToExpr(tags: unknown): string {
+  const r = resolveTagFilter(tags);
+  if (r.expr !== null) return r.expr;
+  return tagSelectionToExpr(r.values, r.mode, r.exclude);
 }
 
 /**

@@ -15,15 +15,14 @@ import type {
   QueryStatus,
   QueryTimeFilters,
   StackConfig,
-  TagSelector,
   TaskStatus,
 } from "./types";
 import { BUILTIN_VIEW_DATA } from "./builtin-views/index";
 // US-109z2 / REFACTOR.md D5: status schema lives in the query layer so the pure
 // query pipeline (filter / projection) never imports up into saved-views.
 // Re-exported here for the view layer's existing import sites.
-import { KNOWN_STATUS_VALUES, normalizeQueryStatus, resolveTagFilter } from "./query/schema";
-export { normalizeQueryStatus, resolveTagFilter };
+import { KNOWN_STATUS_VALUES, normalizeQueryStatus, resolveTagFilter, tagsToExpr } from "./query/schema";
+export { normalizeQueryStatus, resolveTagFilter, tagsToExpr };
 const BUILTIN_QUERY_TABS = ["today", "week", "month", "todo", "unscheduled", "completed", "dropped"] as const;
 type BuiltinQueryTab = typeof BUILTIN_QUERY_TABS[number];
 
@@ -107,26 +106,6 @@ function seededBuiltinQueryPreset(tab: BuiltinQueryTab, name: string): QueryPres
   return normalizeQueryPreset({ ...data, name } as unknown as QueryPreset);
 }
 
-// 归一化标签的值：补 # 前缀、按小写去重，返回裸数组（AND/OR 的模式不在这里
-// 决定——见 normalizeQueryPresetFilters）。接受数组 / 逗号串 / { values, mode }。
-function normalizeTagArray(values: string[]): string[] {
-  const out: string[] = [];
-  const seen = new Set<string>();
-  for (const item of values) {
-    const trimmed = item.trim();
-    if (!trimmed) continue;
-    const tag = trimmed.startsWith("#") ? trimmed : `#${trimmed}`;
-    const normalized = tag.toLowerCase();
-    if (seen.has(normalized)) continue;
-    seen.add(normalized);
-    out.push(tag);
-  }
-  return out;
-}
-function normalizeDslTags(value: unknown): string[] {
-  return normalizeTagArray(resolveTagFilter(value).values);
-}
-
 function parseDslRoot(text: string): Record<string, unknown> {
   let parsed: unknown;
   try {
@@ -176,27 +155,15 @@ export function normalizeQueryPreset(raw: QueryPreset): QueryPreset {
 function normalizeQueryPresetFilters(raw: unknown): QueryPresetFilters {
   const filters = isRecord(raw) ? raw : {};
   const search = typeof filters.search === "string" ? filters.search.trim() : "";
-  const resolvedTags = resolveTagFilter(filters.tags);
-  const tagValues = normalizeTagArray(resolvedTags.values);
-  // US-109d3: exclude 与 include 互斥——同一标签同时出现在两组时以 include 为准。
-  const tagExclude = normalizeTagArray(resolvedTags.exclude)
-    .filter((t) => !tagValues.some((v) => v.toLowerCase() === t.toLowerCase()));
-  const tagMode = tagValues.length > 0 ? resolvedTags.mode : "and";
+  // US-109d4: tags 统一迁移成单一 { expr } 形态——任何旧形态（裸数组 / 逗号串 /
+  // 三态 { values, mode, exclude }）在归一化时一次性转成等价表达式字符串，求值层
+  // 只认 { expr }。这是旧 data.json 的迁移点：加载即升级，落库即 canonical。
+  const tagExpr = tagsToExpr(filters.tags).trim();
   const status = normalizeQueryStatus(filters.status);
   const time = normalizeTimeFilters(filters.time);
   const out: QueryPresetFilters = {};
   if (search) out.search = search;
-  // 纯 AND 包含组、无排除 → 收敛回裸数组（向后兼容，既有数据/测试不受影响）；
-  // 否则用 { values, mode, exclude? } 对象形态保留模式与排除组。
-  if (tagValues.length > 0 || tagExclude.length > 0) {
-    if (tagMode === "and" && tagExclude.length === 0) {
-      out.tags = tagValues;
-    } else {
-      const sel: TagSelector = { values: tagValues, mode: tagMode };
-      if (tagExclude.length > 0) sel.exclude = tagExclude;
-      out.tags = sel;
-    }
-  }
+  if (tagExpr) out.tags = { expr: tagExpr };
   out.status = status;
   if (Object.keys(time).length > 0) out.time = time;
   return out;
@@ -205,8 +172,8 @@ function normalizeQueryPresetFilters(raw: unknown): QueryPresetFilters {
 function queryFiltersHaveActiveConditions(filters: QueryPresetFilters): boolean {
   return !!(
     filters.search
-    // resolveTagFilter 兼容数组 / 逗号串 / { values, mode } 三种标签形态
-    || resolveTagFilter(filters.tags).values.length > 0
+    // US-109d4: tag 活跃 = 迁移后的表达式非空（裸数组 / 三态 / { expr } 都覆盖）。
+    || tagsToExpr(filters.tags).trim()
     || (filters.status !== undefined && filters.status !== "all")
     || (filters.time && Object.keys(filters.time).length > 0)
   );
@@ -221,12 +188,14 @@ function mergeQueryFilters(base: QueryPresetFilters, local: QueryPresetFilters |
   const out: QueryPresetFilters = { ...normalizedLocal };
   if (normalizedBase.search && !normalizedLocal.search) out.search = normalizedBase.search;
 
-  // resolveTagFilter 同时支持数组 / 逗号串 / { values, mode } 三形态，避免 OR
-  // 对象被当成空而丢标签（迁移合并仍按 AND 收敛——legacy 基础集本就只有 AND）。
-  const baseTags = resolveTagFilter(normalizedBase.tags).values;
-  const localTags = resolveTagFilter(normalizedLocal.tags).values;
-  if (baseTags.length > 0 || localTags.length > 0) {
-    out.tags = normalizeDslTags([...baseTags, ...localTags]);
+  // US-109d4: 合并 base + local 的标签过滤——各自转表达式，用 AND 连接（都非空时
+  // 各加括号保优先级），收敛进同一个 { expr }。
+  const baseExpr = tagsToExpr(normalizedBase.tags).trim();
+  const localExpr = tagsToExpr(normalizedLocal.tags).trim();
+  if (baseExpr && localExpr) {
+    out.tags = { expr: `(${baseExpr}) and (${localExpr})` };
+  } else if (baseExpr || localExpr) {
+    out.tags = { expr: baseExpr || localExpr };
   }
 
   if (normalizedBase.status !== "all" && normalizedLocal.status === "all") {

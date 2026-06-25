@@ -37,7 +37,7 @@ const {
 
 // ── tag match mode (AND default / OR object) ──
 
-test("tag selector: OR round-trips as object; AND collapses to bare array; array stays array", () => {
+test("US-109d4: every tag-filter shape migrates to a single { expr } form", () => {
   const dsl = JSON.stringify({
     name: "T",
     view: { layout: { dir: "col", children: [
@@ -48,9 +48,9 @@ test("tag selector: OR round-trips as object; AND collapses to bare array; array
   });
   const preset = parseQueryDsl(dsl);
   const areas = preset.view.layout.children;
-  assert.deepEqual(areas[0].when.tags, { values: ["#a", "#b"], mode: "or" }, "OR preserved as object");
-  assert.deepEqual(areas[1].when.tags, ["#a", "#b"], "AND collapses to a bare array");
-  assert.deepEqual(areas[2].when.tags, ["#c"], "bare array stays a bare array");
+  assert.deepEqual(areas[0].when.tags, { expr: "#a or #b" }, "OR → expression");
+  assert.deepEqual(areas[1].when.tags, { expr: "#a and #b" }, "AND → expression");
+  assert.deepEqual(areas[2].when.tags, { expr: "#c" }, "bare array → expression");
 });
 
 // ── VAL-CORE-005: normalizeQueryPreset ──
@@ -185,41 +185,42 @@ test("VAL-CORE-005: normalizeQueryPreset deduplicates tags case-insensitively", 
     view: { layout: { type: "list", when: { tags: ["#Alpha", "#alpha", "#BETA", "#Beta"] } } },
   });
 
-  assert.deepEqual(normalized.view.layout.when.tags, ["#Alpha", "#BETA"]);
+  // US-109d4: migrated to an expression; tags lowercased + deduped.
+  assert.deepEqual(normalized.view.layout.when.tags, { expr: "#alpha and #beta" });
 });
 
 // ── US-109d3: tag exclude group normalization ──
 
-test("US-109d3: normalizeQueryPreset keeps an include+exclude tag filter in object form", () => {
+test("US-109d4: legacy include+exclude migrates to an expression", () => {
   const normalized = normalizeQueryPreset({
     id: "q-excl", name: "Excl", builtin: false, hidden: false,
     view: { layout: { type: "list", when: { tags: { values: ["#work"], mode: "and", exclude: ["#someday"] } } } },
   });
-  assert.deepEqual(normalized.view.layout.when.tags, { values: ["#work"], mode: "and", exclude: ["#someday"] });
+  assert.deepEqual(normalized.view.layout.when.tags, { expr: "#work and not #someday" });
 });
 
-test("US-109d3: normalizeQueryPreset keeps an exclude-only tag filter (empty include)", () => {
+test("US-109d4: legacy exclude-only (empty include) migrates to an expression", () => {
   const normalized = normalizeQueryPreset({
     id: "q-excl2", name: "ExclOnly", builtin: false, hidden: false,
     view: { layout: { type: "list", when: { tags: { values: [], mode: "and", exclude: ["#done"] } } } },
   });
-  assert.deepEqual(normalized.view.layout.when.tags, { values: [], mode: "and", exclude: ["#done"] });
+  assert.deepEqual(normalized.view.layout.when.tags, { expr: "not #done" });
 });
 
-test("US-109d3: normalizeQueryPreset — include wins when a tag is in both groups", () => {
+test("US-109d4: a tag in both include and exclude stays in include during migration", () => {
   const normalized = normalizeQueryPreset({
     id: "q-excl3", name: "Mutual", builtin: false, hidden: false,
     view: { layout: { type: "list", when: { tags: { values: ["#work"], mode: "or", exclude: ["#work", "#someday"] } } } },
   });
-  assert.deepEqual(normalized.view.layout.when.tags, { values: ["#work"], mode: "or", exclude: ["#someday"] });
+  assert.deepEqual(normalized.view.layout.when.tags, { expr: "#work and not #someday" });
 });
 
-test("US-109d3: normalizeQueryPreset — plain AND with empty exclude still collapses to a bare array", () => {
+test("US-109d4: plain AND include migrates to an and-joined expression", () => {
   const normalized = normalizeQueryPreset({
     id: "q-excl4", name: "Bare", builtin: false, hidden: false,
     view: { layout: { type: "list", when: { tags: { values: ["#work"], mode: "and", exclude: [] } } } },
   });
-  assert.deepEqual(normalized.view.layout.when.tags, ["#work"]);
+  assert.deepEqual(normalized.view.layout.when.tags, { expr: "#work" });
 });
 
 // ── VAL-CORE-006: validateQueryPreset — section-specific errors ──
@@ -593,7 +594,7 @@ test("VAL-CORE-005: parseQueryDsl parses and normalizes JSON DSL", () => {
       type: "week",
       when: {
         search: "docs",
-        tags: ["#alpha", "#beta"],
+        tags: { expr: "#alpha and #beta" },
         status: ["todo", "done"],
         time: { scheduled: "week" },
       },
@@ -724,7 +725,7 @@ test("VAL-CROSS-002: parseQueryDsl accepts valid 1.0 QueryPreset with area when"
   // US-109z2: tab-level filters dropped on parse.
   assert.equal(preset.filters, undefined);
   assert.equal(preset.view.layout.type, "week");
-  assert.deepEqual(preset.view.layout.when, { search: "docs", tags: ["#work"], status: ["todo"] });
+  assert.deepEqual(preset.view.layout.when, { search: "docs", tags: { expr: "#work" }, status: ["todo"] });
 });
 
 test("VAL-CROSS-002: parseQueryDsl accepts valid QueryPreset in query wrapper", () => {

@@ -67,13 +67,16 @@ All conditions are **AND-ed**: to enter this block a task must satisfy every key
 
 ### tags
 
-An include group plus an optional exclude group. Three forms:
+Tag filtering is a **boolean expression**; the canonical form is `{ "expr": "…" }` (US-109d4).
 
-- A string array `["a","b"]` or comma-separated string `"a,b"` → include group **AND** (the task must contain **all** listed tags), no exclude.
-- An object `{ "values": ["a","b"], "mode": "and" | "or" }` → choose the include mode. **OR** = the task carries **any** of the tags (handy for quadrants / context groups).
-- Add `"exclude": ["c"]` to the object → **exclude group**: a task carrying any excluded tag is filtered out. Match = (include empty, or matched per `mode`) **and** (none of the excludes present). Empty include + exclude = exclude-only.
-
-All are auto-prefixed with `#` and deduped case-insensitively; a tag in both groups stays in include. Normalized form: a plain-AND include group with no exclude collapses to a bare array, otherwise the `{ values, mode, exclude? }` object is kept. (Graphical panel: each tag row cycles "ignore → include → exclude"; an "All / Any" toggle appears once ≥2 include tags are selected.) (US-109d3)
+- Syntax: `#tag`, `and`, `or`, `not`, parentheses `( )`; keywords are case-insensitive; precedence `not` > `and` > `or`; the `#` is optional.
+- Example: `"tags": { "expr": "(#a or #b) and not #c" }` — has a or b, and not c.
+- Match: the expression is parsed and evaluated against each task's tags. A syntax error → the area applies **no** tag filter (fail-open); tasks are never silently dropped.
+- **Back-compat**: older shapes are **auto-migrated** to an equivalent `{ expr }` at normalize time; the evaluator only reads the expression:
+  - bare array `["#a","#b"]` or comma string `"a,b"` → `"#a and #b"`
+  - `{ "values":["#a","#b"], "mode":"or" }` → `"#a or #b"`
+  - `{ "values":["#a"], "exclude":["#c"] }` → `"#a and not #c"`
+- Graphical panel: the tag popover has an expression input (live-validated, with an example) plus a tag list; clicking a tag appends `#tag` to the expression.
 
 ### time — fields and date vocabulary
 

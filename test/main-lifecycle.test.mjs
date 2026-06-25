@@ -553,7 +553,7 @@ test("query-save 总是新建 preset id，而不是复用 DSL 里的 id", async 
   assert.equal(plugin.settings.queryPresets[0].name, "Deep Work");
   assert.equal(plugin.settings.queryPresets[0].filters, undefined);
   assert.deepEqual(plugin.settings.queryPresets[0].view, {
-    layout: { type: "week", when: { search: "docs", tags: ["#alpha"], status: ["todo"] } },
+    layout: { type: "week", when: { search: "docs", tags: { expr: "#alpha" }, status: ["todo"] } },
   });
   assert.equal(calls.save, 1);
   assert.equal(calls.refresh, 1);
@@ -600,7 +600,7 @@ test("query-update 固定覆盖当前 id，不允许 DSL 偷换 preset 身份", 
       name: "Alpha Updated",
       builtin: false,
       hidden: false,
-      view: { layout: { type: "month", when: { search: "new", tags: ["#beta"], status: ["done"], time: { completed: "month" } } } },
+      view: { layout: { type: "month", when: { search: "new", tags: { expr: "#beta" }, status: ["done"], time: { completed: "month" } } } },
     },
   ]);
   assert.equal(calls.save, 1);
@@ -1042,7 +1042,7 @@ test("query-create 创建新 preset，输出稳定 id，且不覆盖已有 prese
   assert.match(created.id, /^sv-[a-z0-9]+-4fzz$/);
   assert.equal(created.name, "New via Create");
   assert.equal(created.filters, undefined);
-  assert.deepEqual(created.view, { layout: { type: "week", when: { search: "focus", tags: ["#work"], status: ["todo"] } } });
+  assert.deepEqual(created.view, { layout: { type: "week", when: { search: "focus", tags: { expr: "#work" }, status: ["todo"] } } });
   assert.equal(calls.save, 1);
   assert.equal(calls.refresh, 1);
 });

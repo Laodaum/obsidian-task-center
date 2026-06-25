@@ -602,7 +602,7 @@ test("VAL-GUI-004: delete+undo preserves full QueryPreset detail through product
   assert.equal(richLayout.children.length, 2);
   assert.equal(richLayout.children[0].type, "grid");
   assert.equal(richLayout.children[0].title, "Priority");
-  assert.deepEqual(richLayout.children[0].when.tags, ["#high"]);
+  assert.deepEqual(richLayout.children[0].when.tags, { expr: "#high" });
   assert.deepEqual(richLayout.children[0].orderBy, ["deadline_asc"]);
   assert.equal(richLayout.children[1].type, "list");
   assert.equal(richLayout.children[1].title, "Backlog");
@@ -1056,7 +1056,7 @@ test("VAL-GUI-004 production: confirm-delete-undo roundtrip preserves all QueryP
   assert.equal(snapLayout.dir, "col");
   assert.equal(snapLayout.children[0].type, "grid");
   assert.equal(snapLayout.children[0].title, "Priority");
-  assert.deepEqual(snapLayout.children[0].when.tags, ["#high"]);
+  assert.deepEqual(snapLayout.children[0].when.tags, { expr: "#high" });
   assert.deepEqual(snapLayout.children[0].orderBy, ["deadline_asc"]);
   assert.equal(snapLayout.children[1].type, "list");
   assert.equal(snapLayout.children[1].title, "Backlog");
@@ -1703,7 +1703,7 @@ test("VAL-GUI-004 production view-path: undo preserves full QueryPreset fields (
     const rGrid = rLayout.children[0];
     assert.equal(rGrid.type, "grid");
     assert.equal(rGrid.title, "Priority");
-    assert.deepEqual(rGrid.when.tags, ["#high"]);
+    assert.deepEqual(rGrid.when.tags, { expr: "#high" });
     assert.deepEqual(rGrid.orderBy, ["deadline_asc"]);
 
     // Tray (list area)

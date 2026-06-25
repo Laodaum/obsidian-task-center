@@ -217,7 +217,7 @@ test("M2: list area — tray with extra filter (unscheduled + tag)", async () =>
     {
       type: "list",
       title: "未排期工作",
-      when: { time: { scheduled: "unscheduled" }, tags: ["#work"] },
+      when: { time: { scheduled: "unscheduled" }, tags: { expr: "#work" } },
     },
     1,
   );
@@ -461,7 +461,7 @@ test("list area — when matching no tasks produces an empty list", async () => 
 
   const model = projectListArea(
     tasks,
-    { type: "list", when: { tags: ["#nonexistent"] } },
+    { type: "list", when: { tags: { expr: "#nonexistent" } } },
     1,
   );
 
@@ -478,7 +478,7 @@ test("US-109x: area-level when {tags} filters the area's own cards", async () =>
     effectiveTask({ id: "Inbox.md:L1", title: "alpha", tags: ["#alpha"] }),
     effectiveTask({ id: "Inbox.md:L2", title: "beta", tags: ["#beta"] }),
   ];
-  const model = projectListArea(tasks, { type: "list", when: { tags: ["#alpha"] } }, 1);
+  const model = projectListArea(tasks, { type: "list", when: { tags: { expr: "#alpha" } } }, 1);
   const ids = model.tasks.map((t) => t.id);
   assert.deepEqual(ids, ["Inbox.md:L1"], "area.when {tags:#alpha} keeps L1, drops L2(#beta)");
 });

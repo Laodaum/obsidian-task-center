@@ -152,9 +152,15 @@ export interface TagSelector {
   exclude?: string[];
 }
 
+// US-109d4: 自由布尔表达式形态的标签过滤（`#a and (#b or #c) not #d`）。与三态
+// （TagSelector / 裸数组）互斥，是同一份 when.tags 的另一种形态。
+export interface TagExprFilter {
+  expr: string;
+}
+
 export interface QueryPresetFilters {
   search?: string;
-  tags?: string[] | string | TagSelector;
+  tags?: string[] | string | TagSelector | TagExprFilter;
   status?: QueryStatus;
   time?: QueryTimeFilters;
 }

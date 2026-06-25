@@ -1,10 +1,10 @@
-import { browser, expect, $ } from "@wdio/globals";
+import { browser, $ } from "@wdio/globals";
 import { obsidianPage } from "wdio-obsidian-service";
 
-// Tag match mode (AND / OR): the segmented toggle appears once ≥2 tags are
-// selected, defaults to AND (全部), and switching to OR (任一) persists into the
-// area `when` — proven by the `active` class being re-derived from when.tags
-// after the rerender (GUI → setAreaWhen → when.tags → areaTagMode → active).
+// US-109d4: tag filtering is a single boolean expression. The tag popover has an
+// expression input (live-validated) plus a tag list whose rows append `#tag` to
+// the expression. This spec proves: a typed expression persists into the area
+// `when`, clicking a tag appends it, and a syntax error flags inline.
 
 const VAULT = "test/e2e/vaults/simple";
 
@@ -49,18 +49,12 @@ async function writeAndWait(path: string, body: string) {
   );
 }
 
-async function hasActiveMode(mode: "and" | "or"): Promise<boolean> {
-  const el = await $(`.bt-area-tag-mode-btn[data-tag-mode="${mode}"]`);
-  if (!(await el.isExisting())) return false;
-  return ((await el.getAttribute("class")) ?? "").includes("active");
-}
-
-describe("tag match mode (AND/OR) toggle", function () {
+describe("tag boolean expression (US-109d4)", function () {
   beforeEach(async function () {
     await obsidianPage.resetVault(VAULT);
   });
 
-  it("appears at ≥2 tags (in the open popover and the head), defaults to AND, switching to OR persists", async function () {
+  it("US-109d4: a typed expression persists; clicking a tag appends it; syntax errors flag", async function () {
     const today = todayISO();
     await writeAndWait(
       "Tasks/Inbox.md",
@@ -75,92 +69,36 @@ describe("tag match mode (AND/OR) toggle", function () {
     await forFlush();
     await $("[data-saved-views], .task-center-view").waitForExist({ timeout: 5000 });
 
-    // Open an area's filter editor.
     const areaEdit = await $('[data-action="edit-area"]');
     await areaEdit.waitForExist({ timeout: 5000 });
     await areaEdit.click();
     await $('[data-query-editor-scope="area"]').waitForExist({ timeout: 5000 });
 
-    // The toggle is absent with no tags selected (neither head nor popover).
-    await expect($(".bt-area-tag-mode")).not.toExist();
-
-    // Open the tag select and pick two distinct tags.
+    // Open the tag popover — the expression input is present.
     await $(".bt-area-tag-trigger").click();
-    await $(".bt-area-tag-row").waitForExist({ timeout: 5000 });
-    await $('.bt-area-tag-row[data-area-tag="#alpha"]').click();
-    await $('.bt-area-tag-row[data-area-tag="#beta"]').click();
+    await $("[data-area-tag-expr]").waitForExist({ timeout: 5000 });
 
-    // US-109d2: with ≥2 tags and the popover STILL OPEN, the match-mode toggle is
-    // visible INSIDE the popover (above the search box) — the user sees it the
-    // moment they're picking tags, not only after closing the popover. It defaults
-    // to AND (全部).
-    await $(".bt-area-tag-mode--popover").waitForExist({ timeout: 5000 });
-    await browser.waitUntil(async () => (await hasActiveMode("and")) && !(await hasActiveMode("or")), {
-      timeout: 5000,
-      timeoutMsg: "expected AND to be the default active mode in the open popover",
-    });
-
-    // Switch to OR (任一) from inside the open popover; active state moves and the
-    // popover stays open through the rerender.
-    await $('.bt-area-tag-mode--popover .bt-area-tag-mode-btn[data-tag-mode="or"]').click();
-    await browser.waitUntil(async () => (await hasActiveMode("or")) && !(await hasActiveMode("and")), {
-      timeout: 5000,
-      timeoutMsg: "expected OR to become active after clicking 任一 inside the popover",
-    });
-
-    // Close the popover; the equivalent toggle now appears in the head (the two
-    // placements are mutually exclusive) and keeps the OR selection.
-    await $(".bt-area-tag-trigger").click();
-    await $(".bt-area-tag-list").waitForExist({ reverse: true, timeout: 5000 });
-    await $(".bt-area-tag-mode").waitForExist({ timeout: 5000 });
-    await browser.waitUntil(async () => (await hasActiveMode("or")) && !(await hasActiveMode("and")), {
-      timeout: 5000,
-      timeoutMsg: "expected OR to persist in the head toggle after closing the popover",
-    });
-  });
-
-  it("US-109d3: clicking a tag row cycles ignore → include → exclude → ignore", async function () {
-    const today = todayISO();
-    await writeAndWait(
-      "Tasks/Inbox.md",
-      [
-        `- [ ] Work task #alpha ⏳ ${today}`,
-        `- [ ] Skip task #beta ⏳ ${today}`,
-      ].join("\n") + "\n",
+    // Type a valid expression and commit with Enter; it persists after the rerender.
+    const input = await $("[data-area-tag-expr]");
+    await input.setValue("#alpha and not #beta");
+    await browser.keys("Enter");
+    await browser.waitUntil(
+      async () => (await $("[data-area-tag-expr]").getValue()) === "#alpha and not #beta",
+      { timeout: 5000, timeoutMsg: "expected the committed expression to persist" },
     );
 
-    await browser.executeObsidianCommand("task-center:open");
-    await forFlush();
-    await $("[data-saved-views], .task-center-view").waitForExist({ timeout: 5000 });
+    // Clicking a tag row appends `#tag` to the expression (popover stays open).
+    const betaRow = await $('.bt-area-tag-row[data-area-tag="#beta"]');
+    if (await betaRow.isExisting()) {
+      await betaRow.click();
+      await browser.waitUntil(
+        async () => /#beta\s*$/.test(await $("[data-area-tag-expr]").getValue()),
+        { timeout: 5000, timeoutMsg: "expected clicking #beta to append it to the expression" },
+      );
+    }
 
-    const areaEdit = await $('[data-action="edit-area"]');
-    await areaEdit.waitForExist({ timeout: 5000 });
-    await areaEdit.click();
-    await $('[data-query-editor-scope="area"]').waitForExist({ timeout: 5000 });
-
-    await $(".bt-area-tag-trigger").click();
-    await $(".bt-area-tag-row").waitForExist({ timeout: 5000 });
-
-    // The row is rebuilt on each rerender, so re-query it every time.
-    const stateOf = async () =>
-      (await $('.bt-area-tag-row[data-area-tag="#beta"]').getAttribute("data-area-tag-state")) ?? "";
-
-    // 1st click → include.
-    await $('.bt-area-tag-row[data-area-tag="#beta"]').click();
-    await browser.waitUntil(async () => (await stateOf()) === "include", {
-      timeout: 5000, timeoutMsg: "expected #beta → include after 1st click",
-    });
-
-    // 2nd click → exclude.
-    await $('.bt-area-tag-row[data-area-tag="#beta"]').click();
-    await browser.waitUntil(async () => (await stateOf()) === "exclude", {
-      timeout: 5000, timeoutMsg: "expected #beta → exclude after 2nd click",
-    });
-
-    // 3rd click → ignore (state attribute cleared).
-    await $('.bt-area-tag-row[data-area-tag="#beta"]').click();
-    await browser.waitUntil(async () => (await stateOf()) === "", {
-      timeout: 5000, timeoutMsg: "expected #beta → ignore after 3rd click",
-    });
+    // An invalid expression flags an inline error.
+    await (await $("[data-area-tag-expr]")).setValue("(#alpha or");
+    await $(".bt-area-tag-expr-error.is-visible").waitForExist({ timeout: 5000 });
   });
 });

@@ -14,14 +14,12 @@ import { normalizeQueryStatus } from "../query/schema";
 import {
   PRIMARY_TIME_FIELD,
   SECONDARY_TIME_FIELDS,
-  buildTagsField,
   statusFilterOptions,
-  tagSelectionSummary,
-  tagModeOptions,
   timeFieldLabel,
   timeFilterOptions,
   toggledStatus,
 } from "./area-filter-model";
+import { appendTagToExpr, parseTagExpr } from "../query/tag-expr";
 
 type Rerender = () => void;
 
@@ -32,8 +30,6 @@ export function renderAreaFilterControls(
   when: QueryPresetFilters,
   rerenderControls?: Rerender,
 ): void {
-  const selectedTags = v.areaTags(when);
-  const excludeTags = v.areaTagExclude(when);
   const status = normalizeQueryStatus(when.status);
   const scheduled = when.time?.scheduled?.trim() ?? "";
 
@@ -101,7 +97,7 @@ export function renderAreaFilterControls(
   }
 
   // Tags — a searchable, scrollable list (scales to thousands of tags).
-  renderAreaTagList(v, parent, areaIndex, when, selectedTags, excludeTags, rerenderControls);
+  renderAreaTagList(v, parent, areaIndex, when, rerenderControls);
 }
 
 // US-109z2: one time field's area controls — quick tokens + a date-range
@@ -166,59 +162,36 @@ function renderAreaTimeField(
   toIn.addEventListener("change", applyRange);
 }
 
-// US-109z2: searchable, scrollable tag list. Renders selected-first + filtered
-// candidates, capped so thousands of tags don't blow up the DOM; the search
-// box re-renders rows locally (no sheet rerender, keeps focus).
+// US-109d4: tag filtering is a single boolean expression. The popover has an
+// expression input at the top (live-validated, with an example) plus a
+// searchable tag list whose rows APPEND `#tag` to the expression — so users can
+// both type their own and click to insert. There is no separate three-state /
+// AND-OR UI; those are just shapes of the same expression.
 function renderAreaTagList(
   v: TaskCenterView,
   parent: HTMLElement,
   areaIndex: number,
   when: QueryPresetFilters,
-  selectedTags: string[],
-  excludeTags: string[],
   rerenderControls?: Rerender,
 ): void {
-  // 选标签时按当前模式（AND 默认 / OR）写回 when.tags。
-  const tagMode = v.areaTagMode(when);
+  const currentExpr = v.areaTagExpr(when);
+  const hasExpr = currentExpr.trim().length > 0;
   const sec = parent.createDiv({ cls: "bt-area-filter-sec" });
   const head = sec.createDiv({ cls: "bt-area-filter-sec-head" });
   head.createSpan({ cls: "bt-area-filter-sec-label", text: tr("savedViews.tag") });
-  // Right side of the head: the AND/OR match-mode segmented toggle (only with
-  // ≥2 tags, where the mode matters) + clear. Kept ABOVE the trigger so the
-  // downward-floating tag popover never overlaps / intercepts it.
   const headRight = head.createDiv({ cls: "bt-area-tag-head-right" });
-  // Only when the tag popover is CLOSED: while it's open (floating, anchored to
-  // the trigger) it can flip up and cover the head, hiding/intercepting this
-  // toggle. Showing it after the popover closes keeps it always usable.
-  if (selectedTags.length >= 2 && !v.areaTagPopoverOpen) {
-    const seg = headRight.createDiv({ cls: "bt-area-tag-mode" });
-    seg.setAttribute("aria-label", tr("savedViews.tagMatchMode"));
-    for (const opt of tagModeOptions()) {
-      const btn = seg.createEl("button", {
-        text: opt.label,
-        cls: "bt-area-tag-mode-btn" + (opt.value === tagMode ? " active" : ""),
-      });
-      btn.dataset.tagMode = opt.value;
-      btn.setAttribute("aria-pressed", String(opt.value === tagMode));
-      btn.addEventListener("click", () =>
-        v.setAreaWhen(areaIndex, { ...when, tags: buildTagsField(selectedTags, opt.value, excludeTags) }, rerenderControls));
-    }
-  }
-  if (selectedTags.length > 0 || excludeTags.length > 0) {
+  if (hasExpr) {
     const clearTags = headRight.createEl("button", { text: tr("savedViews.clearTags"), cls: "bt-area-filter-clear-tags" });
     clearTags.addEventListener("click", () => v.setAreaWhen(areaIndex, { ...when, tags: [] }, rerenderControls));
   }
-  // Click-to-open select: a trigger showing the selection summary; the
-  // searchable list only renders when open, so many tags don't lengthen the
-  // panel. Open state persists across rerenders so multi-select keeps it open.
+  // Click-to-open trigger showing the current expression; the editor only renders
+  // when open. Open state persists across rerenders so editing keeps it open.
   const trigger = sec.createEl("button", { cls: "bt-area-tag-trigger" });
   trigger.dataset.action = "tag-select";
-  const hasAnyTag = selectedTags.length > 0 || excludeTags.length > 0;
-  const summary = trigger.createSpan({
-    cls: "bt-area-tag-trigger-summary" + (hasAnyTag ? "" : " is-empty"),
-    text: hasAnyTag ? tagSelectionSummary(selectedTags, excludeTags) : tr("savedViews.tagSearch"),
+  trigger.createSpan({
+    cls: "bt-area-tag-trigger-summary" + (hasExpr ? "" : " is-empty"),
+    text: hasExpr ? currentExpr : tr("savedViews.tagSearch"),
   });
-  void summary;
   setIcon(trigger.createSpan({ cls: "bt-area-tag-caret" }), v.areaTagPopoverOpen ? "chevron-up" : "chevron-down");
   trigger.addEventListener("click", () => {
     v.areaTagPopoverOpen = !v.areaTagPopoverOpen;
@@ -234,19 +207,16 @@ function renderAreaTagList(
     const r = trigger.getBoundingClientRect();
     popover.style.left = `${Math.round(r.left)}px`;
     popover.style.width = `${Math.round(r.width)}px`;
-    // Open downward, but flip up if it would overflow the viewport bottom.
     const popH = popover.offsetHeight || 280;
     const below = window.innerHeight - r.bottom;
     if (below < popH + 8 && r.top > popH + 8) popover.style.top = `${Math.round(r.top - popH - 4)}px`;
     else popover.style.top = `${Math.round(r.bottom + 4)}px`;
   };
-  // Position after it's measured; reposition on scroll/resize of the sheet.
   window.requestAnimationFrame(placeFloat);
   const scroller = trigger.closest<HTMLElement>(".modal-content, .bt-editor-page-body");
   const reposition = () => placeFloat();
   scroller?.addEventListener("scroll", reposition, { passive: true });
   window.addEventListener("resize", reposition, { passive: true });
-  // Clean the listeners when this popover leaves the DOM (next rerender).
   const cleanup = () => {
     scroller?.removeEventListener("scroll", reposition);
     window.removeEventListener("resize", reposition);
@@ -254,28 +224,50 @@ function renderAreaTagList(
   new MutationObserver((_m, obs) => {
     if (!popover.isConnected) { cleanup(); obs.disconnect(); }
   }).observe(sec, { childList: true, subtree: true });
-  // US-109d2: with ≥2 tags (where AND vs OR actually differs), the match-mode
-  // toggle also sits at the TOP of the OPEN popover (above the search box), so
-  // the user sees and switches it the moment they're picking tags — not only
-  // after the popover closes. The head copy (above) covers the popover-closed
-  // case; the two are mutually exclusive (open vs closed), never both at once.
-  if (selectedTags.length >= 2) {
-    const seg = popover.createDiv({ cls: "bt-area-tag-mode bt-area-tag-mode--popover" });
-    seg.setAttribute("aria-label", tr("savedViews.tagMatchMode"));
-    for (const opt of tagModeOptions()) {
-      const btn = seg.createEl("button", {
-        text: opt.label,
-        cls: "bt-area-tag-mode-btn" + (opt.value === tagMode ? " active" : ""),
-      });
-      btn.dataset.tagMode = opt.value;
-      btn.setAttribute("aria-pressed", String(opt.value === tagMode));
-      btn.addEventListener("click", () =>
-        v.setAreaWhen(areaIndex, { ...when, tags: buildTagsField(selectedTags, opt.value, excludeTags) }, rerenderControls));
+
+  // US-109d4: the expression input. Live-validate on every keystroke (inline
+  // error, no rerender — keeps focus); commit on change / Enter (rerenders).
+  const exprInput = popover.createEl("input", {
+    type: "text",
+    cls: "bt-area-tag-expr",
+    placeholder: "#a and (#b or #c) not #d",
+  });
+  exprInput.dataset.areaTagExpr = "";
+  exprInput.value = currentExpr;
+  const errEl = popover.createDiv({ cls: "bt-area-tag-expr-error" });
+  popover.createDiv({ cls: "bt-area-tag-expr-example", text: tr("savedViews.tagExprExample") });
+  const validate = (text: string): boolean => {
+    const t = text.trim();
+    if (!t) { errEl.toggleClass("is-visible", false); return true; }
+    const { error } = parseTagExpr(t);
+    if (error) {
+      errEl.setText(tr("savedViews.tagExprError"));
+      errEl.toggleClass("is-visible", true);
+      return false;
     }
-  }
+    errEl.toggleClass("is-visible", false);
+    return true;
+  };
+  const commit = () => {
+    const text = exprInput.value.trim();
+    if (!text) {
+      if (hasExpr) v.setAreaWhen(areaIndex, { ...when, tags: [] }, rerenderControls);
+      return;
+    }
+    if (!validate(text)) return; // invalid → don't write, keep last saved value
+    if (text !== currentExpr) v.setAreaWhen(areaIndex, { ...when, tags: { expr: text } }, rerenderControls);
+  };
+  exprInput.addEventListener("input", () => validate(exprInput.value));
+  exprInput.addEventListener("change", commit);
+  exprInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); commit(); }
+  });
+
+  // Searchable tag list — clicking a row APPENDS `#tag` to the expression so
+  // users don't have to type tag names; and/or/not/parens are typed by hand.
   const searchInput = popover.createEl("input", { type: "text", cls: "bt-area-tag-search", placeholder: tr("savedViews.tagSearch") });
   const list = popover.createDiv({ cls: "bt-area-tag-list" });
-  const options = v.collectTagOptions([...selectedTags, ...excludeTags]);
+  const options = v.collectTagOptions([]);
   const CAP = 100;
   const renderRows = (query: string) => {
     list.empty();
@@ -286,28 +278,14 @@ function renderAreaTagList(
       return;
     }
     for (const opt of filtered.slice(0, CAP)) {
-      const lc = opt.tag.toLowerCase();
-      const isInclude = selectedTags.some((t) => t.toLowerCase() === lc);
-      const isExclude = excludeTags.some((t) => t.toLowerCase() === lc);
-      const state = isInclude ? "include" : isExclude ? "exclude" : "none";
-      const row = list.createEl("button", {
-        cls: "bt-area-tag-row"
-          + (state === "include" ? " active" : state === "exclude" ? " excluded" : ""),
-      });
+      const row = list.createEl("button", { cls: "bt-area-tag-row" });
       row.dataset.areaTag = opt.tag;
-      if (state !== "none") row.dataset.areaTagState = state;
-      const check = row.createSpan({ cls: "bt-area-tag-check" });
-      if (state === "include") setIcon(check, "check");
-      else if (state === "exclude") setIcon(check, "ban");
+      setIcon(row.createSpan({ cls: "bt-area-tag-check" }), "plus");
       row.createSpan({ text: opt.tag, cls: "bt-area-tag-row-label" });
       if (opt.count > 0) row.createSpan({ text: String(opt.count), cls: "bt-area-tag-row-count" });
       row.addEventListener("click", () => {
-        // US-109d3: cycle none → include → exclude → none.
-        const nextInclude = selectedTags.filter((t) => t.toLowerCase() !== lc);
-        const nextExclude = excludeTags.filter((t) => t.toLowerCase() !== lc);
-        if (state === "none") nextInclude.push(opt.tag);
-        else if (state === "include") nextExclude.push(opt.tag);
-        v.setAreaWhen(areaIndex, { ...when, tags: buildTagsField(nextInclude, tagMode, nextExclude) }, rerenderControls);
+        const next = appendTagToExpr(exprInput.value, opt.tag);
+        v.setAreaWhen(areaIndex, { ...when, tags: { expr: next } }, rerenderControls);
       });
     }
     if (filtered.length > CAP) {

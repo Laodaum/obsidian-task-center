@@ -286,6 +286,31 @@
   color: var(--text-normal);
   font-size: 13px;
 }
+/* US-109d4: tag boolean expression input + inline error + example hint. */
+.task-center-bottom-sheet .bt-area-tag-expr {
+  width: 100%;
+  margin: 0 0 4px;
+  padding: 6px 10px;
+  border-radius: var(--radius-s);
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  color: var(--text-normal);
+  font-size: 13px;
+  font-family: var(--font-monospace);
+}
+.task-center-bottom-sheet .bt-area-tag-expr-error {
+  display: none;
+  margin: 0 0 4px;
+  color: var(--text-error, var(--color-red));
+  font-size: 11px;
+}
+.task-center-bottom-sheet .bt-area-tag-expr-error.is-visible { display: block; }
+.task-center-bottom-sheet .bt-area-tag-expr-example {
+  margin: 0 0 6px;
+  color: var(--text-faint);
+  font-size: 11px;
+  line-height: 1.4;
+}
 .task-center-bottom-sheet .bt-area-tag-list {
   display: flex;
   flex-direction: column;
@@ -320,14 +345,6 @@
   color: var(--interactive-accent);
 }
 .task-center-bottom-sheet .bt-area-tag-check svg { width: 14px; height: 14px; }
-/* US-109d3: excluded tag row — struck-through, muted label + a red ⊘ check. */
-.task-center-bottom-sheet .bt-area-tag-row.excluded .bt-area-tag-row-label {
-  text-decoration: line-through;
-  color: var(--text-muted);
-}
-.task-center-bottom-sheet .bt-area-tag-row.excluded .bt-area-tag-check {
-  color: var(--text-error, var(--color-red));
-}
 .task-center-bottom-sheet .bt-area-tag-row-label {
   flex: 1 1 auto;
   min-width: 0;

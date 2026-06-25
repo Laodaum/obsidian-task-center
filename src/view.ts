@@ -66,12 +66,13 @@ import {
   renameQueryPresetById,
   normalizeQueryPreset,
   normalizeQueryStatus,
-  resolveTagFilter,
+  tagsToExpr,
   upsertQueryPreset,
   updateQueryPresetById,
   visibleQueryPresets,
   queryPresetTagString,
 } from "./saved-views";
+import { parseTagExpr, evalTagExpr } from "./query/tag-expr";
 import type {
   AreaConfig,
   AreaType,
@@ -1599,27 +1600,16 @@ export class TaskCenterView extends ItemView {
     edit.addEventListener("click", () => this.openQueryControlsSheet({ scope: "area", areaIndex, areaTab: "filter" }));
   }
 
-  areaTags(when: QueryPresetFilters): string[] {
-    return resolveTagFilter(when.tags).values;
-  }
-
-  areaTagMode(when: QueryPresetFilters): "and" | "or" {
-    return resolveTagFilter(when.tags).mode;
-  }
-
-  areaTagExclude(when: QueryPresetFilters): string[] {
-    return resolveTagFilter(when.tags).exclude;
+  // US-109d4: the canonical tag filter is one boolean expression string.
+  areaTagExpr(when: QueryPresetFilters): string {
+    return tagsToExpr(when.tags);
   }
 
   areaFilterSummary(when: QueryPresetFilters): string {
     const parts: string[] = [];
     if (when.search?.trim()) parts.push(`🔍 ${when.search.trim()}`);
-    const tags = this.areaTags(when);
-    if (tags.length === 1) parts.push(tags[0]);
-    else if (tags.length > 1) parts.push(`${tags[0]} +${tags.length - 1}`);
-    const excl = this.areaTagExclude(when);
-    if (excl.length === 1) parts.push(`−${excl[0]}`);
-    else if (excl.length > 1) parts.push(`−${excl[0]} +${excl.length - 1}`);
+    const tagExpr = this.areaTagExpr(when);
+    if (tagExpr) parts.push(tagExpr);
     const status = normalizeQueryStatus(when.status);
     if (status !== "all") parts.push(status.map((s) => statusFilterLabel(s)).join("/"));
     const scheduled = when.time?.scheduled?.trim();
@@ -1732,15 +1722,15 @@ export class TaskCenterView extends ItemView {
         ? ((primary as { when?: QueryPresetFilters }).when ?? {})
         : {};
     const q = (when.search ?? "").trim().toLowerCase();
-    const tags = resolveTagFilter(when.tags).values;
+    // US-109d4: tag filtering is one boolean expression; parse once, eval per task.
+    const tagExprStr = tagsToExpr(when.tags);
+    const tagAst = tagExprStr.trim() ? parseTagExpr(tagExprStr).ast : null;
     const time = when.time ?? {};
     const status = normalizeQueryStatus(when.status);
-    if (!q && tags.length === 0 && !this.hasTimeFilters(time) && status === "all") return () => true;
+    if (!q && !tagAst && !this.hasTimeFilters(time) && status === "all") return () => true;
     return (t) => {
       if (q && !taskMatchesText(t, q)) return false;
-      for (const tag of tags) {
-        if (!taskHasTag(t, tag)) return false;
-      }
+      if (tagAst && !evalTagExpr(tagAst, t.tags)) return false;
       if (!this.taskMatchesTimeFilters(t, time)) return false;
       if (status !== "all" && !status.includes(t.effectiveStatus)) return false;
       return true;

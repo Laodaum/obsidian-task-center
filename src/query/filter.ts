@@ -17,6 +17,7 @@ import type {
   QueryTimeFilters,
 } from "../types";
 import { normalizeQueryStatus, resolveTagFilter } from "./schema";
+import { type TagExprNode, parseTagExpr, evalTagExpr } from "./tag-expr";
 import { taskMatchesTimeToken, timeTokenAppliesToField } from "../time-filter";
 import { todayISO } from "../dates";
 
@@ -56,9 +57,10 @@ function normalizeStatusFilter(
 
 interface NormalizedQueryFilters {
   searchQ: string;
-  tagList: string[];
-  tagMode: "and" | "or";
-  tagExclude: string[];
+  // US-109d4: tag filtering is unified on a boolean expression. Any legacy
+  // shape (array / three-state object) is converted to an expression and parsed
+  // once here; null = no tag filter (also the fail-open result of a syntax error).
+  tagExpr: TagExprNode | null;
   statusFilter: "all" | string[];
   time: QueryTimeFilters;
   hasTime: boolean;
@@ -68,12 +70,15 @@ function normalizeQueryFilters(
   filters: QueryPresetFilters,
 ): NormalizedQueryFilters {
   const time = filters.time ?? {};
-  const { values: tagList, mode: tagMode, exclude: tagExclude } = resolveTagFilter(filters.tags);
+  // US-109d4: tag filtering is unified on the `{ expr }` form. Legacy array /
+  // three-state shapes are migrated to `{ expr }` at normalize time, so the
+  // evaluator only reads `expr` here (no back-compat shape handling). A syntax
+  // error yields a null AST → no tag filtering (fail-open).
+  const exprStr = resolveTagFilter(filters.tags).expr ?? "";
+  const tagExpr = exprStr.trim() ? parseTagExpr(exprStr).ast : null;
   return {
     searchQ: (filters.search ?? "").trim().toLowerCase(),
-    tagList,
-    tagMode,
-    tagExclude,
+    tagExpr,
     statusFilter: normalizeStatusFilter(filters.status),
     time,
     hasTime: Object.values(time).some(
@@ -93,24 +98,6 @@ function matchesSearch(task: EffectiveTask, q: string): boolean {
   return false;
 }
 
-function matchesTags(
-  task: EffectiveTask,
-  wanted: string[],
-  mode: "and" | "or",
-  exclude: string[],
-): boolean {
-  const has = (wantedTag: string): boolean => {
-    const normalized = wantedTag.startsWith("#")
-      ? wantedTag.toLowerCase()
-      : `#${wantedTag.toLowerCase()}`;
-    return task.tags.some((t) => t.toLowerCase() === normalized);
-  };
-  // US-109d3: include group — empty = no constraint; OR = carries any; AND = all.
-  const includeOk = wanted.length === 0 || (mode === "or" ? wanted.some(has) : wanted.every(has));
-  // Exclude group — the task must carry NONE of the excluded tags.
-  const excludeOk = !exclude.some(has);
-  return includeOk && excludeOk;
-}
 
 function matchesStatus(
   task: EffectiveTask,
@@ -171,8 +158,7 @@ function normalizedQueryFilterHasActiveConditions(
 ): boolean {
   return Boolean(
     normalized.searchQ ||
-      normalized.tagList.length > 0 ||
-      normalized.tagExclude.length > 0 ||
+      normalized.tagExpr !== null ||
       normalized.statusFilter !== "all" ||
       normalized.hasTime,
   );
@@ -187,10 +173,7 @@ function taskMatchesNormalizedQueryFilters(
 ): boolean {
   if (normalized.searchQ && !matchesSearch(task, normalized.searchQ))
     return false;
-  if (
-    (normalized.tagList.length > 0 || normalized.tagExclude.length > 0) &&
-    !matchesTags(task, normalized.tagList, normalized.tagMode, normalized.tagExclude)
-  )
+  if (normalized.tagExpr && !evalTagExpr(normalized.tagExpr, task.tags))
     return false;
   // US-153: a task in `exemptStatusIds` (just completed in this view session)
   // bypasses the status predicate only — every other filter still applies — so
