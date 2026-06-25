@@ -8,6 +8,7 @@ import type TaskCenterPlugin from "../main";
 type BentoArt = "layout" | "model" | "preset" | "ui" | "toolbar" | "done";
 type RoadmapArt = "data" | "graph";
 type TrKey = Parameters<typeof tr>[0];
+const AI_SKILL_INSTALL_COMMAND = "npx skills add CorrectRoadH/obsidian-task-center";
 
 /**
  * US-415: full-view 1.0 upgrade gate. Rendered instead of the board when legacy
@@ -65,12 +66,8 @@ export function renderMigrationGate(el: HTMLElement, plugin: TaskCenterPlugin): 
   const aiBody = aiTip.createDiv({ cls: "tc-migration-aitip-body" });
   aiBody.createEl("strong", { cls: "tc-migration-aitip-title", text: tr("migration.aiTipTitle") });
   aiBody.createEl("p", { cls: "tc-migration-aitip-desc", text: tr("migration.aiTipDesc") });
-  aiBody.createEl("code", {
-    cls: "tc-migration-aitip-code",
-    // Shell command, not prose — sentence-case must not capitalize `npx` / the package name.
-    // eslint-disable-next-line obsidianmd/ui/sentence-case
-    text: "npx skills add CorrectRoadH/obsidian-task-center",
-  });
+  const aiCommand = aiBody.createEl("code", { cls: "tc-migration-aitip-code" });
+  aiCommand.setText(AI_SKILL_INSTALL_COMMAND);
 
   // Primary action under What's New (still above the long views list).
   const actions = card.createDiv({ cls: "tc-migration-actions" });

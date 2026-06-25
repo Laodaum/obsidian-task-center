@@ -1,4 +1,5 @@
 import obsidianmd from "eslint-plugin-obsidianmd";
+import eslintComments from "@eslint-community/eslint-plugin-eslint-comments";
 
 export default [
   // Obsidian-recommended rules (includes typescript-eslint, import, SDL, etc.)
@@ -10,6 +11,9 @@ export default [
   // Project-specific overrides for src/
   {
     files: ["src/**/*.ts"],
+    plugins: {
+      "@eslint-community/eslint-comments": eslintComments,
+    },
     languageOptions: {
       parserOptions: {
         projectService: true,
@@ -36,6 +40,11 @@ export default [
       ],
       "@typescript-eslint/no-explicit-any": "warn",
       "@typescript-eslint/require-await": "error",
+      "@eslint-community/eslint-comments/require-description": "error",
+      "@eslint-community/eslint-comments/no-restricted-disable": [
+        "error",
+        "*",
+      ],
     },
   },
 ];
