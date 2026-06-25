@@ -199,5 +199,16 @@ export function openParentPickerForTask(v: TaskCenterView, t: EffectiveTask): Pr
     });
     sheet = pickerSheet;
     pickerSheet.open();
+    // US-507b: the mobile parent picker must NOT auto-focus its search input.
+    // Obsidian's Modal focuses the first field on open, which pops the on-screen
+    // keyboard before the user has chosen anything — but selection is the
+    // primary path (tap a candidate); search is opt-in. Blur it back out, and
+    // defer once more to also undo focus Obsidian may apply after this tick.
+    const unfocusSearch = () => {
+      const search = sheetBody?.querySelector<HTMLInputElement>(".bt-parent-picker-search");
+      if (search && sheetBody.ownerDocument.activeElement === search) search.blur();
+    };
+    unfocusSearch();
+    window.setTimeout(unfocusSearch, 0);
   });
 }
