@@ -186,16 +186,12 @@
   border: none;
   cursor: pointer;
 }
-/* Tag match-mode segmented toggle — larger touch targets for the mobile sheet. */
-.task-center-bottom-sheet .bt-query-editor-area-filters .bt-area-tag-mode-row {
+/* Tag match-mode segmented toggle — larger touch targets for the mobile sheet.
+   Sits in the tag section head's right group next to Clear. */
+.task-center-bottom-sheet .bt-query-editor-area-filters .bt-area-tag-head-right {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-top: 8px;
-}
-.task-center-bottom-sheet .bt-query-editor-area-filters .bt-area-tag-mode-label {
-  font-size: 12px;
-  color: var(--text-muted);
 }
 .task-center-bottom-sheet .bt-query-editor-area-filters .bt-area-tag-mode {
   display: inline-flex;

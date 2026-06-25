@@ -181,8 +181,26 @@ function renderAreaTagList(
   const sec = parent.createDiv({ cls: "bt-area-filter-sec" });
   const head = sec.createDiv({ cls: "bt-area-filter-sec-head" });
   head.createSpan({ cls: "bt-area-filter-sec-label", text: tr("savedViews.tag") });
+  // Right side of the head: the AND/OR match-mode segmented toggle (only with
+  // ≥2 tags, where the mode matters) + clear. Kept ABOVE the trigger so the
+  // downward-floating tag popover never overlaps / intercepts it.
+  const headRight = head.createDiv({ cls: "bt-area-tag-head-right" });
+  if (selectedTags.length >= 2) {
+    const seg = headRight.createDiv({ cls: "bt-area-tag-mode" });
+    seg.setAttribute("aria-label", tr("savedViews.tagMatchMode"));
+    for (const opt of tagModeOptions()) {
+      const btn = seg.createEl("button", {
+        text: opt.label,
+        cls: "bt-area-tag-mode-btn" + (opt.value === tagMode ? " active" : ""),
+      });
+      btn.dataset.tagMode = opt.value;
+      btn.setAttribute("aria-pressed", String(opt.value === tagMode));
+      btn.addEventListener("click", () =>
+        v.setAreaWhen(areaIndex, { ...when, tags: buildTagsField(selectedTags, opt.value) }, rerenderControls));
+    }
+  }
   if (selectedTags.length > 0) {
-    const clearTags = head.createEl("button", { text: tr("savedViews.clearTags"), cls: "bt-area-filter-clear-tags" });
+    const clearTags = headRight.createEl("button", { text: tr("savedViews.clearTags"), cls: "bt-area-filter-clear-tags" });
     clearTags.addEventListener("click", () => v.setAreaWhen(areaIndex, { ...when, tags: [] }, rerenderControls));
   }
   // Click-to-open select: a trigger showing the selection summary; the
@@ -200,24 +218,6 @@ function renderAreaTagList(
     v.areaTagPopoverOpen = !v.areaTagPopoverOpen;
     v.refreshFilterControls(rerenderControls);
   });
-
-  // 标签匹配模式：全部(AND) / 任一(OR)。只有选了 ≥2 个标签时模式才有意义，
-  // 所以此时才出现。segmented 控件，独立成一行放在触发器下方，桌面/移动统一。
-  if (selectedTags.length >= 2) {
-    const modeRow = sec.createDiv({ cls: "bt-area-tag-mode-row" });
-    modeRow.createSpan({ cls: "bt-area-tag-mode-label", text: tr("savedViews.tagMatchMode") });
-    const seg = modeRow.createDiv({ cls: "bt-area-tag-mode" });
-    for (const opt of tagModeOptions()) {
-      const btn = seg.createEl("button", {
-        text: opt.label,
-        cls: "bt-area-tag-mode-btn" + (opt.value === tagMode ? " active" : ""),
-      });
-      btn.dataset.tagMode = opt.value;
-      btn.setAttribute("aria-pressed", String(opt.value === tagMode));
-      btn.addEventListener("click", () =>
-        v.setAreaWhen(areaIndex, { ...when, tags: buildTagsField(selectedTags, opt.value) }, rerenderControls));
-    }
-  }
 
   if (!v.areaTagPopoverOpen) return;
 

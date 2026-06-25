@@ -379,16 +379,12 @@
   background: var(--interactive-accent);
   border-color: var(--interactive-accent);
 }
-/* Tag match-mode segmented toggle (全部 = AND / 任一 = OR). */
-.task-center-view .bt-area-tag-mode-row {
+/* Tag match-mode segmented toggle (全部 = AND / 任一 = OR), sits in the tag
+   section head's right group next to Clear. */
+.task-center-view .bt-area-tag-head-right {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-top: 6px;
-}
-.task-center-view .bt-area-tag-mode-label {
-  font-size: 11px;
-  color: var(--text-muted);
 }
 .task-center-view .bt-area-tag-mode {
   display: inline-flex;

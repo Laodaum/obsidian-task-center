@@ -458,28 +458,40 @@
 
 
 /* ───── Bottom sheet primitive (used by US-504 day list, M-3 long-press) ───── */
-/* Container anchors the sheet at the bottom. */
-.modal-container.task-center-bottom-sheet {
+/* Bottom-anchor ONLY on mobile. On desktop the sheet must stay a normal centered
+   modal — Obsidian's `.modal-container` default (align-items: center) handles
+   that, so we must NOT force flex-end there, or the modal sticks to the viewport
+   bottom and gets cut off. (Regression guarded by modal-centered.e2e.ts.) */
+.is-mobile .modal-container.task-center-bottom-sheet {
   align-items: flex-end;
 }
-/* The modal element itself is the visual sheet: flex column so title + content
-   together never exceed max-height. Without this, .modal-title (outside
-   .modal-content) adds unconstrained height that overflows the viewport. */
+/* The modal element is a flex column so title + content together never exceed
+   max-height. Without this, .modal-title (outside .modal-content) adds
+   unconstrained height that overflows the viewport. Applies on both (harmless
+   and useful when centered on desktop). */
 .task-center-bottom-sheet.modal {
   display: flex;
   flex-direction: column;
+  max-height: min(80vh, calc(100dvh - 24px));
+  overflow: hidden;
+}
+/* Mobile: the full bottom-sheet look — taller, rounded top corners only, and
+   safe-area aware. Desktop keeps Obsidian's default (all-rounded) modal. */
+.is-mobile .task-center-bottom-sheet.modal {
   max-height: min(70vh, calc(100dvh - env(safe-area-inset-top) - 12px));
   border-radius: 14px 14px 0 0;
-  overflow: hidden;
 }
 /* Content fills remaining space below the title and scrolls. */
 .task-center-bottom-sheet.modal .modal-content {
   flex: 1 1 0;
   min-height: 0;
   width: min(560px, 100%);
-  padding: 10px 18px max(18px, env(safe-area-inset-bottom));
+  padding: 10px 18px;
   margin: 0;
   overflow-y: auto;
+}
+.is-mobile .task-center-bottom-sheet.modal .modal-content {
+  padding: 10px 18px max(18px, env(safe-area-inset-bottom));
 }
 .task-center-bottom-sheet .bt-sheet-handle {
   width: 36px;
