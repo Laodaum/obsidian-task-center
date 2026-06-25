@@ -58,9 +58,7 @@ CRABBOX_TEST_GATE='...'
 在远端跑正式 gate 只有一条路径：
 
 ```bash
-set -a; source .crabbox/remote-test.env; set +a
-test -n "${CRABBOX_TEST_PREPARE:-}" && eval "$CRABBOX_TEST_PREPARE"
-eval "$CRABBOX_TEST_GATE"
+pnpm run test:remote
 ```
 
 正式 gate 至少包含：
