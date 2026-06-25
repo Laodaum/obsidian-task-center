@@ -185,20 +185,6 @@ function renderAreaTagList(
     const clearTags = head.createEl("button", { text: tr("savedViews.clearTags"), cls: "bt-area-filter-clear-tags" });
     clearTags.addEventListener("click", () => v.setAreaWhen(areaIndex, { ...when, tags: [] }, rerenderControls));
   }
-  // AND/OR 切换：只有选了 ≥2 个标签时模式才有意义，所以此时才出现。
-  if (selectedTags.length >= 2) {
-    const modeRow = head.createDiv({ cls: "bt-area-tag-mode" });
-    for (const opt of tagModeOptions()) {
-      const btn = modeRow.createEl("button", {
-        text: opt.label,
-        cls: "bt-area-tag-mode-btn" + (opt.value === tagMode ? " active" : ""),
-      });
-      btn.dataset.tagMode = opt.value;
-      btn.addEventListener("click", () =>
-        v.setAreaWhen(areaIndex, { ...when, tags: buildTagsField(selectedTags, opt.value) }, rerenderControls));
-    }
-  }
-
   // Click-to-open select: a trigger showing the selection summary; the
   // searchable list only renders when open, so many tags don't lengthen the
   // panel. Open state persists across rerenders so multi-select keeps it open.
@@ -214,6 +200,25 @@ function renderAreaTagList(
     v.areaTagPopoverOpen = !v.areaTagPopoverOpen;
     v.refreshFilterControls(rerenderControls);
   });
+
+  // 标签匹配模式：全部(AND) / 任一(OR)。只有选了 ≥2 个标签时模式才有意义，
+  // 所以此时才出现。segmented 控件，独立成一行放在触发器下方，桌面/移动统一。
+  if (selectedTags.length >= 2) {
+    const modeRow = sec.createDiv({ cls: "bt-area-tag-mode-row" });
+    modeRow.createSpan({ cls: "bt-area-tag-mode-label", text: tr("savedViews.tagMatchMode") });
+    const seg = modeRow.createDiv({ cls: "bt-area-tag-mode" });
+    for (const opt of tagModeOptions()) {
+      const btn = seg.createEl("button", {
+        text: opt.label,
+        cls: "bt-area-tag-mode-btn" + (opt.value === tagMode ? " active" : ""),
+      });
+      btn.dataset.tagMode = opt.value;
+      btn.setAttribute("aria-pressed", String(opt.value === tagMode));
+      btn.addEventListener("click", () =>
+        v.setAreaWhen(areaIndex, { ...when, tags: buildTagsField(selectedTags, opt.value) }, rerenderControls));
+    }
+  }
+
   if (!v.areaTagPopoverOpen) return;
 
   // Float the popover (position:fixed anchored to the trigger) so opening it

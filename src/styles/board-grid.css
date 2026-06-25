@@ -379,6 +379,46 @@
   background: var(--interactive-accent);
   border-color: var(--interactive-accent);
 }
+/* Tag match-mode segmented toggle (全部 = AND / 任一 = OR). */
+.task-center-view .bt-area-tag-mode-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+.task-center-view .bt-area-tag-mode-label {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.task-center-view .bt-area-tag-mode {
+  display: inline-flex;
+  padding: 2px;
+  gap: 2px;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 999px;
+}
+.task-center-view .bt-area-tag-mode-btn {
+  appearance: none;
+  border: none;
+  box-shadow: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.4;
+  padding: 2px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+.task-center-view .bt-area-tag-mode-btn:hover {
+  color: var(--text-normal);
+}
+.task-center-view .bt-area-tag-mode-btn.active {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  font-weight: 600;
+}
 .task-center-view .bt-area-filter-tag-count {
   font-size: 10px;
   opacity: 0.7;

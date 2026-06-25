@@ -186,6 +186,46 @@
   border: none;
   cursor: pointer;
 }
+/* Tag match-mode segmented toggle — larger touch targets for the mobile sheet. */
+.task-center-bottom-sheet .bt-query-editor-area-filters .bt-area-tag-mode-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+.task-center-bottom-sheet .bt-query-editor-area-filters .bt-area-tag-mode-label {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.task-center-bottom-sheet .bt-query-editor-area-filters .bt-area-tag-mode {
+  display: inline-flex;
+  padding: 2px;
+  gap: 2px;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 999px;
+}
+.task-center-bottom-sheet .bt-query-editor-area-filters .bt-area-tag-mode-btn {
+  appearance: none;
+  border: none;
+  box-shadow: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  min-height: 28px;
+  padding: 4px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+.task-center-bottom-sheet .bt-query-editor-area-filters .bt-area-tag-mode-btn:hover {
+  color: var(--text-normal);
+}
+.task-center-bottom-sheet .bt-query-editor-area-filters .bt-area-tag-mode-btn.active {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  font-weight: 600;
+}
 
 .task-center-bottom-sheet .bt-mobile-query-sheet .bt-saved-view-filters {
   display: grid;
