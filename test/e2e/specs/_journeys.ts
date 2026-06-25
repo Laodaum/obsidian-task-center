@@ -69,7 +69,18 @@ export function inWeekNeighbor(): string {
 
 /* ------------------------------------------------------- vault + flushing -- */
 
-/** Write content to a vault file and wait for the metadata cache to index it. */
+/**
+ * Write content to a vault file and wait for the metadata cache to index it,
+ * THEN invalidate the plugin's TaskCache for that file.
+ *
+ * The invalidate step is not optional: write verbs resolve refs through
+ * `cache.resolveRef(id)` (see src/api.ts). When a spec rewrites the same path
+ * many times (e.g. `Tasks/Inbox.md` across a matrix of tests), a stale
+ * `path:Ln → hash` entry survives in the TaskCache and `resolveRef` returns a
+ * task whose line no longer parses — surfacing as `not_found: <path>:L1 is not
+ * a task line`. Forcing `invalidateFile` + `__forFlush` rebuilds the cache from
+ * the freshly written content, exactly like the proven dataview-format helper.
+ */
 export async function writeAndWait(path: string, body: string): Promise<void> {
   await browser.executeObsidian(
     async ({ app }, p: string, content: string) => {
@@ -100,6 +111,12 @@ export async function writeAndWait(path: string, body: string): Promise<void> {
     path,
     body,
   );
+  await browser.executeObsidian(async ({ app }, p: string) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const plugin = (app as any).plugins.plugins["task-center"];
+    await plugin.cache.invalidateFile(p);
+    await plugin.__forFlush();
+  }, path);
 }
 
 /** Read a vault file's raw content (empty string if missing). */
