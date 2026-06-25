@@ -23,15 +23,18 @@ export const config: WebdriverIO.Config = {
 
   specs: ["./test/e2e/specs/**/*.e2e.ts"],
 
-  // task #48 (0.3.x): default to 1 worker. Two parallel workers share the
-  // same vault directory (`test/e2e/vaults/simple`), so race conditions
-  // surface in `obsidianPage.resetVault` + concurrent `metadataCache.changed`
-  // — the subtask and mobile-coverage specs were the canaries for intermittent
-  // `pnpm test:e2e` failures. Stable serial runs are worth
-  // the ~2s wall-clock loss vs flakey parallel. Maintainers wanting the
-  // old behavior can opt back in with `WDIO_MAX_INSTANCES=2 pnpm test:e2e`,
-  // which is exactly the setting CI release.yml inherits today (see also
-  // task #52 Xvfb POC, which depends on this serial baseline).
+  // task #48 (0.3.x): default to 1 worker. The service copies the vault per
+  // worker (`reloadObsidian` default `copy: true`), so vault FILES are already
+  // isolated across workers — but `obsidianPage.resetVault` does NOT reset
+  // `.obsidian` plugin settings, so a spec that flips `taskFormatFlavor` leaks
+  // it into siblings. That shared *settings* state, plus `resetVault` racing
+  // concurrent `metadataCache.changed`, is what made parallel runs flaky (the
+  // subtask and mobile-coverage specs were the canaries). New flavor-sensitive
+  // specs self-isolate via `_journeys.resetForWriteFlavor` (vault reset + setting
+  // write each beforeEach); see docs/ci-test-matrix.md "Test isolation &
+  // parallelism" for the path to safely raising this default. Until a maintainer
+  // collects multi-run flake evidence, the gate stays serial. Opt back into
+  // parallel with `WDIO_MAX_INSTANCES=2 pnpm test:e2e`.
   maxInstances: Number(env.WDIO_MAX_INSTANCES || 1),
 
   capabilities: desktopVersions.map<WebdriverIO.Capabilities>(
