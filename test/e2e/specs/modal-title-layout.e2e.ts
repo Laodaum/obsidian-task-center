@@ -22,11 +22,14 @@ describe("Task Center — modal title layout", function () {
     // Open the manage tabs sheet via the plugin API.
     await browser.executeObsidian(async ({ app }) => {
       const plugin = (app as any).plugins.plugins["task-center"];
-      // Find the open TaskCenterView leaf and call openManageTabsSheet on it.
+      // Find the open TaskCenterView leaf and open the manage-tabs sheet. The
+      // public method is `openManageTabs()` (it delegates to openManageTabsSheet
+      // in view/manage-tabs.ts); the old `view.openManageTabsSheet` never existed
+      // on the view, so the optional call silently no-op'd and the modal never opened.
       const leaf = app.workspace.getLeavesOfType("task-center-view")[0];
       if (!leaf) return;
       const view = leaf.view as any;
-      view.openManageTabsSheet?.();
+      view.openManageTabs?.();
     });
 
     // Wait for the modal to appear.
