@@ -190,8 +190,8 @@ function normalizeQueryPresetFilters(raw: unknown): QueryPresetFilters {
 function queryFiltersHaveActiveConditions(filters: QueryPresetFilters): boolean {
   return !!(
     filters.search
-    || (Array.isArray(filters.tags) && filters.tags.length > 0)
-    || (typeof filters.tags === "string" && filters.tags.trim())
+    // resolveTagFilter 兼容数组 / 逗号串 / { values, mode } 三种标签形态
+    || resolveTagFilter(filters.tags).values.length > 0
     || (filters.status !== undefined && filters.status !== "all")
     || (filters.time && Object.keys(filters.time).length > 0)
   );
@@ -206,16 +206,10 @@ function mergeQueryFilters(base: QueryPresetFilters, local: QueryPresetFilters |
   const out: QueryPresetFilters = { ...normalizedLocal };
   if (normalizedBase.search && !normalizedLocal.search) out.search = normalizedBase.search;
 
-  const baseTags = Array.isArray(normalizedBase.tags)
-    ? normalizedBase.tags
-    : typeof normalizedBase.tags === "string"
-      ? normalizeDslTags(normalizedBase.tags)
-      : [];
-  const localTags = Array.isArray(normalizedLocal.tags)
-    ? normalizedLocal.tags
-    : typeof normalizedLocal.tags === "string"
-      ? normalizeDslTags(normalizedLocal.tags)
-      : [];
+  // resolveTagFilter 同时支持数组 / 逗号串 / { values, mode } 三形态，避免 OR
+  // 对象被当成空而丢标签（迁移合并仍按 AND 收敛——legacy 基础集本就只有 AND）。
+  const baseTags = resolveTagFilter(normalizedBase.tags).values;
+  const localTags = resolveTagFilter(normalizedLocal.tags).values;
   if (baseTags.length > 0 || localTags.length > 0) {
     out.tags = normalizeDslTags([...baseTags, ...localTags]);
   }
@@ -608,7 +602,9 @@ export function isLegacySavedTaskView(obj: unknown): boolean {
 export function isLegacyQueryPresetShape(obj: unknown): boolean {
   if (!isRecord(obj)) return false;
   if (isLegacySavedTaskView(obj)) return true;
-  if (isRecord(obj.filters)) return true;
+  // 只有「带实际条件」的 tab 级 filters 才需要迁移（下推进各 area 的 when）。
+  // 空 filters（{} / {status:"all"}）不算 legacy，避免对新结构数据误弹迁移闸门。
+  if (isRecord(obj.filters) && queryFiltersHaveActiveConditions(normalizeQueryPresetFilters(obj.filters))) return true;
   const view = obj.view;
   if (isRecord(view) && !("layout" in view)) {
     // Old view DSL hallmark keys. An empty `{}` view is not flagged — it
