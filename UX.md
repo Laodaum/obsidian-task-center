@@ -835,6 +835,8 @@ code 是固定英文短码；人话跟随语言。（US-211 / US-412）
 
 CLI 能列出、查看、创建、更新、重命名、复制、隐藏、删除、设默认 query tab。目标使用稳定 id；DSL schema 与 GUI 共用。（US-216 / US-217 / US-218 / US-219）
 
+`query-create` / `query-update` 遇到 1.0 前旧 DSL 时，不保存、不刷新界面，返回 `error invalid_query`。人话里必须点明“1.0 DSL 已移除 tab 级 filters / summary / view.type，请更新 `CorrectRoadH/obsidian-task-center` skill，并改用 `view.layout` + area `when`”。（US-217a）
+
 CLI 还要能执行某个 query tab 并按 view 输出结果。（US-220）
 
 - `query-run id=<tab-id>`：按 preset 自己的 view 输出。

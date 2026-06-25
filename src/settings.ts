@@ -195,7 +195,7 @@ export class TaskCenterSettingTab extends PluginSettingTab {
         "obsidian task-center:query-show id=preset-week",
         "obsidian task-center:query-run id=preset-today view=week anchor=2026-05-04",
         "obsidian task-center:query-save dsl='{\"name\":\"工作\",\"view\":{\"layout\":{\"type\":\"list\",\"when\":{\"tags\":[\"#work\"]}}}}'",
-        "obsidian task-center:query-update id=sv-alpha dsl='{\"name\":\"工作周\",\"view\":{\"type\":\"week\"}}'",
+        "obsidian task-center:query-update id=sv-alpha dsl='{\"name\":\"工作周\",\"view\":{\"layout\":{\"type\":\"week\",\"when\":{\"status\":[\"todo\"]}}}}'",
         "obsidian task-center:schedule ref=Tasks/Inbox.md:L42 date=2026-04-25",
         "obsidian task-center:done ref=Tasks/Inbox.md:L42 at=2026-04-23",
         "obsidian task-center:add text=\"处理示例任务\" tag=\"#tag\" scheduled=2026-04-26",

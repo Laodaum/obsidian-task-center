@@ -154,6 +154,9 @@ function booleanOrFallback(value: unknown, fallback: boolean): boolean {
   return typeof value === "boolean" ? value : fallback;
 }
 
+const LEGACY_QUERY_DSL_ERROR =
+  "无效 Query DSL：检测到 Task Center 1.0 前的旧 DSL。1.0 已移除 tab 级 filters / summary / view.type；请更新 skill：npx skills add CorrectRoadH/obsidian-task-center，并改用 view.layout + 每个 area 自己的 when。";
+
 // ── QueryPreset DSL — canonical model (VAL-CORE-005, VAL-CORE-006, VAL-CROSS-002) ──
 
 /**
@@ -558,6 +561,23 @@ export function isLegacyQueryPresetShape(obj: unknown): boolean {
   return false;
 }
 
+function isLegacyQueryDslInput(obj: unknown): boolean {
+  if (!isRecord(obj)) return false;
+  if (isLegacySavedTaskView(obj)) return true;
+  if ("filters" in obj || "summary" in obj) return true;
+  const view = obj.view;
+  if (isRecord(view) && !("layout" in view)) {
+    return (
+      "type" in view
+      || "preset" in view
+      || "sections" in view
+      || "tray" in view
+      || "matrix" in view
+    );
+  }
+  return false;
+}
+
 /**
  * US-414: migrate a legacy SavedTaskView (flat `search`/`tag`/`time`/`status`
  * + legacy `view: {type, preset, sections, tray, matrix}`) into a normalized
@@ -604,12 +624,12 @@ export function parseQueryDsl(
   const raw = parseDslRoot(text);
   const base = "query" in raw && isRecord(raw.query) ? raw.query : raw;
 
-  // VAL-CORE-005 / VAL-CROSS-002: reject legacy SavedTaskView flat DSL
-  // (top-level search/tag/time/status without nested filters).
-  if (isLegacySavedTaskView(base)) {
-    throw new Error(
-      "无效 Query DSL：检测到旧版 SavedTaskView 扁平格式（顶层 search/tag/time/status）。请改用嵌套 filters 对象。",
-    );
+  // US-217a: CLI / GUI DSL input must not accept pre-1.0 DSL emitted by old
+  // agent skills. Stored data.json still migrates elsewhere; direct input is
+  // rejected so old `filters` / `summary` / `view.type` fields are not silently
+  // dropped into an accidental full-vault query.
+  if (isLegacyQueryDslInput(base)) {
+    throw new Error(LEGACY_QUERY_DSL_ERROR);
   }
 
   const name = stringOrFallback(base.name, existing.name ?? "");
@@ -633,7 +653,6 @@ export function parseQueryDsl(
     name,
     builtin: booleanOrFallback(base.builtin, existing.builtin ?? false),
     hidden: booleanOrFallback(base.hidden, existing.hidden ?? false),
-    filters: isRecord(base.filters) ? base.filters : {},
     view: isRecord(base.view) ? base.view : { layout: { type: "list" } },
   } as unknown as QueryPreset);
 }

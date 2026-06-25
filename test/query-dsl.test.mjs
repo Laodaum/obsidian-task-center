@@ -517,14 +517,17 @@ test("VAL-CORE-005: stringifyQueryPreset emits normalized JSON", () => {
 test("VAL-CORE-005: parseQueryDsl parses and normalizes JSON DSL", () => {
   const preset = parseQueryDsl(JSON.stringify({
     name: " Deep Work ",
-    filters: {
-      search: " docs ",
-      tags: ["alpha", "#beta", "alpha"],
-      status: ["todo", "done"],
-      time: { scheduled: " week " },
+    view: {
+      layout: {
+        type: "week",
+        when: {
+          search: " docs ",
+          tags: ["alpha", "#beta", "alpha"],
+          status: ["todo", "done"],
+          time: { scheduled: " week " },
+        },
+      },
     },
-    view: { type: "week", preset: " today " },
-    summary: [{ type: "sum", field: " actual ", format: " duration " }],
   }), { id: "preset-existing" });
 
   assert.equal(preset.id, "preset-existing");
@@ -532,18 +535,27 @@ test("VAL-CORE-005: parseQueryDsl parses and normalizes JSON DSL", () => {
   assert.equal(preset.builtin, false);
   // US-109z2: tab-level filters are dropped on parse.
   assert.equal(preset.filters, undefined);
-  // Legacy {type:"week", preset} migrates to a week area layout; preset dropped.
-  assert.deepEqual(preset.view, { layout: { type: "week" } });
+  assert.deepEqual(preset.view, {
+    layout: {
+      type: "week",
+      when: {
+        search: "docs",
+        tags: ["#alpha", "#beta"],
+        status: ["todo", "done"],
+        time: { scheduled: "week" },
+      },
+    },
+  });
 });
 
 test("VAL-CORE-005: parseQueryDsl missing name throws", () => {
   assert.throws(() => {
-    parseQueryDsl(JSON.stringify({ filters: {}, view: { type: "list" } }));
+    parseQueryDsl(JSON.stringify({ view: { layout: { type: "list" } } }));
   }, /DSL 缺少 name/);
 });
 
 test("VAL-CORE-005: parseQueryDsl generates id when missing", () => {
-  const preset = parseQueryDsl(JSON.stringify({ name: "AutoId", filters: {}, view: { type: "list" } }));
+  const preset = parseQueryDsl(JSON.stringify({ name: "AutoId", view: { layout: { type: "list" } } }));
   assert.ok(preset.id, "Should generate an id");
   assert.ok(preset.id.startsWith("sv-"), "Should use default id prefix");
 });
@@ -591,7 +603,7 @@ test("VAL-CROSS-002: parseQueryDsl rejects legacy flat SavedTaskView DSL", () =>
   });
   assert.throws(
     () => { parseQueryDsl(legacyJson); },
-    /旧版 SavedTaskView 扁平格式/,
+    /更新 skill.*view\.layout.*when/,
     "Legacy flat search/tag/time/status DSL must throw",
   );
 });
@@ -604,7 +616,7 @@ test("VAL-CROSS-002: parseQueryDsl rejects legacy with only search", () => {
   });
   assert.throws(
     () => { parseQueryDsl(legacyJson); },
-    /旧版 SavedTaskView 扁平格式/,
+    /更新 skill.*view\.layout.*when/,
   );
 });
 
@@ -616,7 +628,20 @@ test("VAL-CROSS-002: parseQueryDsl rejects legacy with only status", () => {
   });
   assert.throws(
     () => { parseQueryDsl(legacyJson); },
-    /旧版 SavedTaskView 扁平格式/,
+    /更新 skill.*view\.layout.*when/,
+  );
+});
+
+test("US-217a: parseQueryDsl rejects pre-1.0 nested filters / summary DSL and points to skill update", () => {
+  const legacyJson = JSON.stringify({
+    name: "Old Skill Query",
+    filters: { status: ["todo"], tags: ["#work"] },
+    view: { type: "week" },
+    summary: [{ type: "count" }],
+  });
+  assert.throws(
+    () => { parseQueryDsl(legacyJson); },
+    /npx skills add CorrectRoadH\/obsidian-task-center.*view\.layout.*when/,
   );
 });
 
@@ -631,38 +656,35 @@ test("VAL-CROSS-002: parseQueryDsl rejects legacy wrapped in query key", () => {
   });
   assert.throws(
     () => { parseQueryDsl(wrappedLegacy); },
-    /旧版 SavedTaskView 扁平格式/,
+    /更新 skill.*view\.layout.*when/,
     'Legacy shape inside {"query": {...}} wrapper must also be rejected',
   );
 });
 
-test("VAL-CROSS-002: parseQueryDsl accepts valid QueryPreset with nested filters", () => {
+test("VAL-CROSS-002: parseQueryDsl accepts valid 1.0 QueryPreset with area when", () => {
   const validJson = JSON.stringify({
     name: "Modern Query",
-    filters: { search: "docs", tags: ["#work"], status: ["todo"] },
-    view: { type: "week" },
-    summary: [{ type: "count" }],
+    view: { layout: { type: "week", when: { search: "docs", tags: ["#work"], status: ["todo"] } } },
   });
   const preset = parseQueryDsl(validJson);
   assert.equal(preset.name, "Modern Query");
   // US-109z2: tab-level filters dropped on parse.
   assert.equal(preset.filters, undefined);
-  // Legacy {type:"week"} migrates to a week area layout.
   assert.equal(preset.view.layout.type, "week");
+  assert.deepEqual(preset.view.layout.when, { search: "docs", tags: ["#work"], status: ["todo"] });
 });
 
 test("VAL-CROSS-002: parseQueryDsl accepts valid QueryPreset in query wrapper", () => {
   const wrappedJson = JSON.stringify({
     query: {
       name: "Wrapped Query",
-      filters: { status: ["done"] },
-      view: { type: "list" },
-      summary: [],
+      view: { layout: { type: "list", when: { status: ["done"] } } },
     },
   });
   const preset = parseQueryDsl(wrappedJson);
   assert.equal(preset.name, "Wrapped Query");
   assert.equal(preset.filters, undefined);
+  assert.deepEqual(preset.view.layout.when, { status: ["done"] });
 });
 
 // ── VAL-CORE-006: parseQueryDsl validates after normalize ──
@@ -670,13 +692,11 @@ test("VAL-CROSS-002: parseQueryDsl accepts valid QueryPreset in query wrapper", 
 test("VAL-CORE-006: parseQueryDsl rejects invalid view type after parse", () => {
   const badJson = JSON.stringify({
     name: "Bad View",
-    filters: {},
-    view: { type: "gantt" },
-    summary: [],
+    view: { layout: { type: 42 } },
   });
   assert.throws(
     () => { parseQueryDsl(badJson); },
-    /view.*unknown_view_type/,
+    /view.*invalid_area_type/,
     "parseQueryDsl must call validateQueryPreset and surface view errors",
   );
 });
@@ -684,16 +704,15 @@ test("VAL-CORE-006: parseQueryDsl rejects invalid view type after parse", () => 
 test("VAL-CORE-006: parseQueryDsl collects multiple section errors in message", () => {
   const badJson = JSON.stringify({
     name: "Multi Bad",
-    filters: { tags: 42 },
-    view: { type: "gantt" },
+    view: { layout: { dir: "diagonal", children: [] } },
   });
   assert.throws(
     () => { parseQueryDsl(badJson); },
     (err) => {
       const msg = err.message;
-      return /\[filters\]/.test(msg) && /\[view\]/.test(msg);
+      return /\[view\]/.test(msg) && /invalid_stack_dir/.test(msg) && /invalid_stack_children/.test(msg);
     },
-    "Both sections should appear in error message",
+    "Multiple view errors should appear in error message",
   );
 });
 

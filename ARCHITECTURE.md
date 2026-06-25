@@ -1240,10 +1240,12 @@ QueryPreset 动词调用 `QueryPresetService`：
 
 - `query-list`：列出 id、name、builtin、hidden、default。
 - `query-show id=<id>`：输出完整 DSL。
-- `query-run id=<id> [view=list|week|month] [anchor=YYYY-MM-DD]`：执行 QueryPreset filters，计算 summary，并按 view projection 输出结果；`view` 把本次展示临时替换成「单个该类型 area」的布局，不写回 preset。
+- `query-run id=<id> [view=list|week|month] [anchor=YYYY-MM-DD]`：执行 QueryPreset 的主内容 area `when`，并按 view projection 输出结果；`view` 把本次展示临时替换成「单个该类型 area」的布局，不写回 preset。
 - `query-create`：读取 DSL 创建 tab。
 - `query-update id=<id>`：校验后覆盖。
 - `query-rename` / `query-copy` / `query-hide` / `query-delete` / `query-set-default`。
+
+`query-create` / `query-update` 的 `parseQueryDsl` 是 CLI 与 GUI DSL 直编的共同入口。它必须在 normalize 前拒绝 1.0 前旧 DSL 输入：顶层 `search/tag/time/status`、顶层 `filters` / `summary`，以及旧 `view.type/preset/sections/tray/matrix`。拒绝时抛给 CLI `invalid_query`，消息固定包含 skill 更新指引 `npx skills add CorrectRoadH/obsidian-task-center`，避免旧 agent skill 继续生成会被 1.0 静默降级的 DSL。（US-217a / US-219）
 
 删除自定义 tab 不删除任务；预设 tab 不允许永久删除，只允许隐藏 / 恢复。（US-216~219）
 

@@ -929,6 +929,8 @@ npx skills add CorrectRoadH/obsidian-task-center
 
 `US-217` CLI 能创建和更新 query preset DSL。它与 GUI 的保存 / 更新使用同一份存储。
 
+`US-217a` CLI 创建 / 更新 Query DSL 时，如果输入是 1.0 前的旧 DSL（顶层 `search/tag/time/status`、顶层 `filters` / `summary`，或 `view.type/preset/sections/tray/matrix` 而不是 `view.layout`），必须返回 `invalid_query`，并明确提示 Task Center 1.0 已改为 `view.layout` + area `when`，让 agent / 用户更新 `CorrectRoadH/obsidian-task-center` skill 后重试。不能静默丢弃旧字段后创建全量视图。
+
 `US-218` CLI 能重命名、复制、隐藏、删除、设默认 query tab。目标必须使用稳定 id。
 
 `US-219` CLI 与 GUI 共用同一份 DSL schema 与校验规则。
