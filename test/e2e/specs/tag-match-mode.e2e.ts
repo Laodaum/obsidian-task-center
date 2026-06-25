@@ -74,8 +74,7 @@ describe("tag boolean expression (US-109d4)", function () {
     await areaEdit.click();
     await $('[data-query-editor-scope="area"]').waitForExist({ timeout: 5000 });
 
-    // Open the tag popover — the expression input is present.
-    await $(".bt-area-tag-trigger").click();
+    // The expression input is ALWAYS visible (no click-to-reveal).
     await $("[data-area-tag-expr]").waitForExist({ timeout: 5000 });
 
     // Type a valid expression and commit with Enter; it persists after the rerender.
@@ -87,7 +86,8 @@ describe("tag boolean expression (US-109d4)", function () {
       { timeout: 5000, timeoutMsg: "expected the committed expression to persist" },
     );
 
-    // Clicking a tag row appends `#tag` to the expression (popover stays open).
+    // Open the "insert a tag" list and click a tag — it appends `#tag` to the expression.
+    await $(".bt-area-tag-trigger").click();
     const betaRow = await $('.bt-area-tag-row[data-area-tag="#beta"]');
     if (await betaRow.isExisting()) {
       await betaRow.click();

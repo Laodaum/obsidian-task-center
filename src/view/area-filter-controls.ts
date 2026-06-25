@@ -184,14 +184,52 @@ function renderAreaTagList(
     const clearTags = headRight.createEl("button", { text: tr("savedViews.clearTags"), cls: "bt-area-filter-clear-tags" });
     clearTags.addEventListener("click", () => v.setAreaWhen(areaIndex, { ...when, tags: [] }, rerenderControls));
   }
-  // Click-to-open trigger showing the current expression; the editor only renders
-  // when open. Open state persists across rerenders so editing keeps it open.
+
+  // US-109d4: the expression input is ALWAYS visible (the expression is the tag
+  // filter — no click-to-reveal, no "search tags" placeholder). Live-validate on
+  // keystroke (inline error, no rerender — keeps focus); commit on change / Enter.
+  const exprInput = sec.createEl("input", {
+    type: "text",
+    cls: "bt-area-tag-expr",
+    placeholder: "#a and (#b or #c) not #d",
+  });
+  exprInput.dataset.areaTagExpr = "";
+  exprInput.value = currentExpr;
+  const errEl = sec.createDiv({ cls: "bt-area-tag-expr-error" });
+  sec.createDiv({ cls: "bt-area-tag-expr-example", text: tr("savedViews.tagExprExample") });
+  const validate = (text: string): boolean => {
+    const t = text.trim();
+    if (!t) { errEl.toggleClass("is-visible", false); return true; }
+    const { error } = parseTagExpr(t);
+    if (error) {
+      errEl.setText(tr("savedViews.tagExprError"));
+      errEl.toggleClass("is-visible", true);
+      return false;
+    }
+    errEl.toggleClass("is-visible", false);
+    return true;
+  };
+  const commit = () => {
+    const text = exprInput.value.trim();
+    if (!text) {
+      if (hasExpr) v.setAreaWhen(areaIndex, { ...when, tags: [] }, rerenderControls);
+      return;
+    }
+    if (!validate(text)) return; // invalid → don't write, keep last saved value
+    if (text !== currentExpr) v.setAreaWhen(areaIndex, { ...when, tags: { expr: text } }, rerenderControls);
+  };
+  exprInput.addEventListener("input", () => validate(exprInput.value));
+  exprInput.addEventListener("change", commit);
+  exprInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); commit(); }
+  });
+
+  // "Insert a tag" — a collapsed trigger that expands a searchable tag list;
+  // clicking a tag appends `#tag` to the expression. Just an input aid; the
+  // expression input above is the source of truth. Open state persists.
   const trigger = sec.createEl("button", { cls: "bt-area-tag-trigger" });
   trigger.dataset.action = "tag-select";
-  trigger.createSpan({
-    cls: "bt-area-tag-trigger-summary" + (hasExpr ? "" : " is-empty"),
-    text: hasExpr ? currentExpr : tr("savedViews.tagSearch"),
-  });
+  trigger.createSpan({ cls: "bt-area-tag-trigger-summary", text: tr("savedViews.tagInsert") });
   setIcon(trigger.createSpan({ cls: "bt-area-tag-caret" }), v.areaTagPopoverOpen ? "chevron-up" : "chevron-down");
   trigger.addEventListener("click", () => {
     v.areaTagPopoverOpen = !v.areaTagPopoverOpen;
@@ -225,46 +263,7 @@ function renderAreaTagList(
     if (!popover.isConnected) { cleanup(); obs.disconnect(); }
   }).observe(sec, { childList: true, subtree: true });
 
-  // US-109d4: the expression input. Live-validate on every keystroke (inline
-  // error, no rerender — keeps focus); commit on change / Enter (rerenders).
-  const exprInput = popover.createEl("input", {
-    type: "text",
-    cls: "bt-area-tag-expr",
-    placeholder: "#a and (#b or #c) not #d",
-  });
-  exprInput.dataset.areaTagExpr = "";
-  exprInput.value = currentExpr;
-  const errEl = popover.createDiv({ cls: "bt-area-tag-expr-error" });
-  popover.createDiv({ cls: "bt-area-tag-expr-example", text: tr("savedViews.tagExprExample") });
-  const validate = (text: string): boolean => {
-    const t = text.trim();
-    if (!t) { errEl.toggleClass("is-visible", false); return true; }
-    const { error } = parseTagExpr(t);
-    if (error) {
-      errEl.setText(tr("savedViews.tagExprError"));
-      errEl.toggleClass("is-visible", true);
-      return false;
-    }
-    errEl.toggleClass("is-visible", false);
-    return true;
-  };
-  const commit = () => {
-    const text = exprInput.value.trim();
-    if (!text) {
-      if (hasExpr) v.setAreaWhen(areaIndex, { ...when, tags: [] }, rerenderControls);
-      return;
-    }
-    if (!validate(text)) return; // invalid → don't write, keep last saved value
-    if (text !== currentExpr) v.setAreaWhen(areaIndex, { ...when, tags: { expr: text } }, rerenderControls);
-  };
-  exprInput.addEventListener("input", () => validate(exprInput.value));
-  exprInput.addEventListener("change", commit);
-  exprInput.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") { e.preventDefault(); commit(); }
-  });
-
-  // Searchable tag list — clicking a row APPENDS `#tag` to the expression so
-  // users don't have to type tag names; and/or/not/parens are typed by hand.
+  // Searchable tag list — clicking a row APPENDS `#tag` to the expression above.
   const searchInput = popover.createEl("input", { type: "text", cls: "bt-area-tag-search", placeholder: tr("savedViews.tagSearch") });
   const list = popover.createDiv({ cls: "bt-area-tag-list" });
   const options = v.collectTagOptions([]);
