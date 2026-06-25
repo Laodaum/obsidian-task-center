@@ -85,6 +85,10 @@ describe("US-109z2 area filter editor", function () {
     await $(".bt-area-tag-trigger").click();
     await expect($(".bt-area-tag-list")).toExist();
     await expect($(".bt-area-tag-row")).toExist();
+    // Close the floating tag popover so it no longer overlays the controls below
+    // it (it's position:fixed and would otherwise intercept the click).
+    await $(".bt-area-tag-trigger").click();
+    await expect($(".bt-area-tag-list")).not.toExist();
 
     // Adding a date field reveals it.
     await $('[data-action="add-time-field"][data-time-field="deadline"]').click();
