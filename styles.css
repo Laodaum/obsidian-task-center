@@ -2587,6 +2587,9 @@
     color 0.15s ease;
   min-height: 96px;
 }
+.task-center-view [data-drop-zone=unscheduled-tray] {
+  min-height: 120px;
+}
 .task-center-view .bt-trash:hover,
 .task-center-view .bt-trash.drop-hover {
   border-color: var(--text-error);

@@ -19,7 +19,7 @@ import { attachCardGestures } from "../touch";
 import { BottomSheet } from "../bottom-sheet";
 import { compactPath } from "../paths";
 import { renderTaskTags } from "./card-bits";
-import { openSourceEditShell, openContextMenu } from "../source-actions";
+import { openSourceEditShell } from "../source-actions";
 
 function statusIcon(s: string): string {
   if (s === "done") return "✔";
@@ -459,6 +459,6 @@ export function wireCardEvents(
   el.addEventListener("contextmenu", (e) => {
     e.preventDefault();
     e.stopPropagation();
-    openContextMenu(v, e, t);
+    v.openContextMenu(e, t);
   });
 }

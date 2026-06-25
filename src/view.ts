@@ -46,7 +46,7 @@ import {
 } from "./view/saved-view-actions";
 import { openManageTabsSheet } from "./view/manage-tabs";
 import { openParentPickerForTask } from "./view/parent-picker";
-import { openSourceEditShell, openQuickAdd } from "./view/source-actions";
+import { openSourceEditShell, openQuickAdd, openContextMenu as openTaskContextMenu } from "./view/source-actions";
 import { renderCard } from "./view/render/card";
 import { renderWeek, renderMonth } from "./view/render/calendar";
 import { renderTabBar } from "./view/tabbar";
@@ -1623,6 +1623,12 @@ export class TaskCenterView extends ItemView {
   // US-109d4: the canonical tag filter is one boolean expression string.
   areaTagExpr(when: QueryPresetFilters): string {
     return tagsToExpr(when.tags);
+  }
+
+  // Card right-click context menu — a thin view method (delegates to
+  // source-actions) so the call target is spy-able from e2e (task #106).
+  openContextMenu(e: MouseEvent, task: EffectiveTask): void {
+    openTaskContextMenu(this, e, task);
   }
 
   areaFilterSummary(when: QueryPresetFilters): string {

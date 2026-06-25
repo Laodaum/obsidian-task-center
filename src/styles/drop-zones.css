@@ -37,6 +37,12 @@
   transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease;
   min-height: 96px;
 }
+/* US-122a: the unscheduled tray keeps a sizeable drop target even when empty, so
+   a card can always be dragged onto it to clear its ⏳ (the tray is a plain list/
+   grid area; without this an empty tray collapses to head height). */
+.task-center-view [data-drop-zone="unscheduled-tray"] {
+  min-height: 120px;
+}
 .task-center-view .bt-trash:hover,
 .task-center-view .bt-trash.drop-hover {
   border-color: var(--text-error);

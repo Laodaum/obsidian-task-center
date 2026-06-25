@@ -189,8 +189,9 @@ describe("Task Center — 拖拽 (US-121/123)", function () {
       return {
         minHeight: getComputedStyle(tray).minHeight,
         height: Math.round(rect.height),
-        hasHead: !!tray.querySelector(".bt-unscheduled-head"),
-        hasList: !!tray.querySelector(".bt-unscheduled-list"),
+        // The tray is a plain list/grid area now (no bespoke bt-unscheduled-*).
+        hasHead: !!tray.querySelector(".bt-area-head"),
+        hasList: !!tray.querySelector(".bt-list-view"),
       };
     }, traySel);
     expect(trayShape).not.toBeNull();
