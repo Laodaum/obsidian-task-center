@@ -28,9 +28,8 @@ import {
   createSavedViewId,
   deleteQueryPresetById,
   duplicateQueryPreset,
-  isLegacySavedTaskView,
   isLegacyQueryPresetShape,
-  migrateLegacySavedTaskView,
+  migrateLegacyQueryPreset,
   normalizeQueryPreset,
   parseQueryDsl,
   renameQueryPresetById,
@@ -260,7 +259,7 @@ export default class TaskCenterPlugin extends Plugin {
     const legacyRaw = rawViews.filter((v) => isLegacyQueryPresetShape(v));
     this.migratedLegacyCount = legacyRaw.length;
     const migratedViews = rawViews.map((v) =>
-      isLegacySavedTaskView(v) ? migrateLegacySavedTaskView(v) : v,
+      isLegacyQueryPresetShape(v) ? migrateLegacyQueryPreset(v) : v,
     );
 
     // US-109l: permanently-deleted preset ids are skipped when re-seeding

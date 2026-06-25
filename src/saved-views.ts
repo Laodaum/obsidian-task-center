@@ -188,6 +188,69 @@ function normalizeQueryPresetFilters(raw: unknown): QueryPresetFilters {
   return out;
 }
 
+function queryFiltersHaveActiveConditions(filters: QueryPresetFilters): boolean {
+  return !!(
+    filters.search
+    || (Array.isArray(filters.tags) && filters.tags.length > 0)
+    || (typeof filters.tags === "string" && filters.tags.trim())
+    || (filters.status !== undefined && filters.status !== "all")
+    || (filters.time && Object.keys(filters.time).length > 0)
+  );
+}
+
+function mergeQueryFilters(base: QueryPresetFilters, local: QueryPresetFilters | undefined): QueryPresetFilters {
+  const normalizedBase = normalizeQueryPresetFilters(base);
+  const normalizedLocal = normalizeQueryPresetFilters(local);
+  if (!queryFiltersHaveActiveConditions(normalizedBase)) return normalizedLocal;
+  if (!queryFiltersHaveActiveConditions(normalizedLocal)) return normalizedBase;
+
+  const out: QueryPresetFilters = { ...normalizedLocal };
+  if (normalizedBase.search && !normalizedLocal.search) out.search = normalizedBase.search;
+
+  const baseTags = Array.isArray(normalizedBase.tags)
+    ? normalizedBase.tags
+    : typeof normalizedBase.tags === "string"
+      ? normalizeDslTags(normalizedBase.tags)
+      : [];
+  const localTags = Array.isArray(normalizedLocal.tags)
+    ? normalizedLocal.tags
+    : typeof normalizedLocal.tags === "string"
+      ? normalizeDslTags(normalizedLocal.tags)
+      : [];
+  if (baseTags.length > 0 || localTags.length > 0) {
+    out.tags = normalizeDslTags([...baseTags, ...localTags]);
+  }
+
+  if (normalizedBase.status !== "all" && normalizedLocal.status === "all") {
+    out.status = normalizedBase.status;
+  }
+  if (normalizedBase.time || normalizedLocal.time) {
+    out.time = { ...(normalizedBase.time ?? {}), ...(normalizedLocal.time ?? {}) };
+  }
+  return normalizeQueryPresetFilters(out);
+}
+
+function applyBaseFiltersToLayout(layout: LayoutNode, filters: QueryPresetFilters): LayoutNode {
+  if (!queryFiltersHaveActiveConditions(filters)) return layout;
+  if (isStackNode(layout)) {
+    const out: StackConfig = {
+      ...layout,
+      children: layout.children.map((child) => applyBaseFiltersToLayout(child, filters)),
+    };
+    return out;
+  }
+  switch (layout.type) {
+    case "list":
+    case "grid":
+    case "week":
+    case "month":
+      return { ...layout, when: mergeQueryFilters(filters, layout.when) };
+    case "drop":
+    case "unknown":
+      return layout;
+  }
+}
+
 // View 现在是一棵 area 布局树。normalize 同时接受新形状（{layout}）和
 // 旧形状（{type, preset, sections, tray, matrix, orderBy}），旧形状一次性
 // 迁移成 { layout }。preset 字段被丢弃。
@@ -546,6 +609,7 @@ export function isLegacySavedTaskView(obj: unknown): boolean {
 export function isLegacyQueryPresetShape(obj: unknown): boolean {
   if (!isRecord(obj)) return false;
   if (isLegacySavedTaskView(obj)) return true;
+  if (isRecord(obj.filters)) return true;
   const view = obj.view;
   if (isRecord(view) && !("layout" in view)) {
     // Old view DSL hallmark keys. An empty `{}` view is not flagged — it
@@ -582,29 +646,41 @@ function isLegacyQueryDslInput(obj: unknown): boolean {
  * US-414: migrate a legacy SavedTaskView (flat `search`/`tag`/`time`/`status`
  * + legacy `view: {type, preset, sections, tray, matrix}`) into a normalized
  * QueryPreset. Pure function — never throws on bad fields; everything degrades
- * to defaults via `normalizeQueryPreset`. The flat filter fields collapse into
- * nested `filters`; the legacy `view` shape is handed straight to
- * `normalizeQueryPresetView`, whose `migrateLegacyViewToLayout` already turns
- * `{type, preset, sections, tray, matrix}` into a `layout` tree.
+ * to defaults via `normalizeQueryPreset`. Legacy tab-level filters are pushed
+ * down into each task-rendering area's `when`; the legacy `view` shape is
+ * handed to `normalizeQueryPresetView`, whose `migrateLegacyViewToLayout`
+ * already turns `{type, preset, sections, tray, matrix}` into a `layout` tree.
  */
 export function migrateLegacySavedTaskView(raw: unknown): QueryPreset {
+  return migrateLegacyQueryPreset(raw);
+}
+
+export function migrateLegacyQueryPreset(raw: unknown): QueryPreset {
   const obj = isRecord(raw) ? raw : {};
   const filters: Record<string, unknown> = {};
-  if (typeof obj.search === "string") filters.search = obj.search;
-  // Legacy `tag` is a comma-separated string; normalizeDslTags accepts it.
-  if (typeof obj.tag === "string" || Array.isArray(obj.tag)) filters.tags = obj.tag;
-  if ("status" in obj) filters.status = obj.status;
-  if (isRecord(obj.time)) filters.time = obj.time;
-  return normalizeQueryPreset({
+  if (isRecord(obj.filters)) {
+    Object.assign(filters, obj.filters);
+  } else {
+    if (typeof obj.search === "string") filters.search = obj.search;
+    // Legacy `tag` is a comma-separated string; normalizeDslTags accepts it.
+    if (typeof obj.tag === "string" || Array.isArray(obj.tag)) filters.tags = obj.tag;
+    if ("status" in obj) filters.status = obj.status;
+    if (isRecord(obj.time)) filters.time = obj.time;
+  }
+  const baseFilters = normalizeQueryPresetFilters(filters);
+  const normalized = normalizeQueryPreset({
     id: typeof obj.id === "string" ? obj.id : defaultSavedViewId(),
     name: typeof obj.name === "string" ? obj.name : "",
     builtin: !!obj.builtin,
     hidden: !!obj.hidden,
-    filters,
     // Old `view` is the legacy {type, preset, sections, tray, matrix} shape;
     // normalizeQueryPresetView migrates it to a layout tree.
     view: isRecord(obj.view) ? obj.view : {},
   } as unknown as QueryPreset);
+  return normalizeQueryPreset({
+    ...normalized,
+    view: { layout: applyBaseFiltersToLayout(normalized.view.layout, baseFilters) },
+  });
 }
 
 /**
@@ -694,10 +770,17 @@ export function ensureBuiltinQueryPresets(
     const current = existingRaw.get(seeded.id);
     existingRaw.delete(seeded.id);
     if (current) {
+      const currentRecord = current as unknown as Record<string, unknown>;
+      const legacyFilters = isRecord(currentRecord.filters)
+        ? normalizeQueryPresetFilters(currentRecord.filters)
+        : {};
+      const seededView = queryFiltersHaveActiveConditions(legacyFilters)
+        ? { layout: applyBaseFiltersToLayout(seeded.view.layout, legacyFilters) }
+        : seeded.view;
       out.push(normalizeQueryPreset({
         ...current,
         builtin: true,
-        view: seeded.view,
+        view: seededView,
       }));
     } else if (tombstoned.has(seeded.id)) {
       // US-109l: the user permanently deleted this preset — don't re-seed it.

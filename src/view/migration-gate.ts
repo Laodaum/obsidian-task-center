@@ -69,7 +69,7 @@ export function renderMigrationGate(el: HTMLElement, plugin: TaskCenterPlugin): 
     cls: "tc-migration-aitip-code",
     // Shell command, not prose — sentence-case must not capitalize `npx` / the package name.
     // eslint-disable-next-line obsidianmd/ui/sentence-case
-    text: "npx skills update obsidian-task-center",
+    text: "npx skills add CorrectRoadH/obsidian-task-center",
   });
 
   // Primary action under What's New (still above the long views list).
