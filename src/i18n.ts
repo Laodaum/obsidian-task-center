@@ -298,11 +298,11 @@ const EN = {
     "Enable Tasks or Dataview — task metadata may not render or query elsewhere",
   "dep.openSettings": "Click to open Obsidian settings",
 
-  // US-720: builtin "Today" list sections — localized at render by section id.
+  // US-720: builtin "Today" area titles — localized at render by area id
+  // (今日 = col[ list×3 ]; each area's id maps to one of these via BUILTIN_TITLE_KEYS).
   "today.groupOverdue": "Overdue",
   "today.groupToday": "Today",
   "today.groupRec": "Unscheduled",
-  "today.groupEmpty": "Nothing in this group.",
 
   // US-724 (task #67): saved views / custom filters.
   "savedViews.tag": "Tags",
@@ -751,7 +751,6 @@ const ZH: Partial<typeof EN> = {
   "today.groupOverdue": "逾期",
   "today.groupToday": "今天",
   "today.groupRec": "未排期",
-  "today.groupEmpty": "本组暂无内容。",
 
   // US-724: 保存视图 / 自定义过滤
   "savedViews.tag": "标签",

@@ -3,6 +3,7 @@ main.js
 main.js.map
 data.json
 .DS_Store
+._*
 *.log
 .claude/ralph-loop.local.md
 test/.compiled/
@@ -10,3 +11,5 @@ test/.compiled/
 test/e2e/vaults/*/.obsidian/workspace*
 test/e2e/vaults/*/.obsidian/cache
 .harness/
+/provider/
+.crabbox/

@@ -120,8 +120,6 @@ export interface SavedViewConfig {
   // which query preset semantics the user saved.
   preset?: string;
   orderBy?: string[];
-  // ARCHITECTURE.md §1.3: QuerySection — named filter groups for list views.
-  sections?: QuerySection[];
   // ARCHITECTURE.md §1.3: QueryTray — separate query area for week/month views.
   tray?: QueryTray;
 }
@@ -157,18 +155,6 @@ export interface QueryPresetFilters {
   tags?: string[] | string | TagSelector;
   status?: QueryStatus;
   time?: QueryTimeFilters;
-}
-
-// ARCHITECTURE.md §1.3: QuerySection — a named filter group for list views.
-// Each section applies its own `when` filter to the effective task set and
-// may override sorting and limit independently.
-export interface QuerySection {
-  id: string;
-  title: string;
-  when: QueryPresetFilters;
-  orderBy?: string[];
-  limit?: number;
-  emptyText?: string;
 }
 
 // ARCHITECTURE.md §1.3: QueryTray — a separate query area for week/month
@@ -208,17 +194,17 @@ export interface AreaBase {
   onDrop?: DropEffect;
 }
 
-// list / grid 共享字段：when 收窄、sections 分组、排序、限制。
+// list / grid 共享字段：when 收窄、排序、限制。list 没有内部分组——多段（如
+// 今日）用 col 容器叠多个各自带 when 的 list area 表达，不是一个 list 内部分组。
 export interface ListLikeFields {
   when?: QueryPresetFilters;
-  sections?: QuerySection[];
   orderBy?: string[];
   limit?: number;
   emptyText?: string;
 }
 
-// list：渲染一列任务卡。可选 sections 把列表内部再分成带标题的分组。
-// 今日 = 配了 3 个 section 的 list，与 TODO 同组件、看起来一样。
+// list：渲染一列任务卡。今日 = col 叠 3 个 list area（逾期 / 今日 / 未排期），
+// 每个 area 自带 when、各自 filter 自己；与 TODO 同组件、看起来一样。
 export interface ListAreaConfig extends AreaBase, ListLikeFields {
   type: "list";
 }

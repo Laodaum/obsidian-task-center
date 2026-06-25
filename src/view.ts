@@ -1437,7 +1437,7 @@ export class TaskCenterView extends ItemView {
   }
 
   // list area：today / TODO / completed / unscheduled / 周月 tray 都走这里。
-  // area.when 在已应用的 preset filters 之上再收窄；sections 内部再分组。
+  // area.when 在已应用的 preset filters 之上再收窄，投影成一列任务卡（无内部分组）。
   // area.onDrop 把列表区变成放置目标（tray = 拖入清空 ⏳）。
   // Builtin section / area ids → i18n keys. Localized at render so the title
   // follows the UI locale even for presets persisted with English defaults.
@@ -1485,32 +1485,7 @@ export class TaskCenterView extends ItemView {
     }
     this.renderAreaHead(parent, areaIndex, area, { title: areaTitle });
 
-    if (model.grouped) {
-      let totalVisible = 0;
-      for (const section of model.sections) {
-        const sectionTasks = section.tasks.filter((t) => t.isTopLevelInQuery);
-        totalVisible += sectionTasks.length;
-        const sectionWrap = parent.createDiv({ cls: "bt-list-section" });
-        const sectionHead = sectionWrap.createDiv({ cls: "bt-list-section-head" });
-        sectionHead.createSpan({
-          text: `${this.localizeBuiltinTitle(section.id, section.title)} (${sectionTasks.length})`,
-          cls: "bt-list-section-title",
-        });
-        const sectionBody = sectionWrap.createDiv({ cls: `bt-list-section-body ${cardsCls}`.trim() });
-        if (sectionTasks.length === 0) {
-          sectionBody.createDiv({ cls: "bt-list-section-empty", text: section.emptyText ?? tr("today.groupEmpty") });
-        } else {
-          for (const task of sectionTasks) renderCard(this, sectionBody, task);
-        }
-      }
-      if (totalVisible === 0 && !area.onDrop) {
-        if (this.tasks.length > 0) this.renderAreaEmptyState(parent, area, areaIndex);
-        else parent.createDiv({ text: tr("filters.empty"), cls: "bt-empty" });
-      }
-      return;
-    }
-
-    const list = model.sections[0]?.tasks.filter((t) => t.isTopLevelInQuery) ?? [];
+    const list = model.tasks.filter((t) => t.isTopLevelInQuery);
     const wrap = parent.createDiv({ cls: `bt-list-view ${cardsCls}`.trim() });
     wrap.dataset.view = grid ? "grid" : "list";
     if (list.length === 0) {

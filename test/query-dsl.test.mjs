@@ -94,7 +94,7 @@ test("VAL-CORE-005: normalizeQueryPreset defaults missing fields", () => {
   assert.deepEqual(normalized.view, { layout: { type: "list" } });
 });
 
-test("VAL-CORE-005: normalizeQueryPreset migrates legacy list sections into layout", () => {
+test("VAL-CORE-005: normalizeQueryPreset drops legacy list sections", () => {
   const normalized = normalizeQueryPreset({
     id: "q-sections",
     name: "Sections",
@@ -111,10 +111,11 @@ test("VAL-CORE-005: normalizeQueryPreset migrates legacy list sections into layo
     summary: [],
   });
 
-  assert.equal(normalized.view.layout.type, "list");
-  assert.equal(normalized.view.layout.sections.length, 2);
-  assert.equal(normalized.view.layout.sections[0].id, "a");
-  assert.equal(normalized.view.layout.sections[1].id, "b");
+  // list no longer groups internally. Feeding a legacy `{type:list, sections}`
+  // must migrate cleanly to a plain list area — the deepEqual proves nothing
+  // extra (no sections) survived, without naming the dead field. Multi-segment
+  // views (Today) use col[ list×N ] instead.
+  assert.deepEqual(normalized.view.layout, { type: "list" });
 });
 
 test("VAL-CORE-005: normalizeQueryPreset migrates legacy week tray into a stack layout", () => {

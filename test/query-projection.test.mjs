@@ -92,7 +92,7 @@ function effectiveTask(overrides = {}) {
 
 // ── VAL-CORE-008: List projection ──
 
-test("VAL-CORE-008: list area — all tasks in a single ungrouped section", async () => {
+test("VAL-CORE-008: list area — all tasks in a flat list", async () => {
   if (compileErr) throw compileErr;
 
   const { projectListArea } = await import("../test/.compiled/projection.js");
@@ -105,11 +105,8 @@ test("VAL-CORE-008: list area — all tasks in a single ungrouped section", asyn
 
   const model = projectListArea(tasks, { type: "list" }, 1);
   assert.equal(model.type, "list");
-  assert.equal(model.grouped, false, "No sections → ungrouped");
-  assert.ok(Array.isArray(model.sections));
-  assert.equal(model.sections.length, 1, "One default section");
-  assert.equal(model.sections[0].title, "", "Ungrouped section has empty title");
-  assert.equal(model.sections[0].tasks.length, 3);
+  assert.ok(Array.isArray(model.tasks), "list model is a flat task array");
+  assert.equal(model.tasks.length, 3);
 });
 
 test("VAL-CORE-008: list area — tasks sorted by orderBy", async () => {
@@ -128,10 +125,25 @@ test("VAL-CORE-008: list area — tasks sorted by orderBy", async () => {
     { type: "list", orderBy: ["title_asc"] },
     1,
   );
-  assert.equal(model.grouped, false);
-  assert.equal(model.sections[0].tasks[0].title, "AAA Task");
-  assert.equal(model.sections[0].tasks[1].title, "MMM Task");
-  assert.equal(model.sections[0].tasks[2].title, "ZZZ Task");
+  assert.equal(model.tasks[0].title, "AAA Task");
+  assert.equal(model.tasks[1].title, "MMM Task");
+  assert.equal(model.tasks[2].title, "ZZZ Task");
+});
+
+test("VAL-CORE-008: list area — limit caps task count", async () => {
+  if (compileErr) throw compileErr;
+
+  const { projectListArea } = await import("../test/.compiled/projection.js");
+
+  const tasks = [
+    effectiveTask({ id: "test.md:L1", title: "Task A" }),
+    effectiveTask({ id: "test.md:L2", title: "Task B" }),
+    effectiveTask({ id: "test.md:L3", title: "Task C" }),
+    effectiveTask({ id: "test.md:L4", title: "Task D" }),
+  ];
+
+  const model = projectListArea(tasks, { type: "list", limit: 2 }, 1);
+  assert.equal(model.tasks.length, 2, "List limited to 2 tasks");
 });
 
 // ── US-153: just-completed exemption threads through area.when ──
@@ -153,127 +165,7 @@ test("US-153: projectListArea exempts just-completed ids from area when.status",
     1,
     new Set(["test.md:L2"]),
   );
-  assert.equal(model.grouped, false);
-  assert.deepEqual(model.sections[0].tasks.map((t) => t.id), ["test.md:L1", "test.md:L2"]);
-});
-
-// ── M2: List sections from configured area.sections ──
-
-test("M2: list area — configured sections partition tasks by filter", async () => {
-  if (compileErr) throw compileErr;
-
-  const { projectListArea } = await import("../test/.compiled/projection.js");
-
-  const tasks = [
-    effectiveTask({ id: "test.md:L1", title: "Work task", tags: ["#work"] }),
-    effectiveTask({ id: "test.md:L2", title: "Personal task", tags: ["#personal"] }),
-    effectiveTask({ id: "test.md:L3", title: "Both tags", tags: ["#work", "#personal"] }),
-    effectiveTask({ id: "test.md:L4", title: "No tag", tags: [] }),
-  ];
-
-  const model = projectListArea(
-    tasks,
-    {
-      type: "list",
-      sections: [
-        { id: "s-work", title: "Work", when: { tags: ["#work"] } },
-        { id: "s-personal", title: "Personal", when: { tags: ["#personal"] } },
-      ],
-    },
-    1,
-  );
-
-  assert.equal(model.type, "list");
-  assert.equal(model.grouped, true, "Sections → grouped");
-  assert.equal(model.sections.length, 2, "Two configured sections");
-
-  const workSection = model.sections.find((s) => s.title === "Work");
-  const personalSection = model.sections.find((s) => s.title === "Personal");
-  assert.ok(workSection, "Work section exists");
-  assert.ok(personalSection, "Personal section exists");
-
-  // Section filters are independent: each section gets tasks matching its own filter
-  assert.equal(workSection.tasks.length, 2, "Work section has 2 tasks matching #work");
-  assert.equal(personalSection.tasks.length, 2, "Personal section has 2 tasks matching #personal");
-});
-
-test("M2: list area — section with empty when includes all tasks", async () => {
-  if (compileErr) throw compileErr;
-
-  const { projectListArea } = await import("../test/.compiled/projection.js");
-
-  const tasks = [
-    effectiveTask({ id: "test.md:L1", title: "Task A" }),
-    effectiveTask({ id: "test.md:L2", title: "Task B" }),
-  ];
-
-  const model = projectListArea(
-    tasks,
-    {
-      type: "list",
-      sections: [
-        { id: "s-all", title: "All Tasks", when: {} },
-      ],
-    },
-    1,
-  );
-
-  assert.equal(model.grouped, true);
-  assert.equal(model.sections.length, 1);
-  assert.equal(model.sections[0].tasks.length, 2);
-});
-
-test("M2: list area — section limit caps task count", async () => {
-  if (compileErr) throw compileErr;
-
-  const { projectListArea } = await import("../test/.compiled/projection.js");
-
-  const tasks = [
-    effectiveTask({ id: "test.md:L1", title: "Task A" }),
-    effectiveTask({ id: "test.md:L2", title: "Task B" }),
-    effectiveTask({ id: "test.md:L3", title: "Task C" }),
-    effectiveTask({ id: "test.md:L4", title: "Task D" }),
-  ];
-
-  const model = projectListArea(
-    tasks,
-    {
-      type: "list",
-      sections: [
-        { id: "s-limited", title: "Top 2", when: {}, limit: 2 },
-      ],
-    },
-    1,
-  );
-
-  assert.equal(model.sections[0].tasks.length, 2, "Section limited to 2 tasks");
-});
-
-test("M2: list area — section-specific orderBy overrides area orderBy", async () => {
-  if (compileErr) throw compileErr;
-
-  const { projectListArea } = await import("../test/.compiled/projection.js");
-
-  const tasks = [
-    effectiveTask({ id: "test.md:L1", title: "ZZZ" }),
-    effectiveTask({ id: "test.md:L2", title: "AAA" }),
-    effectiveTask({ id: "test.md:L3", title: "MMM" }),
-  ];
-
-  const model = projectListArea(
-    tasks,
-    {
-      type: "list",
-      orderBy: ["title_desc"],
-      sections: [
-        { id: "s-asc", title: "Ascending", when: {}, orderBy: ["title_asc"] },
-      ],
-    },
-    1,
-  );
-
-  assert.equal(model.sections[0].tasks[0].title, "AAA", "Section uses its own orderBy");
-  assert.equal(model.sections[0].tasks[2].title, "ZZZ");
+  assert.deepEqual(model.tasks.map((t) => t.id), ["test.md:L1", "test.md:L2"]);
 });
 
 // ── List area as "tray": unscheduled filter ──
@@ -304,11 +196,8 @@ test("M2: list area — unscheduled when filter selects only unscheduled tasks (
   );
 
   assert.equal(tray.type, "list");
-  assert.equal(tray.grouped, false);
-  assert.equal(tray.sections.length, 1);
-  assert.equal(tray.sections[0].title, "未排期");
-  assert.equal(tray.sections[0].tasks.length, 2, "Tray has the 2 unscheduled tasks");
-  const trayIds = tray.sections[0].tasks.map((t) => t.id).sort();
+  assert.equal(tray.tasks.length, 2, "Tray has the 2 unscheduled tasks");
+  const trayIds = tray.tasks.map((t) => t.id).sort();
   assert.deepEqual(trayIds, ["test.md:L2", "test.md:L3"]);
 });
 
@@ -333,8 +222,8 @@ test("M2: list area — tray with extra filter (unscheduled + tag)", async () =>
     1,
   );
 
-  assert.equal(tray.sections[0].tasks.length, 1, "Only 1 task matches tray filter");
-  assert.equal(tray.sections[0].tasks[0].id, "test.md:L2");
+  assert.equal(tray.tasks.length, 1, "Only 1 task matches tray filter");
+  assert.equal(tray.tasks[0].id, "test.md:L2");
 });
 
 // ── VAL-CORE-008: Week projection ──
@@ -510,14 +399,14 @@ test("VAL-CORE-008: same filtered tasks projected to list, week, month produce d
   assert.equal(weekModel.type, "week");
   assert.equal(monthModel.type, "month");
 
-  // List contains all 3 tasks in its ungrouped section
-  const listTaskIds = listModel.sections[0].tasks.map((t) => t.id).sort();
+  // List contains all 3 tasks in its flat task list
+  const listTaskIds = listModel.tasks.map((t) => t.id).sort();
   assert.deepEqual(listTaskIds, ["test.md:L1", "test.md:L2", "test.md:L3"]);
 
   // Week contains 2 scheduled in day columns; the tray area carries the 1 unscheduled
   const weekTaskIds = weekModel.days
     .flatMap((d) => d.tasks)
-    .concat(trayModel.sections[0].tasks)
+    .concat(trayModel.tasks)
     .map((t) => t.id)
     .sort();
   assert.deepEqual(weekTaskIds, ["test.md:L1", "test.md:L2", "test.md:L3"]);
@@ -525,7 +414,7 @@ test("VAL-CORE-008: same filtered tasks projected to list, week, month produce d
   // Month contains 2 scheduled in cells; the tray area carries the 1 unscheduled
   const monthTaskIds = monthModel.cells
     .flatMap((c) => c.tasks)
-    .concat(trayModel.sections[0].tasks)
+    .concat(trayModel.tasks)
     .map((t) => t.id)
     .sort();
   assert.deepEqual(monthTaskIds, ["test.md:L1", "test.md:L2", "test.md:L3"]);
@@ -554,14 +443,14 @@ test("M2: tray list area and week area partition tasks without overlap", async (
   assert.equal(week.days[0].tasks[0].id, "test.md:L1");
 
   // Tray (unscheduled list) has only the unscheduled task; no overlap with week
-  const trayIds = tray.sections[0].tasks.map((t) => t.id);
+  const trayIds = tray.tasks.map((t) => t.id);
   assert.ok(!trayIds.includes("test.md:L1"), "Tray excludes scheduled task");
   assert.ok(trayIds.includes("test.md:L2"), "Tray includes unscheduled task");
 });
 
 // ── Negative / edge cases ──
 
-test("M2: sections with no matching tasks produce empty sections", async () => {
+test("list area — when matching no tasks produces an empty list", async () => {
   if (compileErr) throw compileErr;
 
   const { projectListArea } = await import("../test/.compiled/projection.js");
@@ -572,18 +461,11 @@ test("M2: sections with no matching tasks produce empty sections", async () => {
 
   const model = projectListArea(
     tasks,
-    {
-      type: "list",
-      sections: [
-        { id: "s-empty", title: "No Match", when: { tags: ["#nonexistent"] } },
-      ],
-    },
+    { type: "list", when: { tags: ["#nonexistent"] } },
     1,
   );
 
-  assert.equal(model.grouped, true);
-  assert.equal(model.sections.length, 1);
-  assert.equal(model.sections[0].tasks.length, 0, "Section is empty when no tasks match filter");
+  assert.equal(model.tasks.length, 0, "List is empty when no tasks match the area filter");
 });
 
 // ── US-109x: AREA-LEVEL `when` (the thing the area editor edits) ──
@@ -597,7 +479,7 @@ test("US-109x: area-level when {tags} filters the area's own cards", async () =>
     effectiveTask({ id: "Inbox.md:L2", title: "beta", tags: ["#beta"] }),
   ];
   const model = projectListArea(tasks, { type: "list", when: { tags: ["#alpha"] } }, 1);
-  const ids = model.sections.flatMap((s) => s.tasks.map((t) => t.id));
+  const ids = model.tasks.map((t) => t.id);
   assert.deepEqual(ids, ["Inbox.md:L1"], "area.when {tags:#alpha} keeps L1, drops L2(#beta)");
 });
 
@@ -609,13 +491,13 @@ test("US-109h: area-level when {status} filters the area's own cards", async () 
   ];
   const todoOnly = projectListArea(tasks, { type: "list", when: { status: ["todo"] } }, 1);
   assert.deepEqual(
-    todoOnly.sections.flatMap((s) => s.tasks.map((t) => t.id)),
+    todoOnly.tasks.map((t) => t.id),
     ["Inbox.md:L1"],
     "area.when {status:[todo]} drops the done card",
   );
   const both = projectListArea(tasks, { type: "list", when: { status: ["todo", "done"] } }, 1);
   assert.equal(
-    both.sections.flatMap((s) => s.tasks).length,
+    both.tasks.length,
     2,
     "area.when {status:[todo,done]} keeps both",
   );

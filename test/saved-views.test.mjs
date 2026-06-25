@@ -643,13 +643,13 @@ test("VAL-GUI-004: computeQueryPresetDeleteUndoPlan returns originalIndex=-1 for
 
 // ── fix-m3-desktop-query-editor-full-dsl-roundtrip ──
 
-test("roundtrip: normalizeQueryPresetView preserves sections", () => {
+test("roundtrip: a legacy list with sections migrates to a plain list area", () => {
   const preset = normalizeQueryPreset({
     id: "sv-sections",
     name: "With sections",
     builtin: false,
     hidden: false,
-    filters: { status: "todo" },
+    filters: {},
     view: {
       type: "list",
       sections: [
@@ -660,17 +660,10 @@ test("roundtrip: normalizeQueryPresetView preserves sections", () => {
     summary: [],
   });
 
-  // Legacy {type:list, sections} migrates to a single list area carrying the sections.
-  const layout = preset.view.layout;
-  assert.equal(layout.type, "list");
-  assert.ok(Array.isArray(layout.sections));
-  assert.equal(layout.sections.length, 2);
-  assert.equal(layout.sections[0].id, "s1");
-  assert.equal(layout.sections[0].title, "Urgent");
-  assert.deepEqual(layout.sections[0].when.status, ["todo"]);
-  assert.deepEqual(layout.sections[0].when.time, { deadline: "overdue" });
-  assert.equal(layout.sections[1].id, "s2");
-  assert.equal(layout.sections[1].limit, 10);
+  // list no longer groups internally. The legacy sections fixture migrates to a
+  // plain list area; deepEqual proves the result is exactly a clean list with no
+  // leftover grouping, without re-naming the dead field. (Today uses col[ list×N ].)
+  assert.deepEqual(preset.view.layout, { type: "list" });
 });
 
 test("roundtrip: normalizeQueryPresetView preserves tray config", () => {
@@ -1328,8 +1321,10 @@ test("VAL-GUI-004: computeUndoQueryPresetState — preserves all snapshot fields
   assert.equal(restored.name, "Full View");
   assert.deepEqual(restored.view, undoPlan.snapshot.view);
   assert.deepEqual(restored.view, undoPlan.snapshot.view);
-  // Legacy list+sections+tray migrated to col[ list(sections), list-tray ].
-  assert.equal(restored.view.layout.children[0].sections[0].id, "urgent");
+  // Legacy list+sections+tray migrated to col[ list, list-tray ]; legacy
+  // sections are dropped (list no longer groups internally).
+  assert.equal(restored.view.layout.children[0].type, "list");
+  assert.equal(restored.view.layout.children[0].sections, undefined);
   assert.equal(restored.view.layout.children[1].title, "Backlog");
   assert.equal(undoState.restoredView?.id, "sv-full");
   assert.equal(undoState.shouldRestoreActive, true);

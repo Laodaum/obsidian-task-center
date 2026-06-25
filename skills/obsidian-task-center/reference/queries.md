@@ -34,7 +34,7 @@ obsidian task-center:query-run  id=preset-today [view=list|week|month] [anchor=Y
 
 - **stack** — `{ "dir": "row" | "col", "children": [<node>, …], "weight"?: number }`。`col` ≈ VStack，`row` ≈ HStack；嵌套做二维布局（如四象限网格）。`children` 必须非空。
 - **area leaf** 之一（公共可选字段：`id` / `title` / `weight` / `onDrop`）：
-  - `{ "type":"list", "when"?:Filters, "sections"?:[Section], "orderBy"?:[string], "limit"?:number, "emptyText"?:string }`
+  - `{ "type":"list", "when"?:Filters, "orderBy"?:[string], "limit"?:number, "emptyText"?:string }`（无内部分组；多段列表用 `col` 叠多个 list）
   - `{ "type":"grid", …同 list… }` — 配置与投影同 `list`，卡片改为响应式多列网格（未排期托盘用）
   - `{ "type":"week" | "month", "when"?:Filters, "firstDayOfWeek"?:"monday"|"sunday" }` — `month` 另有 `"density":"compact"|"cards"`；week/month 的每个日期格本身就是改期放置目标
   - `{ "type":"drop", "onDrop":DropEffect, "title"?:string }` — 纯动作放置区，无查询；**必须**有 `onDrop`，否则报 `drop_requires_on_drop`
@@ -58,8 +58,6 @@ obsidian task-center:query-run  id=preset-today [view=list|week|month] [anchor=Y
   - 通用（任意字段）：`today` · `tomorrow` · `week` · `next-week` · `month` · `unscheduled`（该字段为空）· `YYYY-MM-DD`（精确）· `FROM..TO`（区间）· `all`
   - **仅 `deadline`**：`overdue`（早于今天）· `next-7-days`
   - ⚠️ **没有 `yesterday` / `next-month`**——那是 `task-center:list` 动词的词汇，不是预设 `when` 的，写了不会匹配。
-
-`Section`（仅 list/grid，area 内命名分组）：`{ "id"(必填), "title", "when":Filters, "orderBy"?, "limit"?, "emptyText"? }`。area 顶层 `when` 是该区总过滤，各 `section.when` 在其内再细分。
 
 `onDrop`（drop area 必填；list/grid/任意 area 可选）— 三选一：`{ "setStatus":"dropped" }` · `{ "setScheduled":"<token>" }` · `{ "clearScheduled":true }`。
 

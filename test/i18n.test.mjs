@@ -162,7 +162,7 @@ test("task #108 — toolbar, Today, and saved-view control labels are localized"
     { key: "toolbar.filter", vars: undefined, mustDifferFromEnInZh: true },
     { key: "filters.empty", vars: undefined, mustDifferFromEnInZh: true },
     { key: "filters.clear", vars: undefined, mustDifferFromEnInZh: true },
-    { key: "today.groupEmpty", vars: undefined, mustDifferFromEnInZh: true },
+    { key: "today.groupOverdue", vars: undefined, mustDifferFromEnInZh: true },
     { key: "savedViews.tag", vars: undefined, mustDifferFromEnInZh: true },
     { key: "savedViews.timeScheduled", vars: undefined, mustDifferFromEnInZh: true },
     { key: "savedViews.timeDeadline", vars: undefined, mustDifferFromEnInZh: true },

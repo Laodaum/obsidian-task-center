@@ -126,7 +126,6 @@ export function setAreaType(layout: LayoutNode, areaIndex: number, type: AreaTyp
         // Carry over list/grid-only fields when converting between the two.
         if (area.type === "list" || area.type === "grid") {
           if (area.when) next.when = area.when;
-          if (area.sections) next.sections = area.sections;
           if (area.orderBy) next.orderBy = area.orderBy;
           if (area.limit !== undefined) next.limit = area.limit;
           if (area.emptyText) next.emptyText = area.emptyText;

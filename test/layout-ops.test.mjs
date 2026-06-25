@@ -72,11 +72,12 @@ test("setAreaType only changes the targeted leaf, keeps siblings & structure", (
 });
 
 test("setAreaType carries list/grid fields between list and grid", () => {
-  const tree = { type: "list", when: { status: "todo" }, sections: [{ id: "s", title: "S", when: {} }] };
+  const tree = { type: "list", when: { status: "todo" }, orderBy: ["deadline_asc"], limit: 5 };
   const after = setAreaType(tree, 0, "grid");
   assert.equal(after.type, "grid");
   assert.deepEqual(after.when, { status: "todo" });
-  assert.equal(after.sections.length, 1);
+  assert.deepEqual(after.orderBy, ["deadline_asc"]);
+  assert.equal(after.limit, 5);
 });
 
 test("mapAreaAt patches a single area immutably", () => {

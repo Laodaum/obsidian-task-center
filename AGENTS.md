@@ -35,10 +35,44 @@
 
 ## 项目命令
 
+这些命令描述项目本身的检查入口。完成开发后的默认验证不要直接在本地开发机跑，而是通过 Crabbox/provider 在远端测试环境执行。
+
 - 开发：`pnpm dev`
 - 构建：`pnpm build`
 - 单测：`pnpm test`
 - e2e：`pnpm e2e`
+
+## 远端测试
+
+完成开发后，只用 Crabbox/provider 在远端测试环境跑正式 gate；本地开发机只负责编辑代码和发起远端命令。
+
+远端测试服务器的主机名、端口、运行目标、工作目录等都属于本地私有配置，不写入 git。需要远端运行时，只从 gitignore 内的本地配置读取一个 gate 命令并执行。
+
+推荐把私有命令放在 `.crabbox/remote-test.env`，该文件只保存本机可用的最小环境变量：
+
+```bash
+CRABBOX_TEST_PREPARE='...' # 没有前置连接需求时可为空
+CRABBOX_TEST_GATE='...'
+```
+
+在远端跑正式 gate 只有一条路径：
+
+```bash
+set -a; source .crabbox/remote-test.env; set +a
+test -n "${CRABBOX_TEST_PREPARE:-}" && eval "$CRABBOX_TEST_PREPARE"
+eval "$CRABBOX_TEST_GATE"
+```
+
+正式 gate 至少包含：
+
+- `pnpm install --frozen-lockfile`
+- `pnpm run typecheck`
+- `pnpm run lint`
+- `pnpm run test:unit`
+- `pnpm run build`
+- `CI=true GITHUB_ACTIONS=true OBSIDIAN_VERSIONS=latest/latest WDIO_MAX_INSTANCES=1 pnpm run test:e2e:ci`
+
+`pnpm e2e` 是全量历史 e2e，不等同于正式 gate；其中包含不稳定或暂未纳入 CI 白名单的 specs。判断发布/PR 是否可过时，以 `docs/ci-test-matrix.md` 和上面的正式 gate 为准。
 
 ## 工作流
 

@@ -142,9 +142,9 @@ obsidian task-center:query-set-default id=…|null
 
 **The DSL's SSOT is `docs/dsl/zh.md` (English `docs/dsl/en.md`) in the obsidian-task-center repo.** Before building/editing a view:
 
-- Full grammar (node types, Filters/`when`, Section, onDrop, orderBy, real factory DSL) → read `docs/dsl/zh.md` or `en.md`; a condensed skill-local mirror is `reference/queries.md`.
-- Ready-made layouts: four quadrants → `examples/four-quadrant.md`; week + unscheduled tray + drop zone → `examples/week-with-tray.md`; simple / sectioned list → `examples/simple-list.md`.
-- Unsure of the current shape? `query-show id=preset-today` (sectioned list) or `id=preset-week` (week + tray + drop), and mirror what it returns instead of guessing.
+- Full grammar (node types, Filters/`when`, onDrop, orderBy, real factory DSL) → read `docs/dsl/zh.md` or `en.md`; a condensed skill-local mirror is `reference/queries.md`.
+- Ready-made layouts: four quadrants → `examples/four-quadrant.md`; week + unscheduled tray + drop zone → `examples/week-with-tray.md`; simple / multi-segment list → `examples/simple-list.md`.
+- Unsure of the current shape? `query-show id=preset-today` (col of 3 lists) or `id=preset-week` (week + tray + drop), and mirror what it returns instead of guessing.
 
 Rules: builtin tabs can be hidden/copied/renamed/updated/set-default but never permanently deleted; deleting a custom tab removes only that view, never tasks; a hidden tab cannot be default; invalid DSL → `invalid_query` (settings unchanged); unknown id → `query_not_found`.
 

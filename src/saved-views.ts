@@ -10,7 +10,6 @@ import type {
   QueryPresetValidationError,
   QueryPresetValidationResult,
   QueryPresetViewConfig,
-  QuerySection,
   QueryTray,
   QueryViewType,
   QueryStatus,
@@ -318,14 +317,10 @@ function normalizeArea(raw: unknown): AreaConfig {
     case "grid":
     case "list": {
       const when = isRecord(cfg.when) ? normalizeQueryPresetFilters(cfg.when) : undefined;
-      const sections = Array.isArray(cfg.sections)
-        ? cfg.sections.map(normalizeQuerySection).filter((s): s is QuerySection => s !== null)
-        : undefined;
       const limit = typeof cfg.limit === "number" && cfg.limit > 0 ? cfg.limit : undefined;
       const emptyText = typeof cfg.emptyText === "string" && cfg.emptyText.trim() ? cfg.emptyText.trim() : undefined;
       const out: ListAreaConfig | GridAreaConfig = { ...base, type: type === "grid" ? "grid" : "list" };
       if (when && Object.keys(when).length > 0) out.when = when;
-      if (sections && sections.length > 0) out.sections = sections;
       if (orderBy && orderBy.length > 0) out.orderBy = orderBy;
       if (limit !== undefined) out.limit = limit;
       if (emptyText) out.emptyText = emptyText;
@@ -350,11 +345,10 @@ function migrateLegacyViewToLayout(cfg: Record<string, unknown>): LayoutNode {
   if (type === "week") base = { type: "week" };
   else if (type === "month") base = { type: "month" };
   else {
-    const sections = Array.isArray(cfg.sections)
-      ? cfg.sections.map(normalizeQuerySection).filter((s): s is QuerySection => s !== null)
-      : undefined;
+    // Legacy `sections` are intentionally dropped: list no longer groups
+    // internally. The builtin Today layout (col[ list×3 ]) is re-seeded from
+    // src/builtin-views on every load, so it doesn't rely on this migration.
     const list: ListAreaConfig = { type: "list" };
-    if (sections && sections.length > 0) list.sections = sections;
     if (orderBy && orderBy.length > 0) list.orderBy = orderBy;
     base = list;
   }
@@ -371,24 +365,6 @@ function migrateLegacyViewToLayout(cfg: Record<string, unknown>): LayoutNode {
     return { dir: "col", children: [base, trayArea] };
   }
   return base;
-}
-
-function normalizeQuerySection(raw: unknown): QuerySection | null {
-  const cfg = isRecord(raw) ? raw : {};
-  const id = typeof cfg.id === "string" ? cfg.id.trim() : "";
-  if (!id) return null;
-  const title = typeof cfg.title === "string" ? cfg.title.trim() : id;
-  const when: QueryPresetFilters = isRecord(cfg.when) ? normalizeQueryPresetFilters(cfg.when) : {};
-  const orderBy: string[] | undefined = Array.isArray(cfg.orderBy)
-    ? cfg.orderBy.map((v) => (typeof v === "string" ? v.trim() : "")).filter(Boolean)
-    : undefined;
-  const limit = typeof cfg.limit === "number" && cfg.limit > 0 ? cfg.limit : undefined;
-  const emptyText = typeof cfg.emptyText === "string" ? cfg.emptyText.trim() : undefined;
-  const out: QuerySection = { id, title, when };
-  if (orderBy && orderBy.length > 0) out.orderBy = orderBy;
-  if (limit !== undefined) out.limit = limit;
-  if (emptyText) out.emptyText = emptyText;
-  return out;
 }
 
 function normalizeQueryTray(raw: unknown): QueryTray | undefined {

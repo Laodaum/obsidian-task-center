@@ -562,43 +562,6 @@
 .task-center-view .bt-list-grid > .bt-card {
   margin: 0;
 }
-.task-center-view .bt-list-area-head,
-.task-center-view .bt-list-section-title {
-  display: inline-flex;
-  align-items: center;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-}
-.task-center-view .bt-list-area-head {
-  line-height: 19px;
-  margin: 0 0 8px;
-}
-.task-center-view .bt-list-section {
-  margin: 0 0 14px;
-}
-.task-center-view .bt-list-section:last-child {
-  margin-bottom: 0;
-}
-.task-center-view .bt-list-section-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0 0 6px;
-}
-.task-center-view .bt-list-section-body {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.task-center-view .bt-list-section-empty {
-  padding: 4px 2px;
-  font-size: 11px;
-  color: var(--text-faint);
-  font-style: italic;
-}
 .task-center-view .bt-filter-popover-wrap {
   position: relative;
   display: inline-flex;

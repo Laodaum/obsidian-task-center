@@ -4,8 +4,8 @@
 // areas with different DSL, not view types.
 //
 // ARCHITECTURE.md §4.3 defines the projection semantics:
-//   - List: area `when` narrows preset.filters, then sections group further;
-//     no sections → one default (ungrouped) section.
+//   - List: area `when` narrows preset.filters into a flat task list. Multi-
+//     segment views (Today) are several list areas in the layout, not sections.
 //   - Week/Month: date columns/cells from effectiveScheduled. Trays are
 //     separate list areas in the layout, not embedded here.
 // Pure functions, no DOM, no Obsidian dependency.
@@ -24,13 +24,6 @@ import { startOfWeek, addDays, startOfMonth, endOfMonth, daysBetween, todayISO }
 
 // ── View model types ──
 
-export interface ListSectionModel {
-  id?: string;
-  title: string;
-  tasks: EffectiveTask[];
-  emptyText?: string;
-}
-
 export interface DayColumnModel {
   date: string;
   tasks: EffectiveTask[];
@@ -43,9 +36,8 @@ export interface MonthCellModel {
 
 export interface ListViewModel {
   type: "list";
-  // grouped=false → a single implicit section, render flat with no header.
-  grouped: boolean;
-  sections: ListSectionModel[];
+  // A list area is a single flat task list — no internal grouping.
+  tasks: EffectiveTask[];
 }
 
 export interface WeekViewModel {
@@ -76,8 +68,7 @@ type AreaProjector = (
 
 const emptyListModel = (): ListViewModel => ({
   type: "list",
-  grouped: false,
-  sections: [{ title: "", tasks: [] }],
+  tasks: [],
 });
 
 const AREA_PROJECTORS: Record<AreaType | "unknown", AreaProjector> = {
@@ -190,46 +181,27 @@ function priorityRank(p: string | null): number {
 
 /**
  * List area projection: area `when` narrows the (already preset-filtered)
- * task set, then `sections` group further. No sections → a single ungrouped
- * section (rendered flat, no header). Today and TODO share this projection.
+ * task set into a flat, sorted, limited task list. No internal grouping —
+ * multi-segment views (Today) use several list areas in the layout. Today and
+ * TODO share this projection.
  */
 export function projectListArea(
   tasks: EffectiveTask[],
   area: ListAreaConfig | GridAreaConfig,
   weekStartsOn: 0 | 1,
   // US-153: ids that bypass the status filter only (just-completed cards in the
-  // current view session). Threaded into both the area `when` and section `when`
-  // so a freshly-done card keeps its place in a `status: todo` list. GUI-only;
-  // CLI / summary never pass it.
+  // current view session). Threaded into the area `when` so a freshly-done card
+  // keeps its place in a `status: todo` list. GUI-only; CLI / summary never pass it.
   exemptStatusIds?: ReadonlySet<string>,
 ): ListViewModel {
   const base = area.when && queryFilterHasActiveConditions(area.when)
     ? applyQueryFilters(tasks, area.when, weekStartsOn, undefined, exemptStatusIds)
     : tasks;
-
-  if (area.sections && area.sections.length > 0) {
-    const sections: ListSectionModel[] = area.sections.map((section) => {
-      const sectionTasks = queryFilterHasActiveConditions(section.when)
-        ? applyQueryFilters(base, section.when, weekStartsOn, undefined, exemptStatusIds)
-        : [...base];
-      const sorted = sortTasks(sectionTasks, section.orderBy ?? area.orderBy);
-      const limited = section.limit !== undefined && section.limit > 0
-        ? sorted.slice(0, section.limit)
-        : sorted;
-      return { id: section.id, title: section.title, tasks: limited, emptyText: section.emptyText };
-    });
-    return { type: "list", grouped: true, sections };
-  }
-
   const sorted = sortTasks(base, area.orderBy);
   const limited = area.limit !== undefined && area.limit > 0
     ? sorted.slice(0, area.limit)
     : sorted;
-  return {
-    type: "list",
-    grouped: false,
-    sections: [{ title: area.title ?? "", tasks: limited, emptyText: area.emptyText }],
-  };
+  return { type: "list", tasks: limited };
 }
 
 export function projectWeekArea(

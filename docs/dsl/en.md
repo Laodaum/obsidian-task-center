@@ -41,7 +41,7 @@ What a view looks like is **decided entirely by the `view.layout` tree**.
 
 ## 2. Filtering: each area's own `when`
 
-There is no "base set for the whole Tab". Every list / grid / week / month area — and every section inside a list — carries its **own `when`**, which is that block's entire filter. The graphical filter UI edits exactly this `when`; it is the same data as editing the DSL by hand.
+There is no "base set for the whole Tab". Every list / grid / week / month area carries its **own `when`**, which is that block's entire filter. The graphical filter UI edits exactly this `when`; it is the same data as editing the DSL by hand.
 
 ```jsonc
 "when": {
@@ -145,35 +145,13 @@ The workhorse: filters with `when` and renders a column of task cards. Parent/ch
 | Field | Description |
 | --- | --- |
 | `when` | This block's filter (same `QueryFilters` shape, see §2). The graphical filter UI edits exactly this `when`. |
-| `sections` | Split one list internally into titled groups, each by its own `when` (see below). |
 | `orderBy` | Sorting, see [§5.3](#53-orderby-sorting) |
 | `limit` | Maximum number of cards |
 | `emptyText` | Text shown when the set is empty |
 
-#### list + sections — multiple groups inside one list
+#### Multi-segment lists — stack lists with col
 
-The "Today" view is **one** list (with an area-level `when` of `status: todo`), split by `sections` into Overdue / Today / Unscheduled. It is the same component as TODO — the only difference is the DSL.
-
-![Today view = list + sections](../assets/dsl/today.png)
-
-```jsonc
-{
-  "type": "list",
-  "when": { "status": ["todo"] },
-  "sections": [
-    { "id": "overdue", "title": "Overdue",
-      "when": { "time": { "deadline": "overdue" } },
-      "orderBy": ["deadline_asc"], "limit": 3 },
-    { "id": "today", "title": "Today",
-      "when": { "time": { "scheduled": "today" } }, "limit": 3 },
-    { "id": "unscheduled-rec", "title": "Unscheduled",
-      "when": { "time": { "scheduled": "unscheduled", "deadline": "unscheduled" } },
-      "orderBy": ["created_desc"], "limit": 3 }
-  ]
-}
-```
-
-The area-level `when` is the list's overall filter; each `section.when` narrows further inside it (also AND).
+A `list` has no internal grouping. To split a list into segments like "Today" does (Overdue / Today / Unscheduled), use a `col` container stacking 3 `list` areas, each carrying its own full `when` and filtering itself. It is the same component as TODO — the only difference is the layout tree (see the full Today DSL in §6). There is no "groups inside one list" — a shared filter is simply written into each block's `when`.
 
 ### 4.2 grid — card grid
 
@@ -237,7 +215,7 @@ An unsupported area `type` (a typo, or a removed legacy type such as the old mat
 
 ### 5.1 Filtering belongs to the area
 
-Each list/grid/week/month area, and each section, filters only via its **own `when`**, independent of the others.
+Each list/grid/week/month area filters only via its **own `when`**, independent of the others.
 
 - There is no "base set / global filter" for the whole Tab. To make a whole Tab show only `todo`, write `status: ["todo"]` in each area's `when` (that's exactly what the built-in views do).
 - The graphical filter UI edits that area's `when` directly — it is the same data as editing the DSL.
@@ -272,13 +250,13 @@ A drop area must have `onDrop`; any other area (list/grid/…) may optionally ca
 
 ### 5.4 limit / emptyText
 
-`limit` caps the number of cards in a single list/section; `emptyText` customizes the message shown when the set is empty.
+`limit` caps the number of cards in a single list; `emptyText` customizes the message shown when the set is empty.
 
 ---
 
 ## 6. Built-in views: complete examples
 
-These are the **real factory DSLs** of the 7 built-in views (from `src/builtin-views/*.json`) — copy and tweak them as templates. Note they all have **no** tab-level `filters`; status and other filters always live on the area / section `when`.
+These are the **real factory DSLs** of the 7 built-in views (from `src/builtin-views/*.json`) — copy and tweak them as templates. Note they all have **no** tab-level `filters`; status and other filters always live on each area's `when`.
 
 ### TODO
 
@@ -290,20 +268,19 @@ A single ungrouped `list`, filtered on the area's `when`:
 
 ### Today
 
-**One** list + 3 sections (Overdue / Today / Unscheduled), with an area-level `when` of `todo`:
+**col** stacking 3 lists (Overdue / Today / Unscheduled); each list carries its own `when` and filters itself (`todo` is written into every block's `when`):
 
 ```jsonc
 { "view": { "layout": {
-  "type": "list",
-  "when": { "status": ["todo"] },
-  "sections": [
-    { "id": "overdue", "title": "Overdue",
-      "when": { "time": { "deadline": "overdue" } },
+  "dir": "col",
+  "children": [
+    { "type": "list", "id": "overdue", "title": "Overdue",
+      "when": { "status": ["todo"], "time": { "deadline": "overdue" } },
       "orderBy": ["deadline_asc"], "limit": 3 },
-    { "id": "today", "title": "Today",
-      "when": { "time": { "scheduled": "today" } }, "limit": 3 },
-    { "id": "unscheduled-rec", "title": "Unscheduled",
-      "when": { "time": { "scheduled": "unscheduled", "deadline": "unscheduled" } },
+    { "type": "list", "id": "today", "title": "Today",
+      "when": { "status": ["todo"], "time": { "scheduled": "today" } }, "limit": 3 },
+    { "type": "list", "id": "unscheduled-rec", "title": "Unscheduled",
+      "when": { "status": ["todo"], "time": { "scheduled": "unscheduled", "deadline": "unscheduled" } },
       "orderBy": ["created_desc"], "limit": 3 }
   ]
 } } }
@@ -388,7 +365,7 @@ The graphical filter UI, editing the JSON directly via "Edit Query", and managin
 
 1. **Markdown is the single source of truth**; the DSL is only a derived layer.
 2. **One view = one layout tree**; no view-type enum, and the renderer never branches on names like today / completed.
-3. **Filtering belongs to the area**: each area / section's `when` is its entire filter — no tab-level base set, no global filter state.
+3. **Filtering belongs to the area**: each area's `when` is its entire filter — no tab-level base set, no global filter state.
 4. **Actions are general capabilities**: reschedule / clear-schedule / drop are provided by cards and drop areas, not bound to a view.
 5. **Unknown types don't error**: they normalize to an `unknown` fallback.
 6. **No `summary`**: top-of-view metrics were removed; estimate/retro stats live in the `task-center:stats` / `review` CLI.

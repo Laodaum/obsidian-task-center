@@ -246,9 +246,31 @@ describe("Task Center — 看板基础 (US-101/107/115)", function () {
 
     // Click the ✔ to complete it.
     await $(`${cardSel} .bt-check`).click();
-    await forFlush();
+    // US-153: the card is STILL in the list, now in its done state. The click
+    // handler writes the file and waits for TaskCache to reparse before the
+    // re-render, so wait for the DOM contract itself instead of racing the
+    // async handler with a generic plugin flush.
+    await browser.waitUntil(async () => {
+      const state = await browser.execute((sel: string) => {
+        const card = document.querySelector<HTMLElement>(sel);
+        if (!card) return null;
+        const check = card.querySelector<HTMLElement>(".bt-check");
+        return {
+          hasDoneClass: card.classList.contains("done"),
+          justCompleted: card.dataset.justCompleted === "true",
+          checkIcon: check?.textContent ?? "",
+          checkIsDone: check?.classList.contains("bt-check-done") ?? false,
+        };
+      }, cardSel);
+      return !!state?.hasDoneClass
+        && state.justCompleted
+        && state.checkIcon === "✔"
+        && state.checkIsDone;
+    }, {
+      timeout: 5000,
+      timeoutMsg: "US-153 card did not settle into just-completed linger state",
+    });
 
-    // US-153: the card is STILL in the list, now in its done state.
     const lingering = await browser.execute((sel: string) => {
       const card = document.querySelector<HTMLElement>(sel);
       if (!card) return null;

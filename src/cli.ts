@@ -99,7 +99,7 @@ export function formatQueryRun(result: QueryRunResult, opts: CliFormatOptions = 
 
   switch (result.viewModel.type) {
     case "list":
-      renderQueryList(lines, result.viewModel.sections, opts);
+      renderQueryList(lines, result.viewModel.tasks, opts);
       break;
     case "week":
       renderQueryWeek(lines, result.viewModel.days, opts);
@@ -111,12 +111,10 @@ export function formatQueryRun(result: QueryRunResult, opts: CliFormatOptions = 
   return lines.join("\n");
 }
 
-function renderQueryList(lines: string[], sections: Array<{ title: string; tasks: EffectiveTask[] }>, opts: CliFormatOptions): void {
-  for (const section of sections) {
-    lines.push(`${section.title} · ${section.tasks.length} tasks`);
-    renderTaskRows(section.tasks, lines, "    ", opts);
-    if (section.tasks.length === 0) lines.push("    —");
-  }
+function renderQueryList(lines: string[], tasks: EffectiveTask[], opts: CliFormatOptions): void {
+  lines.push(`${tasks.length} tasks`);
+  renderTaskRows(tasks, lines, "    ", opts);
+  if (tasks.length === 0) lines.push("    —");
 }
 
 function renderQueryWeek(

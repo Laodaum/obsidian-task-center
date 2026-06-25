@@ -100,7 +100,7 @@ Sheet 结构：
 │  └─ 状态
 ├─ View
 │  ├─ list / week / month / matrix
-│  ├─ sections / tray / axis / bucket / sort
+│  ├─ tray / axis / bucket / sort
 │  └─ 空 bucket / 未分组设置
 ├─ Summary
 │  ├─ count / sum / ratio / top-N / group-by
@@ -124,11 +124,11 @@ Sheet 结构：
 
 ### 5.1 List View
 
-List 移动端为单列满宽卡片列表。Sections 以折叠标题或 sticky 小标题呈现，取决于 section 数量和高度。（US-103）
+List 移动端为单列满宽卡片列表。（US-103）多段（如今日）是布局树里并列的多个 list area，各自一段，不是一个 list 内部的分组。
 
 适用：今日、TODO、未排期、已完成、已放弃、搜索结果、自定义 tab。
 
-- 今日预设仍是 list + 三个 section：逾期 / 今日安排 / 未排期推荐。（US-720）
+- 今日预设是 col 叠三个 list 区：逾期 / 今日安排 / 未排期推荐，每个区自带 `when`。（US-720）
 - “改到明天”是卡片动作按钮或 action sheet 项，写入 `⏳ <tomorrow>`。（US-720c）
 - 三组均空时空状态视觉居中，不贴顶。（US-720d / US-720e）
 

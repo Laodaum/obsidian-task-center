@@ -1186,10 +1186,7 @@ function mapViewModel(model: QueryRunResult["viewModel"]): unknown {
   if (model.type === "list") {
     return {
       type: "list",
-      sections: model.sections.map((section) => ({
-        title: section.title,
-        tasks: section.tasks.map(queryRunTaskJson),
-      })),
+      tasks: model.tasks.map(queryRunTaskJson),
     };
   }
   if (model.type === "week") {

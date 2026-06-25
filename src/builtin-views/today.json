@@ -5,12 +5,14 @@
   "hidden": false,
   "view": {
     "layout": {
-      "type": "list",
-      "sections": [
+      "dir": "col",
+      "children": [
         {
+          "type": "list",
           "id": "overdue",
           "title": "Overdue",
           "when": {
+            "status": ["todo"],
             "time": {
               "deadline": "overdue"
             }
@@ -21,9 +23,11 @@
           "limit": 3
         },
         {
+          "type": "list",
           "id": "today",
           "title": "Today",
           "when": {
+            "status": ["todo"],
             "time": {
               "scheduled": "today"
             }
@@ -31,9 +35,11 @@
           "limit": 3
         },
         {
+          "type": "list",
           "id": "unscheduled-rec",
           "title": "Unscheduled",
           "when": {
+            "status": ["todo"],
             "time": {
               "scheduled": "unscheduled",
               "deadline": "unscheduled"
@@ -44,12 +50,7 @@
           ],
           "limit": 3
         }
-      ],
-      "when": {
-        "status": [
-          "todo"
-        ]
-      }
+      ]
     }
   }
 }
