@@ -72,13 +72,15 @@ describe("Task Center — task format matrix (US-111)", function () {
 
     it(`US-111 write: setting=${setting.name} — add stamps scheduled+created in ${setting.name}`, async function () {
       await resetForWriteFlavor(setting.setting);
-      await callApi((api) =>
-        api.add({
-          text: "Add stamp task",
-          to: PATH,
-          scheduled: "2099-12-31",
-          stampCreated: true,
-        }),
+      await callApi(
+        (api, to) =>
+          api.add({
+            text: "Add stamp task",
+            to,
+            scheduled: "2099-12-31",
+            stampCreated: true,
+          }),
+        PATH,
       );
 
       const content = await readFile(PATH);
@@ -101,18 +103,21 @@ describe("Task Center — task format matrix (US-111)", function () {
       );
       await forFlush();
 
-      const scheduled = await callApi((api) => api.schedule(`${PATH}:L1`, "2099-12-31"));
+      const scheduled = await callApi(
+        (api, id) => api.schedule(id, "2099-12-31"),
+        `${PATH}:L1`,
+      );
       await expect(scheduled.after).toContain(setting.scheduled("2099-12-31"));
       await expect(scheduled.after).not.toMatch(foreign.scheduledRe);
 
       await forFlush();
-      const done = await callApi((api) => api.done(`${PATH}:L2`));
+      const done = await callApi((api, id) => api.done(id), `${PATH}:L2`);
       await expect(done.after).toContain("[x]");
       await expect(done.after).toMatch(setting.completionRe);
       await expect(done.after).not.toMatch(foreign.completionRe);
 
       await forFlush();
-      const dropped = await callApi((api) => api.drop(`${PATH}:L3`));
+      const dropped = await callApi((api, id) => api.drop(id), `${PATH}:L3`);
       await expect(dropped.after).toContain("[-]");
       await expect(dropped.after).toMatch(setting.cancelledRe);
       await expect(dropped.after).not.toMatch(foreign.cancelledRe);
@@ -131,7 +136,10 @@ describe("Task Center — task format matrix (US-111)", function () {
       await writeAndWait(PATH, `- [ ] Foreign task #keep ${foreign.scheduled(today)}\n`);
       await forFlush();
 
-      const res = await callApi((api) => api.schedule(`${PATH}:L1`, "2099-12-31"));
+      const res = await callApi(
+        (api, id) => api.schedule(id, "2099-12-31"),
+        `${PATH}:L1`,
+      );
 
       await expect(res.after).toContain(setting.scheduled("2099-12-31"));
       await expect(res.after).not.toMatch(foreign.scheduledRe);

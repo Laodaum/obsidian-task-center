@@ -5,8 +5,8 @@ Date: 2026-06-25
 This document records the current test split. As of 2026-06-25, PR/main CI and
 the release pre-flight gate both run the full unit suite plus the stable
 WebDriverIO specs that protect the board entry path, the source Markdown editor
-path, the drag write-path, and the task-format flavor contract (both the
-Dataview diagonal and the full write×content matrix). The wider historical e2e
+path, and the task-format flavor contract (both the Dataview diagonal and the
+full write×content matrix). The wider historical e2e
 suite remains available for investigation, but is not yet stable enough to be a
 release gate.
 
@@ -19,8 +19,15 @@ release preflight) currently covers these specs with `OBSIDIAN_VERSIONS=latest/l
 - `source-edit-dialog.e2e.ts` — US-168 source Markdown edit shell
 - `dataview-format.e2e.ts` — US-111 Dataview journeys (diagonal: setting=dataview, content=dataview)
 - `format-matrix.e2e.ts` — US-111 full flavor matrix (write setting × on-disk content, incl. off-diagonal read parity and cross-format mutation)
-- `drag.e2e.ts` — US-121/122a/123 drag reschedule / unschedule / abandon, plus nest edges
 - `saved-views.e2e.ts`, `mobile-filter-ui.e2e.ts`, `modal-centered.e2e.ts`, `tag-match-mode.e2e.ts`
+
+`drag.e2e.ts` is the next promotion candidate but is NOT yet in the gate: its
+`task #106 right-click subtask` case depends on `view.openContextMenu` being
+resolvable from the live view instance and fails intermittently under the
+gate environment (`Task Center view/openContextMenu not found`). Stabilize that
+case before promoting. Note that `format-matrix.e2e.ts` already covers the
+schedule / unschedule / done / drop *write semantics* (via the plugin API, in
+both flavors); what `drag.e2e.ts` adds is the synthetic-DnD path specifically.
 
 | Surface | Trigger | Checks | E2E coverage | Purpose |
 | --- | --- | --- | --- | --- |

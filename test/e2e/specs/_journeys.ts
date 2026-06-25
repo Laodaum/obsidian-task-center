@@ -185,16 +185,29 @@ export interface TaskCenterApi {
   ): Promise<{ before: string; after: string; unchanged: boolean }>;
 }
 
-/** Call the plugin's public API inside Obsidian; `fn` is serialized to source. */
-export async function callApi<T>(fn: (api: TaskCenterApi) => Promise<T>): Promise<T> {
-  return (await browser.executeObsidian(async ({ app }, fnSrc: string) => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const plugin = (app as any).plugins?.getPlugin?.("task-center");
-    if (!plugin?.api) throw new Error("plugin api not found");
-    // eslint-disable-next-line no-new-func
-    const callable = new Function("api", `return (${fnSrc})(api)`);
-    return await callable(plugin.api);
-  }, fn.toString())) as T;
+/**
+ * Call the plugin's public API inside Obsidian. `fn` is serialized with
+ * `.toString()`, so it must NOT close over module-level variables — those don't
+ * exist in the browser-side `new Function` scope (the classic "X is not
+ * defined" trap). Pass any dynamic values (paths, ids, dates) as trailing
+ * `args`; they are forwarded and spread into `fn` after `api`.
+ */
+export async function callApi<T>(
+  fn: (api: TaskCenterApi, ...args: string[]) => Promise<T>,
+  ...args: string[]
+): Promise<T> {
+  return (await browser.executeObsidian(
+    async ({ app }, fnSrc: string, fnArgs: string[]) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const plugin = (app as any).plugins?.getPlugin?.("task-center");
+      if (!plugin?.api) throw new Error("plugin api not found");
+      // eslint-disable-next-line no-new-func
+      const callable = new Function("api", "args", `return (${fnSrc})(api, ...args)`);
+      return await callable(plugin.api, fnArgs);
+    },
+    fn.toString(),
+    args,
+  )) as T;
 }
 
 /* ----------------------------------------------------------------- flavors - */
