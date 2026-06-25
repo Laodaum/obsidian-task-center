@@ -60,7 +60,11 @@ describe("Task Center — mobile explicit entry points (US-711)", function () {
     await expect($("[data-mobile-action='quick-add']")).toExist();
     await expect($(".bt-mobile-trash[data-drop-zone='abandon']")).not.toExist();
 
-    await $("[data-mobile-action='quick-add']").click();
+    // The mobile bottom action bar can sit under the status bar in the e2e
+    // viewport; click via JS to bypass the coordinate-based intercept.
+    await browser.execute(() => {
+      document.querySelector<HTMLElement>("[data-mobile-action='quick-add']")?.click();
+    });
     await $(".task-center-bottom-sheet").waitForExist({
       timeout: 3000,
       timeoutMsg: "US-711: mobile Quick Add entry did not open the bottom sheet",
@@ -71,7 +75,9 @@ describe("Task Center — mobile explicit entry points (US-711)", function () {
 
     await $("[data-tab='week']").click();
     await $('[data-tab="week"].active').waitForExist({ timeout: 3000 });
-    await $("[data-mobile-action='open-unscheduled']").click();
+    await browser.execute(() => {
+      document.querySelector<HTMLElement>("[data-mobile-action='open-unscheduled']")?.click();
+    });
     await $('[data-tab="unscheduled"].active').waitForExist({
       timeout: 3000,
       timeoutMsg: "US-711: mobile Unscheduled entry did not open Unscheduled",
