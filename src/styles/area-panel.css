@@ -145,6 +145,8 @@
   min-width: 0;
 }
 .task-center-bottom-sheet .bt-layout-area:hover { background: var(--background-modifier-hover); }
+/* 整行可点即编辑该区域，给出 pointer 提示（行为见 query-editor.ts）。 */
+.task-center-bottom-sheet .bt-layout-area { cursor: pointer; }
 .task-center-bottom-sheet .bt-layout-area-icon {
   display: inline-flex;
   flex: 0 0 auto;
@@ -438,4 +440,21 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+/* US-117g: 移动端只读区域列表（移动端不画布局，布局是桌面能力）。复用 .bt-layout-area
+   的基础行样式，只加只读列表特有的：整行可点光标 + 触摸目标行高 + 行尾进入指示。 */
+.task-center-bottom-sheet .bt-layout-area-list .bt-layout-area-readonly {
+  cursor: pointer;
+  min-height: 44px;
+}
+.task-center-bottom-sheet .bt-layout-area-enter {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  color: var(--text-faint);
+}
+.task-center-bottom-sheet .bt-layout-area-enter svg {
+  width: 16px;
+  height: 16px;
 }

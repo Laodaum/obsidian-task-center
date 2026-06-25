@@ -5013,5 +5013,19 @@
   flex-direction: column;
   gap: 6px;
 }
+.task-center-bottom-sheet .bt-layout-area-list .bt-layout-area-readonly {
+  cursor: pointer;
+  min-height: 44px;
+}
+.task-center-bottom-sheet .bt-layout-area-enter {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  color: var(--text-faint);
+}
+.task-center-bottom-sheet .bt-layout-area-enter svg {
+  width: 16px;
+  height: 16px;
+}
 
 /* src/styles/index.css */

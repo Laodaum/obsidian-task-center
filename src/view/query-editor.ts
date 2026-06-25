@@ -128,13 +128,46 @@ export class QueryEditorView {
       text: `${tr("savedViews.layout")} · ${tr("savedViews.layoutSummary", { count: areaCount, dir: rootDir })}`,
     });
     const tree = layoutSection.createDiv({ cls: "bt-layout-tree" });
-    this.renderLayoutTreeNode(tree, layout, [], { n: 0 }, rerender);
-    const addArea = layoutSection.createEl("button", {
-      cls: "bt-layout-add bt-layout-add--root",
-      text: `＋ ${tr("savedViews.layoutAddArea")}`,
-    });
-    addArea.dataset.action = "add-area-root";
-    addArea.addEventListener("click", (e) => this.openAddAreaMenu(e, [], rerender));
+    // US-117g: 移动端不画布局（布局是桌面能力）。窄屏下布局小节退化为只读区域列表——
+    // 列出各区域、整行可点进入该区域的 Area 面板改过滤；不渲染可编辑布局树与「＋添加区域」。
+    const mobileLayout = this.v.contentEl.dataset.mobileLayout === "true";
+    if (mobileLayout) {
+      tree.addClass("bt-layout-area-list");
+      collectAreas(layout).forEach((area, areaIndex) => {
+        const row = tree.createDiv({ cls: "bt-layout-area bt-layout-area-readonly" });
+        row.dataset.layoutArea = String(areaIndex);
+        setIcon(row.createSpan({ cls: "bt-layout-area-icon" }), this.areaTypeIcon(area.type as AreaType));
+        const main = row.createDiv({ cls: "bt-layout-area-main" });
+        main.createSpan({
+          cls: "bt-layout-area-title",
+          text: this.v.localizeBuiltinTitle(area.id, area.title) || this.areaTypeLabel(area.type as AreaType),
+        });
+        const when = this.v.areaWhenByIndex(areaIndex);
+        const summary = when ? this.v.areaFilterSummary(when) : "";
+        if (summary) main.createSpan({ cls: "bt-layout-area-when", text: summary });
+        setIcon(row.createSpan({ cls: "bt-layout-area-enter" }), "chevron-right");
+        row.addEventListener("click", () => {
+          const parentEl = tree.closest<HTMLElement>("[data-query-editor]");
+          if (parentEl) {
+            this.reRenderInPlace(parentEl, rerender, () => {
+              this.scope = "area";
+              this.areaIndex = areaIndex;
+              this.areaTab = "filter";
+            });
+          } else {
+            this.open({ scope: "area", areaIndex });
+          }
+        });
+      });
+    } else {
+      this.renderLayoutTreeNode(tree, layout, [], { n: 0 }, rerender);
+      const addArea = layoutSection.createEl("button", {
+        cls: "bt-layout-add bt-layout-add--root",
+        text: `＋ ${tr("savedViews.layoutAddArea")}`,
+      });
+      addArea.dataset.action = "add-area-root";
+      addArea.addEventListener("click", (e) => this.openAddAreaMenu(e, [], rerender));
+    }
 
     this.renderDslTab(parent, rerender);
   }
