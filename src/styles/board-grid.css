@@ -421,6 +421,30 @@
   cursor: pointer;
 }
 
+/* US-720d: centered view-level empty state for an all-empty list/grid view. */
+.task-center-view .bt-view-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 50vh;
+  padding: 24px;
+  text-align: center;
+}
+.task-center-view .bt-view-empty-icon {
+  display: inline-flex;
+  color: var(--text-faint);
+}
+.task-center-view .bt-view-empty-icon svg {
+  width: 40px;
+  height: 40px;
+}
+.task-center-view .bt-view-empty-title {
+  font-size: 14px;
+  color: var(--text-muted);
+}
+
 /* Unknown area — graceful fallback for an unsupported area type. */
 .task-center-view .bt-unknown-area {
   border: 1px dashed var(--background-modifier-border);

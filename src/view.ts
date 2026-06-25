@@ -36,7 +36,7 @@ import { taskDisplayTags } from "./tags";
 import { taskMatchesTimeToken, timeTokenAppliesToField } from "./time-filter";
 import { deriveEffectiveTasks, recomputeTopLevelInQuery } from "./task-tree";
 import type { EffectiveTask } from "./task-tree";
-import { projectListArea } from "./query/projection";
+import { projectListArea, areasAllEmpty } from "./query/projection";
 import { applyQueryFilters, queryFilterHasActiveConditions } from "./query/filter";
 import { TabOverflowMeasure } from "./view/tab-overflow";
 import {
@@ -1402,7 +1402,27 @@ export class TaskCenterView extends ItemView {
     this.renderAreaCounter = 0;
     // Reset the per-pass "first content area" guard before walking the layout.
     this.firstContentPlaced = false;
+    // US-720d: when every content area is a (non-drop) list/grid and all are
+    // empty, show ONE centered view-level empty state instead of stacking a small
+    // empty state under each area. Not Today-specific — any all-empty list/grid
+    // view (Today's three groups, four quadrants, TODO) benefits.
+    const filter = this.getTextFilter();
+    const filtered = recomputeTopLevelInQuery(this.getEffectiveTasks().filter(filter));
+    if (this.tasks.length > 0 && areasAllEmpty(collectAreas(layout), filtered, this.plugin.settings.weekStartsOn, this.justCompletedIds)) {
+      this.renderViewEmptyState(root);
+      return;
+    }
     this.renderLayoutNode(root, layout);
+  }
+
+  // US-720d: one centered empty state for an all-empty list/grid view. The
+  // data-today-empty hook keeps the Today empty-state contract stable.
+  private renderViewEmptyState(parent: HTMLElement): void {
+    const empty = parent.createDiv({ cls: "bt-view-empty" });
+    empty.dataset.emptyState = "view";
+    empty.dataset.todayEmpty = "";
+    setIcon(empty.createDiv({ cls: "bt-view-empty-icon" }), "check-circle");
+    empty.createDiv({ text: tr("view.allEmpty"), cls: "bt-view-empty-title" });
   }
 
   private renderLayoutNode(parent: HTMLElement, node: LayoutNode): void {

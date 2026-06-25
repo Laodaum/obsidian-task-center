@@ -502,3 +502,46 @@ test("US-109h: area-level when {status} filters the area's own cards", async () 
     "area.when {status:[todo,done]} keeps both",
   );
 });
+
+// ── US-720d: areasAllEmpty (view-level empty state) ──
+
+test("US-720d: areasAllEmpty — true only when every list/grid area projects empty", async () => {
+  if (compileErr) throw compileErr;
+  const { areasAllEmpty } = await import("../test/.compiled/projection.js");
+  const tasks = [effectiveTask({ id: "a", tags: ["#x"] })];
+
+  // Two list areas that both filter to nothing → all empty.
+  assert.equal(
+    areasAllEmpty(
+      [
+        { type: "list", when: { tags: { expr: "#none1" } } },
+        { type: "list", when: { tags: { expr: "#none2" } } },
+      ],
+      tasks,
+      1,
+    ),
+    true,
+  );
+
+  // One area matches the task → not all empty.
+  assert.equal(
+    areasAllEmpty(
+      [
+        { type: "list", when: { tags: { expr: "#x" } } },
+        { type: "list", when: { tags: { expr: "#none" } } },
+      ],
+      tasks,
+      1,
+    ),
+    false,
+  );
+});
+
+test("US-720d: areasAllEmpty — false for non-list/grid, drop/tray, or empty layouts", async () => {
+  if (compileErr) throw compileErr;
+  const { areasAllEmpty } = await import("../test/.compiled/projection.js");
+  assert.equal(areasAllEmpty([{ type: "week" }], [], 1), false);
+  assert.equal(areasAllEmpty([{ type: "list", onDrop: { setStatus: "dropped" } }], [], 1), false);
+  assert.equal(areasAllEmpty([{ type: "drop", onDrop: { setStatus: "dropped" } }], [], 1), false);
+  assert.equal(areasAllEmpty([], [], 1), false);
+});
