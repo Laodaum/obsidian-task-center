@@ -394,6 +394,13 @@
   border: 1px solid var(--background-modifier-border);
   border-radius: 999px;
 }
+/* US-109d2: the same toggle pinned at the top of the OPEN tag popover (above the
+   search box). Host-agnostic positioning modifier; pill + button styling is
+   inherited from the host-scoped .bt-area-tag-mode / -btn rules. */
+.bt-area-tag-mode--popover {
+  align-self: flex-start;
+  margin: 0 0 6px;
+}
 .task-center-view .bt-area-tag-mode-btn {
   appearance: none;
   border: none;

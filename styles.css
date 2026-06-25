@@ -2271,6 +2271,10 @@
   border: 1px solid var(--background-modifier-border);
   border-radius: 999px;
 }
+.bt-area-tag-mode--popover {
+  align-self: flex-start;
+  margin: 0 0 6px;
+}
 .task-center-view .bt-area-tag-mode-btn {
   appearance: none;
   border: none;

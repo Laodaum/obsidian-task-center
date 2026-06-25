@@ -251,6 +251,25 @@ function renderAreaTagList(
   new MutationObserver((_m, obs) => {
     if (!popover.isConnected) { cleanup(); obs.disconnect(); }
   }).observe(sec, { childList: true, subtree: true });
+  // US-109d2: with ≥2 tags (where AND vs OR actually differs), the match-mode
+  // toggle also sits at the TOP of the OPEN popover (above the search box), so
+  // the user sees and switches it the moment they're picking tags — not only
+  // after the popover closes. The head copy (above) covers the popover-closed
+  // case; the two are mutually exclusive (open vs closed), never both at once.
+  if (selectedTags.length >= 2) {
+    const seg = popover.createDiv({ cls: "bt-area-tag-mode bt-area-tag-mode--popover" });
+    seg.setAttribute("aria-label", tr("savedViews.tagMatchMode"));
+    for (const opt of tagModeOptions()) {
+      const btn = seg.createEl("button", {
+        text: opt.label,
+        cls: "bt-area-tag-mode-btn" + (opt.value === tagMode ? " active" : ""),
+      });
+      btn.dataset.tagMode = opt.value;
+      btn.setAttribute("aria-pressed", String(opt.value === tagMode));
+      btn.addEventListener("click", () =>
+        v.setAreaWhen(areaIndex, { ...when, tags: buildTagsField(selectedTags, opt.value) }, rerenderControls));
+    }
+  }
   const searchInput = popover.createEl("input", { type: "text", cls: "bt-area-tag-search", placeholder: tr("savedViews.tagSearch") });
   const list = popover.createDiv({ cls: "bt-area-tag-list" });
   const options = v.collectTagOptions(selectedTags);

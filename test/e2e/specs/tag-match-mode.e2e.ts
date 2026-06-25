@@ -60,7 +60,7 @@ describe("tag match mode (AND/OR) toggle", function () {
     await obsidianPage.resetVault(VAULT);
   });
 
-  it("appears at ≥2 tags, defaults to AND, and switching to OR persists", async function () {
+  it("appears at ≥2 tags (in the open popover and the head), defaults to AND, switching to OR persists", async function () {
     const today = todayISO();
     await writeAndWait(
       "Tasks/Inbox.md",
@@ -81,7 +81,7 @@ describe("tag match mode (AND/OR) toggle", function () {
     await areaEdit.click();
     await $('[data-query-editor-scope="area"]').waitForExist({ timeout: 5000 });
 
-    // The toggle is absent with no tags selected.
+    // The toggle is absent with no tags selected (neither head nor popover).
     await expect($(".bt-area-tag-mode")).not.toExist();
 
     // Open the tag select and pick two distinct tags.
@@ -90,23 +90,32 @@ describe("tag match mode (AND/OR) toggle", function () {
     await $('.bt-area-tag-row[data-area-tag="#alpha"]').click();
     await $('.bt-area-tag-row[data-area-tag="#beta"]').click();
 
-    // Close the popover so the match-mode toggle (shown only when the popover is
-    // closed, to avoid the floating popover covering it) appears in the head.
-    await $(".bt-area-tag-trigger").click();
-    await $(".bt-area-tag-list").waitForExist({ reverse: true, timeout: 5000 });
-
-    // Segmented toggle appears and defaults to AND (全部).
-    await $(".bt-area-tag-mode").waitForExist({ timeout: 5000 });
+    // US-109d2: with ≥2 tags and the popover STILL OPEN, the match-mode toggle is
+    // visible INSIDE the popover (above the search box) — the user sees it the
+    // moment they're picking tags, not only after closing the popover. It defaults
+    // to AND (全部).
+    await $(".bt-area-tag-mode--popover").waitForExist({ timeout: 5000 });
     await browser.waitUntil(async () => (await hasActiveMode("and")) && !(await hasActiveMode("or")), {
       timeout: 5000,
-      timeoutMsg: "expected AND to be the default active mode",
+      timeoutMsg: "expected AND to be the default active mode in the open popover",
     });
 
-    // Switch to OR (任一); active state moves and survives the rerender.
-    await $('.bt-area-tag-mode-btn[data-tag-mode="or"]').click();
+    // Switch to OR (任一) from inside the open popover; active state moves and the
+    // popover stays open through the rerender.
+    await $('.bt-area-tag-mode--popover .bt-area-tag-mode-btn[data-tag-mode="or"]').click();
     await browser.waitUntil(async () => (await hasActiveMode("or")) && !(await hasActiveMode("and")), {
       timeout: 5000,
-      timeoutMsg: "expected OR to become the active mode after clicking 任一",
+      timeoutMsg: "expected OR to become active after clicking 任一 inside the popover",
+    });
+
+    // Close the popover; the equivalent toggle now appears in the head (the two
+    // placements are mutually exclusive) and keeps the OR selection.
+    await $(".bt-area-tag-trigger").click();
+    await $(".bt-area-tag-list").waitForExist({ reverse: true, timeout: 5000 });
+    await $(".bt-area-tag-mode").waitForExist({ timeout: 5000 });
+    await browser.waitUntil(async () => (await hasActiveMode("or")) && !(await hasActiveMode("and")), {
+      timeout: 5000,
+      timeoutMsg: "expected OR to persist in the head toggle after closing the popover",
     });
   });
 });
