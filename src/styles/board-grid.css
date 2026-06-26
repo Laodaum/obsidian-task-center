@@ -286,7 +286,8 @@
   font-size: var(--font-ui-smaller);
   color: var(--text-muted);
   background: var(--background-secondary);
-  border: 1px solid var(--background-modifier-border);
+  /* 用户反馈：设置类图标按钮弱化掉 border，干净一点（保留 1px 透明边以免尺寸跳动）。 */
+  border: 1px solid transparent;
   border-radius: var(--radius-s);
   cursor: pointer;
   box-shadow: none;
@@ -294,7 +295,6 @@
 }
 .task-center-view .bt-area-edit:hover {
   background: var(--background-modifier-hover);
-  border-color: var(--interactive-accent);
   color: var(--text-normal);
 }
 .task-center-view .bt-area-edit.active {
@@ -306,8 +306,9 @@
   display: inline-flex;
 }
 .task-center-view .bt-area-edit-icon svg {
-  width: 15px;
-  height: 15px;
+  /* area 与 tab（mobile filter）的 sliders 图标统一 16px，不留大小差。 */
+  width: 16px;
+  height: 16px;
 }
 .task-center-view .bt-area-filter-popover {
   position: absolute;
