@@ -22,13 +22,14 @@ export function renderWeek(
   areaIndex: number,
 ): void {
   // US-109p9: shared area head (title + 日期导航 + 编辑 entry) — one row, same
-  // component as list/grid. §3.0: desktop owns the range nav inside this head;
-  // mobile keeps the nav in the toolbar's first row (§6.2), so head has none.
-  const rawTitle = v.localizeBuiltinTitle(area.id, area.title);
-  const desktop = v.contentEl.dataset.mobileLayout !== "true";
+  // component as list/grid. The range nav lives in this head on every platform.
+  // US-511: title uses the shared resolveAreaHeadTitle rule (so a week area that
+  // is the view's first area shows the view name, e.g. "Week"); the date nav
+  // lives in the area head on BOTH desktop and mobile — the head is the mobile
+  // accordion toggle, so the nav (and the area's identity) belong here.
   v.renderAreaHead(parent, areaIndex, area, {
-    title: rawTitle,
-    renderNav: desktop ? (host) => v.renderRangeNav(host) : undefined,
+    title: v.resolveAreaHeadTitle(area),
+    renderNav: (host) => v.renderRangeNav(host),
   });
   const today = todayISO();
   const days = buildWeekDays(v.state.anchorISO, v.plugin.settings.weekStartsOn);
@@ -140,11 +141,13 @@ export function renderMonth(
   areaIndex: number,
 ): void {
   // US-109p9: shared area head (title + 日期导航 + 编辑 entry) — one row.
-  const rawTitle = v.localizeBuiltinTitle(area.id, area.title);
-  const desktop = v.contentEl.dataset.mobileLayout !== "true";
+  // US-511: title uses the shared resolveAreaHeadTitle rule (so a month area
+  // that is the view's first area shows the view name, e.g. "Month"); the date
+  // nav lives in the area head on BOTH desktop and mobile — the head is the
+  // mobile accordion toggle, so the nav (and the area's identity) belong here.
   v.renderAreaHead(parent, areaIndex, area, {
-    title: rawTitle,
-    renderNav: desktop ? (host) => v.renderRangeNav(host) : undefined,
+    title: v.resolveAreaHeadTitle(area),
+    renderNav: (host) => v.renderRangeNav(host),
   });
   const today = todayISO();
   const { first, last, gridStart, gridDays } = buildMonthGrid(

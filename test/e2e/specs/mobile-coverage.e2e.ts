@@ -247,6 +247,43 @@ describe("Task Center — mobile coverage gap-fill (task #44)", function () {
     expect(metrics.emptyRowHeight).toBeLessThanOrEqual(metrics.emptyHeadHeight + 4);
   });
 
+  // US-511: a view's content areas are a single-open accordion. Week (the
+  // first content area) is expanded by default; opening another area's head
+  // collapses the rest.
+  it("US-511: mobile areas are a single-open accordion (week open by default; opening another collapses it)", async function () {
+    const today = todayISO();
+    await writeAndWait(
+      "Tasks/Inbox.md",
+      `- [ ] Scheduled today ⏳ ${today}\n- [ ] No schedule task\n`,
+    );
+    await openMobileBoardWeek();
+
+    await $(".task-center-view .bt-area-accordion").waitForExist({ timeout: 5000 });
+
+    // Default: exactly the first accordion area (week) is expanded.
+    const initial = await browser.execute(() =>
+      Array.from(document.querySelectorAll<HTMLElement>(".task-center-view .bt-area-accordion"))
+        .map((a) => a.classList.contains("bt-area-collapsed")),
+    );
+    expect(initial.length).toBeGreaterThanOrEqual(2);
+    expect(initial[0]).toBe(false);
+    expect(initial.slice(1).every(Boolean)).toBe(true);
+
+    // Tapping the second area's head opens it and collapses the first.
+    await browser.execute(() => {
+      const areas = Array.from(
+        document.querySelectorAll<HTMLElement>(".task-center-view .bt-area-accordion"),
+      );
+      areas[1]?.querySelector<HTMLElement>(".bt-area-head")?.click();
+    });
+    const after = await browser.execute(() =>
+      Array.from(document.querySelectorAll<HTMLElement>(".task-center-view .bt-area-accordion"))
+        .map((a) => a.classList.contains("bt-area-collapsed")),
+    );
+    expect(after[0]).toBe(true);
+    expect(after[1]).toBe(false);
+  });
+
   it("US-505: mobile task check circles align with the first title line", async function () {
     const today = todayISO();
     await writeAndWait(

@@ -5,9 +5,11 @@
    the orientation/size split, not a mobile/desktop probe (§13 #1, #8).
    ───────────────────────────────────────────────────────────────────────── */
 
-/* Status row (mirrors the desktop status bar widget) — mobile only. */
+/* US-511a: the page is edge-to-edge. The view itself has no side padding;
+   chrome (tab bar / toolbar / status) re-adds its own small gutter, while the
+   accordion bodies and their cards span the full viewport width. */
 .task-center-view[data-mobile-layout="true"] {
-  padding: 0 8px;
+  padding: 0;
 }
 
 .task-center-view .bt-mobile-status {
@@ -21,58 +23,26 @@
     border-bottom: 1px solid var(--background-modifier-border);
   }
 
-/* Bottom sticky action bar (Unscheduled + ➕) — mobile only. */
-.task-center-view .bt-mobile-action-bar {
-  display: none;
-}
-  .task-center-view[data-mobile-layout="true"] .bt-mobile-action-bar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    position: sticky;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    padding: 8px 12px calc(8px + env(safe-area-inset-bottom, 0px));
-    background: var(--background-primary);
-    border-top: 1px solid var(--background-modifier-border);
-    box-shadow: 0 -2px 6px rgba(0, 0, 0, 0.06);
-    z-index: 10;
-  }
-  .task-center-view[data-mobile-layout="true"] .bt-mobile-add-btn {
-    flex: 0 0 auto;
-    padding: 6px 14px;
-    border-radius: 8px;
-    background: var(--interactive-accent);
-    color: var(--text-on-accent);
-    border: none;
-    font-weight: 600;
-  }
-  .task-center-view[data-mobile-layout="true"] .bt-mobile-unscheduled-btn {
-    flex: 1 1 auto;
-    min-width: 0;
-    padding: 6px 12px;
-    border-radius: 8px;
-    background: var(--background-secondary);
-    border: 1px solid var(--background-modifier-border);
-    color: var(--text-normal);
-    font-weight: 600;
-  }
-
-  /* Desktop pool trash hidden on mobile — abandon is swipe / action sheet. */
+  /* US-512: the unscheduled tray is now an accordion section, and abandon is a
+     swipe / action sheet — so the desktop drop area and pool trash carry no
+     mobile affordance and are hidden. */
+  .task-center-view[data-mobile-layout="true"] .bt-area-drop,
   .task-center-view[data-mobile-layout="true"] .bt-trash {
     display: none;
   }
 
-  /* Toolbar `+ Add` is duplicated by the action bar; hide on mobile so the
-     thumb-reachable bottom button is the canonical entry. */
+  /* US-512: new-task entry is the toolbar `+` (opens Quick Add); it is the only
+     mobile creation path (US-169). Make it a thumb-reachable accent button. */
   .task-center-view[data-mobile-layout="true"] .bt-toolbar .bt-add-btn {
-    display: none;
+    flex: 0 0 auto;
+    min-height: 44px;
+    padding: 0 16px;
+    border-radius: 8px;
+    font-weight: 600;
   }
 
   .task-center-view[data-mobile-layout="true"] .bt-toolbar {
-    padding: 4px 0;
+    padding: 4px 8px;
   }
   .task-center-view[data-mobile-layout="true"] .bt-toolbar-row {
     flex-wrap: nowrap;
@@ -80,9 +50,10 @@
     max-width: 100%;
     min-width: 0;
   }
+  /* US-511: the date nav moved to the week / month area head, so the mobile
+     toolbar carries only the 编辑视图 entry (left) + 新建 「+」 (right). */
   .task-center-view[data-mobile-layout="true"] .bt-toolbar-main {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto auto;
+    display: flex;
     align-items: center;
     gap: 8px;
   }
@@ -142,7 +113,9 @@
   .task-center-view[data-mobile-layout="true"] .bt-body {
     width: 100%;
     min-width: 0;
-    padding-bottom: calc(76px + env(safe-area-inset-bottom, 0px));
+    /* US-512: no bottom action bar to clear anymore — just a small safe-area
+       cushion (Obsidian Mobile's own toolbar is handled in mobile-repair.css). */
+    padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
   }
 
   .task-center-view[data-mobile-layout="true"] .bt-card {
@@ -161,6 +134,7 @@
     height: 40px;
     max-height: 40px;
     align-items: stretch;
+    padding-left: 8px;
     -webkit-overflow-scrolling: touch;
     overscroll-behavior-y: contain;
     touch-action: pan-x;
@@ -214,21 +188,13 @@
     white-space: normal;
   }
 
-  /* ───── Card compact mode (US-505 / UX-mobile §4) ───── */
-
-  /* Hide the path footnote on mobile — it's noise at this width and the
-     full path lives in long-press source info anyway. */
-  .task-center-view[data-mobile-layout="true"] .bt-meta-path {
-    display: none;
-  }
-
-  /* Meta row: single line, truncate with ellipsis if too many fields. */
-  .task-center-view[data-mobile-layout="true"] .bt-card-meta {
-    flex-wrap: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
+  /* ───── Card: visual parity with desktop (US-505) ─────
+     The entry card looks identical to desktop — same type scale, spacing, tag
+     row, meta row, badges and completed-state colors. Mobile only branches on
+     interaction (tap → detail sheet, swipe, no drag) and narrow-screen subtree
+     folding (+N → sheet). So there are NO mobile card visual overrides here:
+     the path footnote and meta row inherit the desktop card styles and simply
+     wrap / ellipsis when the width runs out. */
 
   /* Bigger touch target for the checkbox toggle (≥ 32px hit area while
      keeping the visible icon the same size). */
@@ -314,6 +280,56 @@
   @keyframes tc-swipe-confirm {
     from { opacity: 0; }
     to { opacity: 1; }
+  }
+
+  /* ───── Area accordion (US-511 / US-511a) ─────
+     A view's content areas are a single-open accordion. Each area's head is the
+     toggle; a collapsed area hides everything but its head. Row containers
+     degrade to columns so areas stack vertically. */
+  .task-center-view[data-mobile-layout="true"] .bt-stack-row {
+    flex-direction: column;
+  }
+  /* Once rows are columns, the headerless-sibling top-offset hack is moot. */
+  .task-center-view[data-mobile-layout="true"] .bt-stack-row.bt-row-has-head > .bt-area:not(.bt-has-head) {
+    margin-top: 0;
+  }
+  /* US-511: the accordion head is the single tap target that toggles a view's
+     area open/closed, so it must read as an obviously tappable bar — a visible
+     background, rounded corners, a comfortable touch height and a press state. */
+  /* US-511 视觉修订：area header 改成扁平的「区段标题条」，和下方填充圆角的
+     日卡片（.bt-week-col，--background-secondary）一眼区分——header 是扁平、不
+     占卡片色、底部一条吸顶下划线（来自基础 .bt-area-head 的 box-shadow）的标题，
+     日卡片是抬升的圆角卡片。caret（▸/▾）仍是可点开合的明确提示。 */
+  .task-center-view[data-mobile-layout="true"] .bt-area-accordion > .bt-area-head {
+    cursor: pointer;
+    user-select: none;
+    padding: 2px 8px 6px;
+    min-height: 34px;
+    background: var(--background-primary);
+    border-radius: 0;
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-area-accordion > .bt-area-head:active {
+    background: var(--background-modifier-hover);
+  }
+  /* 标题在窄屏读作区段标题：稍大、用正文色（对比日行里 muted 的日期）。 */
+  .task-center-view[data-mobile-layout="true"] .bt-area-accordion > .bt-area-head .bt-area-head-title {
+    font-size: 12px;
+    color: var(--text-normal);
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-area-collapsed > :not(.bt-area-head) {
+    display: none;
+  }
+  /* The caret is the open/closed affordance: large and legible (not faint), so
+     the collapsed (▸) vs expanded (▾) state is obvious at a glance. */
+  .task-center-view[data-mobile-layout="true"] .bt-area-caret {
+    flex: 0 0 auto;
+    margin-left: 6px;
+    color: var(--text-muted);
+    font-size: 14px;
+    line-height: 1;
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-area-accordion > .bt-area-head:hover .bt-area-caret {
+    color: var(--text-normal);
   }
 
   /* ───── Week view: vertical collapsible list (US-503) ───── */

@@ -1,10 +1,11 @@
 /**
- * US-711: mobile explicit entry points (task #62)
+ * US-711 / US-512: mobile explicit entry points (task #62)
  *
  * Mobile users should not have to discover desktop-only commands before
- * Task Center feels usable. The mobile layout must expose a thumb-reachable
- * Unscheduled entry, a Quick Add entry, and a first-use empty state that
- * does not mention desktop shortcuts.
+ * Task Center feels usable. The mobile layout exposes a Quick Add entry (the
+ * toolbar `+`, US-512) and a first-use empty state that does not mention
+ * desktop shortcuts. There is no bottom action bar — unscheduled tasks live in
+ * the area accordion (US-511), not a sticky bottom button.
  */
 import { browser, expect, $ } from "@wdio/globals";
 import { obsidianPage } from "wdio-obsidian-service";
@@ -41,7 +42,7 @@ describe("Task Center — mobile explicit entry points (US-711)", function () {
     await setMobileMode(false);
   });
 
-  it("US-711: mobile layout exposes Task Center, Quick Add, and first-use empty state", async function () {
+  it("US-711/US-512: mobile exposes Quick Add via the toolbar +, a first-use empty state, and no bottom action bar", async function () {
     await browser.executeObsidianCommand("task-center:open");
     await forFlush();
 
@@ -54,33 +55,22 @@ describe("Task Center — mobile explicit entry points (US-711)", function () {
     expect(await empty.getText()).not.toContain("Cmd/Ctrl");
     await expect($("[data-mobile-action='empty-quick-add']")).toExist();
 
-    const mobileEntry = $("[data-mobile-entry='true']");
-    await expect(mobileEntry).toExist();
-    await expect($("[data-mobile-action='open-unscheduled']")).toExist();
-    await expect($("[data-mobile-action='quick-add']")).toExist();
+    // US-512: new-task entry is the toolbar `+` (Quick Add) — the only mobile
+    // creation path (US-169). The bottom action bar is gone.
+    await expect($(".bt-toolbar .bt-add-btn")).toExist();
+    await expect($("[data-mobile-entry='true']")).not.toExist();
+    await expect($(".bt-mobile-action-bar")).not.toExist();
     await expect($(".bt-mobile-trash[data-drop-zone='abandon']")).not.toExist();
 
-    // The mobile bottom action bar can sit under the status bar in the e2e
-    // viewport; click via JS to bypass the coordinate-based intercept.
     await browser.execute(() => {
-      document.querySelector<HTMLElement>("[data-mobile-action='quick-add']")?.click();
+      document.querySelector<HTMLElement>(".bt-toolbar .bt-add-btn")?.click();
     });
     await $(".task-center-bottom-sheet").waitForExist({
       timeout: 3000,
-      timeoutMsg: "US-711: mobile Quick Add entry did not open the bottom sheet",
+      timeoutMsg: "US-512: toolbar + did not open the Quick Add bottom sheet",
     });
     await browser.execute(() => {
       document.querySelector<HTMLElement>(".modal-close-button")?.click();
-    });
-
-    await $("[data-tab='week']").click();
-    await $('[data-tab="week"].active').waitForExist({ timeout: 3000 });
-    await browser.execute(() => {
-      document.querySelector<HTMLElement>("[data-mobile-action='open-unscheduled']")?.click();
-    });
-    await $('[data-tab="unscheduled"].active').waitForExist({
-      timeout: 3000,
-      timeoutMsg: "US-711: mobile Unscheduled entry did not open Unscheduled",
     });
   });
 });

@@ -28,6 +28,7 @@ import { openMobileDatePicker, openMobileTagEditor, type TagEditResult } from ".
 import { shouldCloseFilterPopoverOnPointerDown, isClickInsideFilterControls } from "./view/filter-popover";
 import { isMobileMode } from "./platform";
 import { weekMinHeightFromViewHeightPx } from "./view/layout";
+import { defaultExpandedAreaIndex, resolveExpandedAreaIndex, nextExpandedAreaIndex } from "./view/area-accordion";
 import { QueryDslModal, type QueryDslSubmitMode } from "./view/query-dsl-modal";
 import { QueryEditorView, type QueryEditorScope, type QueryEditorAreaTab } from "./view/query-editor";
 import { renderMigrationGate } from "./view/migration-gate";
@@ -36,7 +37,7 @@ import { taskDisplayTags } from "./tags";
 import { taskMatchesTimeToken, timeTokenAppliesToField } from "./time-filter";
 import { deriveEffectiveTasks, recomputeTopLevelInQuery } from "./task-tree";
 import type { EffectiveTask } from "./task-tree";
-import { projectListArea, areasAllEmpty } from "./query/projection";
+import { projectListArea } from "./query/projection";
 import { applyQueryFilters, queryFilterHasActiveConditions } from "./query/filter";
 import { TabOverflowMeasure } from "./view/tab-overflow";
 import {
@@ -247,6 +248,10 @@ export class TaskCenterView extends ItemView {
   // Whether the first content area has been seen this render pass — used to
   // give that area a title fallback (the tab name) so its header is labeled.
   private firstContentPlaced = false;
+  // US-511: DFS index of the active view's first content (task-rendering) area.
+  // It is the default-expanded area of the mobile accordion when the user has
+  // not toggled one yet. Recomputed per render in renderViewLayout.
+  private firstContentAreaIndex = 0;
   // US-109p10: the Query editor panel (its render + transient scope/area state)
   // lives in view/query-editor.ts now; this view just holds the instance and
   // exposes the shared helpers it reads.
@@ -290,6 +295,7 @@ export class TaskCenterView extends ItemView {
       collapsedWeeks: new Set(),
       expandedDays: new Set(),
       selectedMonthDay: null,
+      expandedAreaByTab: {},
     };
   }
 
@@ -649,8 +655,11 @@ export class TaskCenterView extends ItemView {
       this.renderViewLayout(body);
     }
 
-    this.renderFooter(el);
-    this.renderMobileActionBar(el);
+    // US-512: 移动端首屏把竖向空间留给内容——不渲染底部统计行，也没有底部
+    // 「未排期 / + 新建」动作条（未排期是手风琴里的一个 area，新建走 toolbar 的 +）。
+    if (this.contentEl.dataset.mobileLayout !== "true") {
+      this.renderFooter(el);
+    }
     this.updateViewLayoutMetrics();
 
     // Restore scroll after layout settles
@@ -683,30 +692,6 @@ export class TaskCenterView extends ItemView {
     const parts = [tr("status.today", { n: todayCount })];
     if (overdue > 0) parts.push(tr("status.overdue", { n: overdue }));
     row.setText(parts.join(" · "));
-  }
-
-  /**
-   * US-502 / US-507 mobile sticky action bar: explicit thumb-reachable
-   * entries only. Mobile has no abandon drop target; abandon lives in
-   * swipe / action-sheet paths, while this bar opens Unscheduled + Quick Add.
-   */
-  private renderMobileActionBar(parent: HTMLElement) {
-    const bar = parent.createDiv({ cls: "bt-mobile-action-bar" });
-    bar.dataset.mobileEntry = "true";
-
-    const unscheduled = bar.createEl("button", {
-      text: tr("tab.unscheduled"),
-      cls: "bt-mobile-unscheduled-btn",
-    });
-    unscheduled.dataset.mobileAction = "open-unscheduled";
-    unscheduled.addEventListener("click", () => this.setTab("unscheduled"));
-
-    const add = bar.createEl("button", {
-      text: tr("toolbar.add"),
-      cls: "bt-mobile-add-btn",
-    });
-    add.dataset.mobileAction = "quick-add";
-    add.addEventListener("click", () => openQuickAdd(this));
   }
 
   // US-113: empty-state onboarding card — "no tasks yet, press + to add" —
@@ -911,6 +896,16 @@ export class TaskCenterView extends ItemView {
 
   activateSavedView(view: QueryPreset): void {
     const current = this.activeSavedView();
+    // US-513: mobile is a lightweight browsing context — a draft only lives on
+    // the current tab while you are on it. Switching tabs drops both tabs'
+    // drafts and enters the target's saved view, no save/discard prompt.
+    if (this.contentEl.dataset.mobileLayout === "true" && current.id !== view.id) {
+      this.tabDrafts.delete(current.id);
+      this.tabDrafts.delete(view.id);
+      this.applySavedView(view);
+      this.render();
+      return;
+    }
     if (current.id !== view.id && this.isSelectedSavedViewDirty(current)) {
       new SwitchTabConfirmModal(
         this.app,
@@ -1402,27 +1397,31 @@ export class TaskCenterView extends ItemView {
     this.renderAreaCounter = 0;
     // Reset the per-pass "first content area" guard before walking the layout.
     this.firstContentPlaced = false;
-    // US-720d: when every content area is a (non-drop) list/grid and all are
-    // empty, show ONE centered view-level empty state instead of stacking a small
-    // empty state under each area. Not Today-specific — any all-empty list/grid
-    // view (Today's three groups, four quadrants, TODO) benefits.
-    const filter = this.getTextFilter();
-    const filtered = recomputeTopLevelInQuery(this.getEffectiveTasks().filter(filter));
-    if (this.tasks.length > 0 && areasAllEmpty(collectAreas(layout), filtered, this.plugin.settings.weekStartsOn, this.justCompletedIds)) {
-      this.renderViewEmptyState(root);
-      return;
-    }
+    // US-511: the first task-rendering area is the mobile accordion's default
+    // open section. collectAreas DFS order matches the render area index.
+    this.firstContentAreaIndex = defaultExpandedAreaIndex(
+      collectAreas(layout).map((a) => areaHandler(a.type).rendersTasks()),
+    );
+    // US-720d2: 全空布局不再折叠成一个 view 级居中空状态。每个 area 各自渲染各自
+    // 的空状态（list/grid 为空 → 本区空状态；四象限四格全空 → 四个格各显示各的），
+    // 避免一个居中空状态把多个并排面板「干没了」。
     this.renderLayoutNode(root, layout);
   }
 
-  // US-720d: one centered empty state for an all-empty list/grid view. The
-  // data-today-empty hook keeps the Today empty-state contract stable.
-  private renderViewEmptyState(parent: HTMLElement): void {
-    const empty = parent.createDiv({ cls: "bt-view-empty" });
-    empty.dataset.emptyState = "view";
-    empty.dataset.todayEmpty = "";
-    setIcon(empty.createDiv({ cls: "bt-view-empty-icon" }), "check-circle");
-    empty.createDiv({ text: tr("view.allEmpty"), cls: "bt-view-empty-title" });
+  // US-511: which area (DFS index) the mobile accordion has open for the active
+  // tab. Falls back to the first content area when the user has not toggled one.
+  // -1 means the user collapsed the open section, so nothing is expanded.
+  mobileExpandedAreaIndex(): number {
+    const tabId = this.effectiveSavedView().id;
+    return resolveExpandedAreaIndex(this.state.expandedAreaByTab[tabId], this.firstContentAreaIndex);
+  }
+
+  // US-511: single-open accordion toggle. Re-clicking the open section collapses
+  // it (all closed); clicking another opens it and closes the rest.
+  toggleMobileArea(areaIndex: number): void {
+    const tabId = this.effectiveSavedView().id;
+    this.state.expandedAreaByTab[tabId] = nextExpandedAreaIndex(this.mobileExpandedAreaIndex(), areaIndex);
+    this.render();
   }
 
   private renderLayoutNode(parent: HTMLElement, node: LayoutNode): void {
@@ -1478,6 +1477,24 @@ export class TaskCenterView extends ItemView {
     return fallback ?? "";
   }
 
+  // US-511: one shared rule for the area head title, used by every area type
+  // (list / grid / week / month) so the head — which doubles as the mobile
+  // accordion toggle — always has a non-empty, collapsible label. No per-type
+  // special case: week/month flow through the exact same path as a list.
+  //   1. explicit (localized) title wins;
+  //   2. otherwise the FIRST content area borrows the saved view's name (this is
+  //      how a week/month that is the view's first area shows "Week"/"Month");
+  //   3. otherwise fall back to the localized area-type label (never empty).
+  resolveAreaHeadTitle(area: AreaConfig): string {
+    const explicit = this.localizeBuiltinTitle(area.id, area.title);
+    if (explicit) return explicit;
+    if (!area.onDrop && !this.firstContentPlaced) {
+      this.firstContentPlaced = true;
+      return this.effectiveSavedView().name;
+    }
+    return tr(areaHandler(area.type).labelKey as Parameters<typeof tr>[0]);
+  }
+
   renderListArea(
     parent: HTMLElement,
     area: ListAreaConfig | GridAreaConfig,
@@ -1498,19 +1515,20 @@ export class TaskCenterView extends ItemView {
 
     // US-109p9: every list/grid area (including the unscheduled tray) gets the
     // one shared area head — title + a single 编辑 entry → unified Query editor.
-    const isFirstContent = !area.onDrop && !this.firstContentPlaced;
-    const rawTitle = this.localizeBuiltinTitle(area.id, area.title);
-    const areaTitle = rawTitle || (isFirstContent ? this.effectiveSavedView().name : "");
-    if (isFirstContent) {
-      this.firstContentPlaced = true;
-    }
-    this.renderAreaHead(parent, areaIndex, area, { title: areaTitle });
+    // US-511: title resolution is the shared resolveAreaHeadTitle rule.
+    this.renderAreaHead(parent, areaIndex, area, { title: this.resolveAreaHeadTitle(area) });
 
     const list = model.tasks.filter((t) => t.isTopLevelInQuery);
     const wrap = parent.createDiv({ cls: `bt-list-view ${cardsCls}`.trim() });
     wrap.dataset.view = grid ? "grid" : "list";
     if (list.length === 0) {
-      // drop-only / tray 区为空时不抢占空状态。
+      // 未排期 tray 为空时显示「没有未排期任务」，让空托盘仍是可见的可投放区，
+      // 而不是整块消失（US-122a）。
+      if (area.onDrop?.clearScheduled) {
+        wrap.createDiv({ text: tr("area.emptyTray"), cls: "bt-empty bt-tray-empty" });
+        return;
+      }
+      // 其它 drop-only 区为空时不抢占空状态。
       if (area.onDrop) return;
       if (this.tasks.length > 0) this.renderAreaEmptyState(wrap, area, areaIndex);
       else wrap.createDiv({ text: tr("filters.empty"), cls: "bt-empty" });
@@ -1618,6 +1636,24 @@ export class TaskCenterView extends ItemView {
     // the icon, no `active` accent, no `when` summary chip. The full `when`
     // overview lives in the Tab panel's layout tree instead.
     edit.addEventListener("click", () => this.openQueryControlsSheet({ scope: "area", areaIndex, areaTab: "filter" }));
+
+    // US-511: on mobile every task-rendering area is a single-open accordion
+    // section. The head is the toggle; collapsed sections hide their body via
+    // CSS (.bt-area-collapsed). Same path for list / grid / week / month — no
+    // per-type exception. The date nav and the edit button keep their own
+    // handlers (excluded from the toggle hit test).
+    if (this.contentEl.dataset.mobileLayout === "true" && areaHandler(area.type).rendersTasks()) {
+      const expanded = this.mobileExpandedAreaIndex() === areaIndex;
+      parent.addClass("bt-area-accordion");
+      parent.toggleClass("bt-area-collapsed", !expanded);
+      head.dataset.accordion = expanded ? "expanded" : "collapsed";
+      head.createSpan({ cls: "bt-area-caret", text: expanded ? "▾" : "▸" });
+      head.addEventListener("click", (e) => {
+        const el = e.target as HTMLElement;
+        if (el.closest("button, a, input, .bt-area-head-nav, .bt-area-edit")) return;
+        this.toggleMobileArea(areaIndex);
+      });
+    }
   }
 
   // US-109d4: the canonical tag filter is one boolean expression string.

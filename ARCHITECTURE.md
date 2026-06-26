@@ -517,6 +517,10 @@ type AreaModel =
 
 View 层负责把同一份 Query / ViewModel 投射成桌面或移动端 DOM，不允许通过移动端分支改变任务集合、Query DSL 或写回语义。（US-109k / US-117）
 
+**移动端 area 单开手风琴（US-511 / US-511a）**：`renderLayoutNode` 在移动布局下把 layout 树里的每个内容 area 包成可折叠节，复用既有 `renderAreaHead`（标题 + 计数 / 导航 + 编辑入口）当 head，点 head 展开 area body 并收起其它（exclusive）。它是**纯渲染 / DOM 适配层**：不改 `view.layout`、不改任务投影、不写 tab draft——只决定哪个 area 的 body 可见。展开态键（哪个 area 打开）是会话态（§7.1 `expandedAreaByTab`），不持久化；默认首个内容 area。area 内部既有折叠（week 7 日行 `expandedDays`、month `selectedMonthDay`）不受影响。容器（row/col）在移动端退化为竖排手风琴；`drop` 等桌面专属 area 在移动端本就不渲染。手风琴容器与 body 移动端左右无 padding，entry card edge-to-edge（CSS 在 `mobile.css`，`[data-mobile-layout="true"]`）。桌面端不进此分支，多 area 同时铺开。
+
+**移动端首屏精简（US-512）**：移动布局下渲染调度根**不调用** `renderFooter`（底部统计行）与 `renderMobileActionBar`（未排期 / + 新建 条）。未排期 tray 仍是 layout 里的一个 area，由手风琴呈现；新建任务入口收敛为顶部 toolbar 的一个「+」→ 打开 Quick Add bottom sheet（US-509 / US-169）。桌面端 Footer 不受影响。
+
 移动端布局状态分两层：
 
 - `data-mobile-layout="true"`：窄屏或用户强制移动布局，用于切换 tabs、toolbar、week/month/card/sheet 的移动端排版。
@@ -660,7 +664,7 @@ Undo 栈：
 
 **(1) per-tab cursor 状态的唯一持有与持久化。** 这些字段是外壳独占的状态真相源，外部子模块**绝不**直接读写，只能经 §7.6 的 Port 间接访问：
 
-- `state: ViewState`（`view/state.ts:6`）：`tab / anchorISO / filter / savedViewId / savedViewTag / savedViewTime / savedViewStatus / expandedDays / selectedMonthDay / collapsedWeeks / showUnscheduledPool / selectedTaskId`。
+- `state: ViewState`（`view/state.ts:6`）：`tab / anchorISO / filter / savedViewId / savedViewTag / savedViewTime / savedViewStatus / expandedDays / selectedMonthDay / collapsedWeeks / showUnscheduledPool / selectedTaskId / expandedAreaByTab`。其中 `expandedAreaByTab`（`Record<tabId, areaIndex>`，US-511）记录移动端各 tab 当前展开哪个 area，会话态、不持久化；缺省回退首个内容 area。
 - `tabDrafts: Map<string, QueryPreset>`（per-tab 草稿，§1.4 `draftByTabId` 的运行时实现）。
 - `justCompletedIds: Set<string>` + `skipNextRefreshClear`（US-153 linger 状态机，§4.2.1）。
 - `tasks / _effectiveTasks / _taskIndex`（数据基线与派生缓存）。
@@ -674,7 +678,7 @@ Undo 栈：
 
 **(3) 组合根（Composition Root）。** 这是本次重构给外壳新增的核心定位：外壳**实现**各 Port（§7.6–§7.9），把 Port 实现**注入**各 view/ 子模块，并路由顶层事件。具体三件：
 
-- **渲染调度根**：`render`（`view.ts:686`）→ 迁移门 gate → 建 `_taskIndex` → `applyMobileLayoutAttr` → `renderTabBar` / `renderMobileStatusRow` / `renderToolbar` / `renderViewLayout`（`view.ts:3024`）→ `renderLayoutNode`（`view.ts:3042`，layout 树 DFS 分派 area）→ Footer / `renderMobileActionBar`。这些**调用**各子模块，不被子模块调用，没有可抽的窄接口，按定义留外壳。
+- **渲染调度根**：`render`（`view.ts:686`）→ 迁移门 gate → 建 `_taskIndex` → `applyMobileLayoutAttr` → `renderTabBar` / `renderMobileStatusRow` / `renderToolbar` / `renderViewLayout`（`view.ts:3024`）→ `renderLayoutNode`（`view.ts:3042`，layout 树 DFS 分派 area；移动端把 area 包成单开手风琴 §4.5）→ Footer / `renderMobileActionBar`（**移动端两者都不渲染**，§4.5 US-512）。这些**调用**各子模块，不被子模块调用，没有可抽的窄接口，按定义留外壳。
 - **注入点**：渲染调度时把 `CalendarRenderPort` / `CardRenderPort` / `SavedViewMutationPort` / `TaskActionsPort` / `PresentationCtx`（§7.7）的实例传给对应子模块函数，取代现在传 `this`。
 - **api / projectArea 调用**：所有 mutation 经 `this.api.*`（done/undone/schedule/drop/nest/tag），所有投影经 `query/projection.ts` 的 `projectArea`。外壳不直接解析 vault、不手写 writer mutation（§2.1）。
 
@@ -694,6 +698,8 @@ DSL editor     → parse/validate → update same draft → controls rehydrate
 - `updateCurrentTab(tabId)`：覆盖 saved query。
 - `saveAsNewTab(effectiveQuery, sourceTabId?)`：创建新 id；`sourceTabId` 只用于复制来源元数据或默认命名，不改变用户语义。
 - `discardDraft(tabId)`：删除 draft。
+
+**切 tab 的分支（US-109s / US-513）**：`activateSavedView` 在切换前看平台——桌面端保留旧行为（dirty 时弹「更新 / 另存为 / 丢弃」`SwitchTabConfirmModal`，否则 `persistCurrentDraft` 把 draft 留在原 tab）；移动端直接 `discardDraft(current.id)` 并 `applySavedView(target)`，不弹确认、不跨 tab 留 draft。
 
 不实现单独的 `saveTab()` / `saveCurrentQuery()` 用户动作。无来源 query 的首次保存也调用 `saveAsNewTab`，因为用户结果同样是“创建一个新的 Query Tab”。所有动作走 `QueryPresetService`，CLI query 动词调用同一个 service。
 

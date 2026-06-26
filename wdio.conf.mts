@@ -1,10 +1,18 @@
 import * as path from "path";
+import dns from "node:dns";
 import { parseObsidianVersions, obsidianBetaAvailable } from "wdio-obsidian-service";
 import { env, platform } from "process";
 import { assertE2eRunsOnlyInCi } from "./wdio-local-guard.mts";
 import { pickWdioVersions } from "./wdio-versions.mts";
 
 assertE2eRunsOnlyInCi(env, platform);
+
+// The remote BYOI gate pod resolves AAAA records but has no IPv6 route, so an
+// IPv6-first connect wastes the first attempt on ENETUNREACH. Prefer IPv4 for
+// the load-time `obsidianBetaAvailable -> getVersions` fetch below (and any
+// child). The metadata cache is pre-warmed by `e2e:prefetch`, so this fetch
+// normally hits the on-disk cache; IPv4-first just removes one failure surface.
+dns.setDefaultResultOrder("ipv4first");
 
 const cacheDir = path.resolve(".obsidian-cache");
 

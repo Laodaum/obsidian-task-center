@@ -65,6 +65,9 @@ importers:
       obsidian:
         specifier: ^1.5.7
         version: 1.12.3(@codemirror/state@6.5.0)(@codemirror/view@6.38.6)
+      obsidian-launcher:
+        specifier: ^3.0.2
+        version: 3.0.2
       tslib:
         specifier: ^2.6.2
         version: 2.8.1

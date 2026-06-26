@@ -8,29 +8,13 @@
   --tc-obsidian-mobile-toolbar-height: 72px;
 }
 
-.task-center-view[data-mobile-layout="true"] {
-  --tc-mobile-action-height: 64px;
-}
-
+/* US-512: no bottom action bar / footer on mobile. The body only needs to clear
+   Obsidian Mobile's own bottom toolbar (US-117c). */
 .task-center-view[data-mobile-layout="true"][data-obsidian-mobile="true"] .bt-body {
   padding-bottom: calc(
-    var(--tc-mobile-action-height) +
     var(--tc-obsidian-mobile-toolbar-height) +
     env(safe-area-inset-bottom, 0px) +
     16px
-  );
-}
-
-.task-center-view[data-mobile-layout="true"][data-obsidian-mobile="true"] .bt-mobile-action-bar {
-  bottom: calc(var(--tc-obsidian-mobile-toolbar-height) + env(safe-area-inset-bottom, 0px));
-  padding-bottom: 8px;
-}
-
-.task-center-view[data-mobile-layout="true"][data-obsidian-mobile="true"] .bt-footer {
-  padding-bottom: calc(
-    var(--tc-mobile-action-height) +
-    var(--tc-obsidian-mobile-toolbar-height) +
-    env(safe-area-inset-bottom, 0px)
   );
 }
 

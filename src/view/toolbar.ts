@@ -17,11 +17,9 @@ export function renderToolbar(v: TaskCenterView, parent: HTMLElement): void {
   // together in mainRow instead of a separate sub-row.
   const subRow = mainRow;
 
-  // Mobile keeps the date nav in the toolbar (§6.2 two-row rule). On desktop
-  // it is owned by the week / month component itself (§3.0).
-  if (mobileLayout) {
-    v.renderRangeNav(mainRow);
-  }
+  // US-511: the date nav lives in the week / month area head on every platform
+  // (the head is the mobile accordion toggle). The mobile toolbar carries only
+  // the 编辑视图 entry + 新建 「+」.
 
   // US-109w/US-109z: the global filter (search box + tag/schedule/time/status
   // chips) is gone from the toolbar — filtering belongs to each list/grid area
