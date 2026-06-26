@@ -28,7 +28,10 @@ export function renderToolbar(v: TaskCenterView, parent: HTMLElement): void {
 
   if (mobileLayout) {
     const mobileFilters = mainRow.createEl("button", { cls: "bt-mobile-filter-btn" });
-    setIcon(mobileFilters, "sliders-horizontal");
+    // Distinct icon from the per-area filter button (which keeps `sliders-horizontal`):
+    // this view-level entry opens the whole Query editor, so it reads as "edit view",
+    // not another identical "filter" — avoids two look-alike sliders on screen.
+    setIcon(mobileFilters, "square-pen");
     mobileFilters.setAttr("aria-label", tr("savedViews.editQuery"));
     mobileFilters.dataset.mobileAction = "filters";
     mobileFilters.addEventListener("click", () => v.openQueryControlsSheet());

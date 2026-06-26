@@ -681,12 +681,17 @@ export class TaskCenterView extends ItemView {
    * status bar widget is visible).
    */
   private renderMobileStatusRow(header: HTMLElement) {
-    const row = header.createDiv({ cls: "bt-mobile-status" });
     const today = todayISO();
     const effectiveTasks = this.getEffectiveTasks();
     const todo = effectiveTasks.filter((t) => t.effectiveStatus === "todo");
     const todayCount = todo.filter((t) => t.effectiveScheduled === today && t.isTopLevelInQuery).length;
     const overdue = todo.filter((t) => t.effectiveDeadline && t.effectiveDeadline < today && t.isTopLevelInQuery).length;
+    // US-512: this row is a GLOBAL today/overdue mirror, not the selected view's
+    // count. Sitting right under the tab strip, an empty "今日 0" reads as "this
+    // tab has 0 items" and collides with the tab's own count badge — so render
+    // nothing when there is no signal (today 0 + overdue 0).
+    if (todayCount === 0 && overdue === 0) return;
+    const row = header.createDiv({ cls: "bt-mobile-status" });
     // task #43: same i18n keys as the desktop status bar so the two
     // surfaces stay in lock-step under any locale.
     const parts = [tr("status.today", { n: todayCount })];
@@ -1490,6 +1495,12 @@ export class TaskCenterView extends ItemView {
     if (explicit) return explicit;
     if (!area.onDrop && !this.firstContentPlaced) {
       this.firstContentPlaced = true;
+      // US-511a: on mobile the first content area's head would echo the saved-view
+      // name (e.g. "TODO") right under the tab label that already says it — a
+      // duplicate. Drop the echo on mobile; the caret + edit affordance carry the
+      // tap target. Multi-area views (quadrants) use explicit titles above, so are
+      // unaffected.
+      if (this.contentEl.dataset.mobileLayout === "true") return "";
       return this.effectiveSavedView().name;
     }
     return tr(areaHandler(area.type).labelKey as Parameters<typeof tr>[0]);

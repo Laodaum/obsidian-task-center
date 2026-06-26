@@ -11,7 +11,9 @@
   cursor: grab;
   touch-action: pan-y;
   will-change: transform;
-  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.08);
+  /* No resting shadow: a hardcoded black drop shadow stacked on the 1px border made
+     a dirty double outline in dark themes. The single theme border separates cards
+     cleanly on its own. */
   transition:
     transform 0.12s ease,
     border-color 0.12s ease,
@@ -21,9 +23,8 @@
 .task-center-view .bt-card:hover {
   border-color: var(--interactive-accent-hover, var(--interactive-accent));
   background: color-mix(in srgb, var(--interactive-accent) 4%, var(--background-primary));
-  box-shadow:
-    0 8px 18px rgba(0, 0, 0, 0.16),
-    0 0 0 1px color-mix(in srgb, var(--interactive-accent) 24%, transparent);
+  /* Hover lift = a crisp accent hairline, no hardcoded black drop shadow. */
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--interactive-accent) 24%, transparent);
   transform: translateY(-1px);
 }
 .task-center-view .bt-card:active {

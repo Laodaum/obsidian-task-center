@@ -216,6 +216,7 @@
   .task-center-view[data-mobile-layout="true"] .bt-subcard-more {
     flex: 0 0 auto;
     margin-left: auto;
+    margin-right: 2px;
     padding: 2px 8px;
     border-radius: 10px;
     background: var(--background-modifier-border);
@@ -302,39 +303,64 @@
   /* US-511: the accordion head is the single tap target that toggles a view's
      area open/closed, so it must read as an obviously tappable bar — a visible
      background, rounded corners, a comfortable touch height and a press state. */
-  /* US-511 视觉修订：area header 改成扁平的「区段标题条」，和下方填充圆角的
-     日卡片（.bt-week-col，--background-secondary）一眼区分——header 是扁平、不
-     占卡片色、底部一条吸顶下划线（来自基础 .bt-area-head 的 box-shadow）的标题，
-     日卡片是抬升的圆角卡片。caret（▸/▾）仍是可点开合的明确提示。 */
+  /* US-511a 视觉修订：折叠条做成「标签页质感」——圆角、贴底色的可点条，去掉旧版
+     的灰描边下划线与直角。折叠（未选中）态克制：背景透明、标题 muted、caret faint，
+     hover/按压才浮出 --background-modifier-hover。当前展开（选中）那条清晰高亮：
+     抬升底 + 左侧 3px --interactive-accent 色条 + 标题转正文色 + caret 着 accent，
+     「当前打开哪个 area」一望可知。选中高亮刻意不用蓝色实心边框/四周环（避免与卡片
+     选中态、「+新建」按钮撞色）——它是「一条左色条」而非「一环」。全走主题变量。 */
   .task-center-view[data-mobile-layout="true"] .bt-area-accordion > .bt-area-head {
     cursor: pointer;
     user-select: none;
-    padding: 2px 8px 6px;
-    min-height: 34px;
-    background: var(--background-primary);
-    border-radius: 0;
+    position: relative;
+    padding: 7px 10px;
+    min-height: 38px;
+    margin: 0 0 4px;
+    background: transparent;
+    border-radius: 8px;
+    box-shadow: none;
+    transition:
+      background-color 0.12s ease,
+      box-shadow 0.12s ease;
   }
-  .task-center-view[data-mobile-layout="true"] .bt-area-accordion > .bt-area-head:active {
+  /* 折叠（未选中）态：hover/按压才浮出，平时贴底色。 */
+  .task-center-view[data-mobile-layout="true"] .bt-area-accordion.bt-area-collapsed > .bt-area-head:hover,
+  .task-center-view[data-mobile-layout="true"] .bt-area-accordion.bt-area-collapsed > .bt-area-head:active {
     background: var(--background-modifier-hover);
   }
-  /* 标题在窄屏读作区段标题：稍大、用正文色（对比日行里 muted 的日期）。 */
+  /* 展开（选中）态：抬升底 + 左侧 3px accent 色条。 */
+  .task-center-view[data-mobile-layout="true"] .bt-area-accordion:not(.bt-area-collapsed) > .bt-area-head {
+    background: var(--background-modifier-hover);
+    box-shadow: inset 3px 0 0 0 var(--interactive-accent);
+  }
+  /* 标题分态着色：折叠 muted、展开正文色。 */
   .task-center-view[data-mobile-layout="true"] .bt-area-accordion > .bt-area-head .bt-area-head-title {
     font-size: 12px;
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-area-collapsed > .bt-area-head .bt-area-head-title {
+    color: var(--text-muted);
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-area-accordion:not(.bt-area-collapsed) > .bt-area-head .bt-area-head-title {
     color: var(--text-normal);
   }
   .task-center-view[data-mobile-layout="true"] .bt-area-collapsed > :not(.bt-area-head) {
     display: none;
   }
-  /* The caret is the open/closed affordance: large and legible (not faint), so
-     the collapsed (▸) vs expanded (▾) state is obvious at a glance. */
+  /* caret 分态着色 + 过渡：折叠 faint、展开 accent。 */
   .task-center-view[data-mobile-layout="true"] .bt-area-caret {
     flex: 0 0 auto;
     margin-left: 6px;
-    color: var(--text-muted);
-    font-size: 14px;
+    font-size: 12px;
     line-height: 1;
+    transition: color 0.12s ease;
   }
-  .task-center-view[data-mobile-layout="true"] .bt-area-accordion > .bt-area-head:hover .bt-area-caret {
+  .task-center-view[data-mobile-layout="true"] .bt-area-collapsed > .bt-area-head .bt-area-caret {
+    color: var(--text-faint);
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-area-accordion:not(.bt-area-collapsed) > .bt-area-head .bt-area-caret {
+    color: var(--interactive-accent);
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-area-accordion.bt-area-collapsed > .bt-area-head:hover .bt-area-caret {
     color: var(--text-normal);
   }
 

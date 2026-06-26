@@ -5,7 +5,10 @@
  * ============================================================================ */
 
 .task-center-view[data-obsidian-mobile="true"] {
-  --tc-obsidian-mobile-toolbar-height: 72px;
+  /* Clearance for Obsidian Mobile's bottom toolbar (US-117c). The bar floats as a
+     rounded pill on newer builds and ran taller than the old 72px guess, clipping
+     the last card — bumped to a conservative 88px so the list always clears it. */
+  --tc-obsidian-mobile-toolbar-height: 88px;
 }
 
 /* US-512: no bottom action bar / footer on mobile. The body only needs to clear
@@ -21,6 +24,9 @@
 .task-center-view[data-mobile-layout="true"] .bt-toolbar-main {
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 6px 8px;
+  /* Keep `+新建` and the filter button on a shared centre baseline; without this
+     the grid stretches them and they read as floating at different heights. */
+  align-items: center;
 }
 
 .task-center-view[data-mobile-layout="true"] .bt-toolbar-main .bt-nav {
@@ -87,10 +93,14 @@
   cursor: pointer;
 }
 
+/* Selection = neutral soft fill, NOT an accent-blue ring. The old accent border +
+   inset ring clashed with the accent-blue `+新建` button and read as "two blue
+   things". Use Obsidian's native active-item fill (neutral, non-blue), matching the
+   "soft fill" form the area accordion's open state uses (US-168c). */
 .task-center-view[data-mobile-layout="true"] .bt-card.selected {
   outline: none;
-  border-color: color-mix(in srgb, var(--interactive-accent) 70%, var(--background-modifier-border));
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--interactive-accent) 28%, transparent) inset;
+  box-shadow: none;
+  background: var(--background-modifier-active-hover);
 }
 
 .task-center-view[data-mobile-layout="true"] .bt-card-title-row {
@@ -116,7 +126,15 @@
 .task-center-view[data-mobile-layout="true"] .bt-card-tags,
 .task-center-view[data-mobile-layout="true"] .bt-card-meta,
 .task-center-view[data-mobile-layout="true"] .bt-card-children {
-  margin-left: 34px;
+  /* Was 34px — the deep indent left a wide empty gutter that read as "too much
+     padding". 24px still clears the check circle while tightening the card. */
+  margin-left: 24px;
+}
+
+/* The note path (Daily/xxx.md) is pure noise on a phone — the detail sheet already
+   shows `path:Lnn` on tap. Hide it on mobile; desktop keeps it. */
+.task-center-view[data-mobile-layout="true"] .bt-meta-path {
+  display: none;
 }
 
 .task-center-view[data-mobile-layout="true"] .bt-task-tag {
