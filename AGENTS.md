@@ -46,13 +46,15 @@
 
 完成开发后，只用 Crabbox/provider 在远端测试环境跑正式 gate；本地开发机只负责编辑代码和发起远端命令。
 
-远端测试服务器的主机名、端口、运行目标、工作目录等都属于本地私有配置，不写入 git。需要远端运行时，只从 gitignore 内的本地配置读取一个 gate 命令并执行。
+本仓库的正式远端 gate 是 Bring Your Own Infrastructure 形态：内网 k3s/containerd 宿主作为 devbox 宿主，通过 Crabbox `external` lifecycle 创建/释放独立 Pod lease。每个 gate 拿到唯一 lease id → 新建一个带 SSH 的唯一 Pod，Crabbox 通过 SSH ProxyCommand 同步 checkout、执行命令、回传日志和结果，结束后释放对应 Pod；多个 agent 并行时各自一个 Pod，互不踩踏。不要把它当成 Blacksmith Testbox，也不要退回到单工作目录 Static SSH gate。
+
+box 生命周期（`external.command` 指向本机 adapter、`idempotentLeaseId`、`workRoot`）声明在 committed 的 `.crabbox.yaml` 里，所以 `crabbox run` 不再带任何 per-run lifecycle flag。真正内网的值——宿主主机名、k3s namespace、镜像——不写入 git：由 gitignored 的 `.crabbox/external-lease-provider.mjs` 从 `.crabbox/remote-test.env` 的环境变量读取。需要远端运行时，只从 gitignore 内的本地配置读取 gate 命令并执行。
 
 推荐把私有命令放在 `.crabbox/remote-test.env`，该文件只保存本机可用的最小环境变量：
 
 ```bash
 CRABBOX_TEST_PREPARE='...' # 没有前置连接需求时可为空
-CRABBOX_TEST_GATE='...'
+CRABBOX_TEST_GATE='crabbox run --shell '\''...gate 命令...'\'''  # provider/target/lifecycle 都来自 .crabbox.yaml
 ```
 
 在远端跑正式 gate 只有一条路径：
@@ -60,6 +62,8 @@ CRABBOX_TEST_GATE='...'
 ```bash
 pnpm run test:remote
 ```
+
+`CRABBOX_TEST_GATE` 走 Crabbox `external` BYOI 路径，形态为 `crabbox run --shell '...'`——provider / target / external lifecycle 都来自 `.crabbox.yaml`，gate 里不重复这些 flag。`.crabbox.yaml` 声明公开的 provider / target 和指向本机 adapter 的 external lifecycle（中性路径、workRoot、idempotency），不保存内网地址（主机名 / namespace / 镜像留在 gitignored adapter + env）。
 
 正式 gate 至少包含：
 
