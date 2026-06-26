@@ -236,15 +236,15 @@
   gap: 8px;
   margin: 0 0 8px;
   min-height: 26px;
-  /* 区段标题用一条底部细分隔线（box-shadow 当下划线，不改变盒高，
-     --tc-area-head-h 的 27px 对齐基线保持不变），把它和下方"日卡片 / 任务卡"
-     在视觉上分层。不做 sticky：多 area 累叠时（四象限 / 今日三组的手风琴）多个
-     sticky 头会在顶部相互重叠成一坨，反而更糟；扁平标题 vs 抬升卡片的层次已足够
-     区分。 */
-  box-shadow: 0 1px 0 var(--background-modifier-border);
+  /* 用户反馈：去掉 area 标题下的那条细分隔线（原 box-shadow 下划线），干净一点。
+     标题 muted + 下方卡片抬升的层次已足够区分，不再需要描边。不做 sticky：多 area
+     累叠时（四象限 / 今日三组的手风琴）多个 sticky 头会在顶部相互重叠成一坨。 */
 }
 .task-center-view .bt-area-head-title {
-  flex: 1 1 auto;
+  /* US-511 fix: 标题用 0-grow，只占自身宽度（过长才 shrink+省略号）。让 week/month
+     的日期导航紧贴标题成组在左，而不是被 flex:1 的标题撑开、挤到最右和编辑按钮黏在一起。
+     编辑按钮(.bt-area-head-right)自己的 margin-left:auto 仍把它推到最右。 */
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -285,8 +285,9 @@
   padding: 2px 8px;
   font-size: var(--font-ui-smaller);
   color: var(--text-muted);
-  background: var(--background-secondary);
-  /* 用户反馈：设置类图标按钮弱化掉 border，干净一点（保留 1px 透明边以免尺寸跳动）。 */
+  /* 用户反馈：设置类图标按钮静止态完全透明（去掉 --background-secondary 灰底块），
+     干净一点；hover 才浮出底色作为可点反馈。保留 1px 透明边以免尺寸跳动。 */
+  background: transparent;
   border: 1px solid transparent;
   border-radius: var(--radius-s);
   cursor: pointer;
