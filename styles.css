@@ -2121,10 +2121,9 @@
   gap: 8px;
   margin: 0 0 8px;
   min-height: 26px;
-  box-shadow: 0 1px 0 var(--background-modifier-border);
 }
 .task-center-view .bt-area-head-title {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2163,7 +2162,7 @@
   padding: 2px 8px;
   font-size: var(--font-ui-smaller);
   color: var(--text-muted);
-  background: var(--background-secondary);
+  background: transparent;
   border: 1px solid transparent;
   border-radius: var(--radius-s);
   cursor: pointer;
@@ -2336,7 +2335,6 @@
   cursor: grab;
   touch-action: pan-y;
   will-change: transform;
-  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.08);
   transition:
     transform 0.12s ease,
     border-color 0.12s ease,
@@ -2346,7 +2344,7 @@
 .task-center-view .bt-card:hover {
   border-color: var(--interactive-accent-hover, var(--interactive-accent));
   background: color-mix(in srgb, var(--interactive-accent) 4%, var(--background-primary));
-  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.16), 0 0 0 1px color-mix(in srgb, var(--interactive-accent) 24%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--interactive-accent) 24%, transparent);
   transform: translateY(-1px);
 }
 .task-center-view .bt-card:active {
@@ -2899,6 +2897,7 @@
 .task-center-view[data-mobile-layout=true] .bt-subcard-more {
   flex: 0 0 auto;
   margin-left: auto;
+  margin-right: 2px;
   padding: 2px 8px;
   border-radius: 10px;
   background: var(--background-modifier-border);
@@ -2975,29 +2974,52 @@
 .task-center-view[data-mobile-layout=true] .bt-area-accordion > .bt-area-head {
   cursor: pointer;
   user-select: none;
-  padding: 2px 8px 6px;
-  min-height: 34px;
-  background: var(--background-primary);
-  border-radius: 0;
+  position: relative;
+  padding: 7px 10px;
+  min-height: 38px;
+  margin: 0 0 4px;
+  background: transparent;
+  border-radius: 8px;
+  box-shadow: none;
+  transition: background-color 0.12s ease, box-shadow 0.12s ease;
 }
-.task-center-view[data-mobile-layout=true] .bt-area-accordion > .bt-area-head:active {
+.task-center-view[data-mobile-layout=true] .bt-area-accordion.bt-area-collapsed > .bt-area-head:hover,
+.task-center-view[data-mobile-layout=true] .bt-area-accordion.bt-area-collapsed > .bt-area-head:active {
   background: var(--background-modifier-hover);
+}
+.task-center-view[data-mobile-layout=true] .bt-area-accordion:not(.bt-area-collapsed) > .bt-area-head {
+  background: color-mix(in srgb, var(--interactive-accent) 8%, var(--background-modifier-hover));
 }
 .task-center-view[data-mobile-layout=true] .bt-area-accordion > .bt-area-head .bt-area-head-title {
   font-size: 12px;
+}
+.task-center-view[data-mobile-layout=true] .bt-area-collapsed > .bt-area-head .bt-area-head-title {
+  color: var(--text-muted);
+}
+.task-center-view[data-mobile-layout=true] .bt-area-accordion:not(.bt-area-collapsed) > .bt-area-head .bt-area-head-title {
   color: var(--text-normal);
 }
 .task-center-view[data-mobile-layout=true] .bt-area-collapsed > :not(.bt-area-head) {
   display: none;
 }
+.task-center-view[data-mobile-layout=true] .bt-area-accordion:not(.bt-area-collapsed) > :not(.bt-area-head) {
+  padding-left: 8px;
+  padding-right: 8px;
+}
 .task-center-view[data-mobile-layout=true] .bt-area-caret {
   flex: 0 0 auto;
   margin-left: 6px;
-  color: var(--text-muted);
-  font-size: 14px;
+  font-size: 12px;
   line-height: 1;
+  transition: color 0.12s ease;
 }
-.task-center-view[data-mobile-layout=true] .bt-area-accordion > .bt-area-head:hover .bt-area-caret {
+.task-center-view[data-mobile-layout=true] .bt-area-collapsed > .bt-area-head .bt-area-caret {
+  color: var(--text-faint);
+}
+.task-center-view[data-mobile-layout=true] .bt-area-accordion:not(.bt-area-collapsed) > .bt-area-head .bt-area-caret {
+  color: var(--interactive-accent);
+}
+.task-center-view[data-mobile-layout=true] .bt-area-accordion.bt-area-collapsed > .bt-area-head:hover .bt-area-caret {
   color: var(--text-normal);
 }
 .task-center-view[data-mobile-layout=true] .bt-week {
@@ -3975,7 +3997,7 @@
 
 /* src/styles/mobile-repair.css */
 .task-center-view[data-obsidian-mobile=true] {
-  --tc-obsidian-mobile-toolbar-height: 72px;
+  --tc-obsidian-mobile-toolbar-height: 88px;
 }
 .task-center-view[data-mobile-layout=true][data-obsidian-mobile=true] .bt-body {
   padding-bottom: calc(var(--tc-obsidian-mobile-toolbar-height) + env(safe-area-inset-bottom, 0px) + 16px);
@@ -3983,6 +4005,7 @@
 .task-center-view[data-mobile-layout=true] .bt-toolbar-main {
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 6px 8px;
+  align-items: center;
 }
 .task-center-view[data-mobile-layout=true] .bt-toolbar-main .bt-nav {
   grid-column: 1 / -1;
@@ -4039,8 +4062,8 @@
 }
 .task-center-view[data-mobile-layout=true] .bt-card.selected {
   outline: none;
-  border-color: color-mix(in srgb, var(--interactive-accent) 70%, var(--background-modifier-border));
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--interactive-accent) 28%, transparent) inset;
+  box-shadow: none;
+  background: var(--background-modifier-active-hover);
 }
 .task-center-view[data-mobile-layout=true] .bt-card-title-row {
   gap: 8px;
@@ -4056,7 +4079,10 @@
 .task-center-view[data-mobile-layout=true] .bt-card-tags,
 .task-center-view[data-mobile-layout=true] .bt-card-meta,
 .task-center-view[data-mobile-layout=true] .bt-card-children {
-  margin-left: 34px;
+  margin-left: 24px;
+}
+.task-center-view[data-mobile-layout=true] .bt-meta-path {
+  display: none;
 }
 .task-center-view[data-mobile-layout=true] .bt-task-tag {
   font-size: 10.5px;
