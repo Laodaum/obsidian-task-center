@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="220" height="52" viewBox="0 0 220 52" role="img" aria-label="Install in Obsidian">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#8b6fe6"/>
+      <stop offset="1" stop-color="#6c4ee0"/>
+    </linearGradient>
+  </defs>
+  <rect x="1" y="1" width="218" height="50" rx="12" fill="url(#bg)"/>
+  <rect x="1" y="1" width="218" height="50" rx="12" fill="none" stroke="#ffffff" stroke-opacity="0.18"/>
+  <g transform="translate(22 14)" fill="none" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12 1 L12 16"/>
+    <path d="M6 11 L12 17 L18 11"/>
+    <path d="M3 21 L21 21"/>
+  </g>
+  <text x="62" y="32" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif" font-size="17" font-weight="600" fill="#ffffff">Install in Obsidian</text>
+</svg>

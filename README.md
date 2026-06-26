@@ -16,6 +16,17 @@ It keeps your tasks in plain markdown. No database. No private task format.
 
 ![Month drag demo](screenshots/month-drag.gif)
 
+## Install
+
+<a href="obsidian://show-plugin?id=task-center"><img src="assets/install-button.svg" alt="Install in Obsidian" height="52"></a>
+
+Click the button to open Obsidian and install Task Center, or find it in **Settings → Community plugins → Browse** ([web listing](https://community.obsidian.md/plugins/task-center)).
+
+Before using it:
+
+1. Enable at least one task-format companion: [Obsidian Tasks](https://github.com/obsidian-tasks-group/obsidian-tasks) or [Dataview](https://github.com/blacksmithgu/obsidian-dataview).
+2. Enable Obsidian's built-in **Daily Notes** core plugin and set its "New file location". Quick Add writes new tasks to today's Daily Note.
+
 ## What It Adds
 
 - A full-page task board: Today, Week, Month, Completed, and Unscheduled.
@@ -25,17 +36,6 @@ It keeps your tasks in plain markdown. No database. No private task format.
 - Estimate and actual-time summaries from inline fields.
 - Mobile layout with long-press menus and swipe actions.
 - Agent-friendly `obsidian task-center:*` CLI commands.
-
-## Install
-
-Install from Obsidian Community Plugins:
-
-[Install Task Center](https://community.obsidian.md/plugins/task-center)
-
-Before using it:
-
-1. Enable at least one task-format companion: [Obsidian Tasks](https://github.com/obsidian-tasks-group/obsidian-tasks) or [Dataview](https://github.com/blacksmithgu/obsidian-dataview).
-2. Enable Obsidian's built-in **Daily Notes** core plugin and set its "New file location". Quick Add writes new tasks to today's Daily Note.
 
 ## Quick Start
 

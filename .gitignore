@@ -13,3 +13,4 @@ test/e2e/vaults/*/.obsidian/cache
 .harness/
 /provider/
 .crabbox/
+.agents/skills/crabbox
