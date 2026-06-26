@@ -164,6 +164,24 @@ async function openMobileBoardWeek() {
   );
 }
 
+// US-511: a view's areas are a single-open accordion whose expanded section is
+// remembered in-session (so it also carries across tests in the same Obsidian
+// instance). A card a test targets can sit inside a currently-collapsed area
+// (e.g. the week area after the accordion test opened the unscheduled tray),
+// where it renders with a zero-size box and is not interactable. Expand the
+// card's own area first so the test is independent of prior accordion state /
+// test order. No-op when the card's area is already open.
+async function ensureCardVisible(cardSel: string): Promise<void> {
+  await browser.execute((sel: string) => {
+    const card = document.querySelector<HTMLElement>(sel);
+    const area = card?.closest<HTMLElement>(".bt-area-accordion");
+    if (area?.classList.contains("bt-area-collapsed")) {
+      area.querySelector<HTMLElement>(".bt-area-head")?.click();
+    }
+  }, cardSel);
+  await $(cardSel).waitForDisplayed({ timeout: 3000 });
+}
+
 describe("Task Center — mobile coverage gap-fill (task #44)", function () {
   beforeEach(async function () {
     await obsidianPage.resetVault(VAULT);
@@ -294,6 +312,7 @@ describe("Task Center — mobile coverage gap-fill (task #44)", function () {
 
     const cardSel = `.task-center-view [data-task-id="Tasks/Inbox.md:L1"]`;
     await $(cardSel).waitForExist({ timeout: 5000 });
+    await ensureCardVisible(cardSel);
 
     const metrics = await browser.execute((sel: string) => {
       const card = document.querySelector<HTMLElement>(sel)!;
@@ -369,6 +388,7 @@ describe("Task Center — mobile coverage gap-fill (task #44)", function () {
 
     const cardSel = `.task-center-view [data-task-id="${path}:L1"]`;
     await $(cardSel).waitForExist({ timeout: 5000 });
+    await ensureCardVisible(cardSel);
     await $(cardSel).click();
 
     await $(".task-center-bottom-sheet .bt-mobile-task-detail").waitForExist({
@@ -421,6 +441,7 @@ describe("Task Center — mobile coverage gap-fill (task #44)", function () {
 
     const cardSel = `.task-center-view [data-task-id="${path}:L3"]`;
     await $(cardSel).waitForExist({ timeout: 5000 });
+    await ensureCardVisible(cardSel);
     await $(cardSel).click();
     await $(".task-center-bottom-sheet .bt-mobile-task-detail").waitForExist({ timeout: 3000 });
     await $(".task-center-bottom-sheet [data-mobile-detail-action='source']").click();
@@ -468,6 +489,7 @@ describe("Task Center — mobile coverage gap-fill (task #44)", function () {
 
     const cardSel = `.task-center-view [data-task-id="${path}:L1"]`;
     await $(cardSel).waitForExist({ timeout: 5000 });
+    await ensureCardVisible(cardSel);
     await $(cardSel).click();
     await $(".task-center-bottom-sheet .bt-mobile-task-detail").waitForExist({ timeout: 3000 });
     await $(".task-center-bottom-sheet [data-mobile-detail-action='tag']").click();
@@ -521,6 +543,7 @@ describe("Task Center — mobile coverage gap-fill (task #44)", function () {
     const childId = `${path}:L3`;
     const parentId = `${path}:L1`;
     await $(`.task-center-view [data-task-id="${childId}"]`).waitForExist({ timeout: 5000 });
+    await ensureCardVisible(`.task-center-view [data-task-id="${childId}"]`);
     await $(`.task-center-view [data-task-id="${childId}"]`).click();
     await $(".task-center-bottom-sheet .bt-mobile-task-detail").waitForExist({ timeout: 3000 });
     await $(".task-center-bottom-sheet [data-mobile-detail-action='nest']").click();
@@ -580,6 +603,7 @@ describe("Task Center — mobile coverage gap-fill (task #44)", function () {
 
     const cardSel = `.task-center-view [data-task-id="Tasks/Inbox.md:L1"]`;
     await $(cardSel).waitForExist({ timeout: 5000 });
+    await ensureCardVisible(cardSel);
 
     const duration = (await browser.executeObsidian(
       ({ app }) =>
@@ -629,6 +653,7 @@ describe("Task Center — mobile coverage gap-fill (task #44)", function () {
 
     const cardSel = `.task-center-view [data-task-id="${path}:L1"]`;
     await $(cardSel).waitForExist({ timeout: 5000 });
+    await ensureCardVisible(cardSel);
 
     const states = await browser.execute((sel: string) => {
       const el = document.querySelector<HTMLElement>(sel);
@@ -679,6 +704,7 @@ describe("Task Center — mobile coverage gap-fill (task #44)", function () {
 
     const cardSel = `.task-center-view [data-task-id="${path}:L1"]`;
     await $(cardSel).waitForExist({ timeout: 5000 });
+    await ensureCardVisible(cardSel);
 
     await browser.execute((sel: string) => {
       const el = document.querySelector<HTMLElement>(sel);
@@ -729,6 +755,7 @@ describe("Task Center — mobile coverage gap-fill (task #44)", function () {
 
     const cardSel = `.task-center-view [data-task-id="${path}:L1"]`;
     await $(cardSel).waitForExist({ timeout: 5000 });
+    await ensureCardVisible(cardSel);
 
     await browser.execute((sel: string) => {
       const el = document.querySelector<HTMLElement>(sel);
@@ -783,6 +810,7 @@ describe("Task Center — mobile coverage gap-fill (task #44)", function () {
     const cardSel = `.task-center-view [data-task-id="${path}:L1"]`;
     const targetSel = `.task-center-view [data-date="${targetDay}"]`;
     await $(cardSel).waitForExist({ timeout: 5000 });
+    await ensureCardVisible(cardSel);
     await $(targetSel).waitForExist({ timeout: 5000 });
     await expect($(`.bt-mobile-trash[data-drop-zone="abandon"]`)).not.toExist();
     await expect($(cardSel)).not.toHaveAttribute("draggable", "true");

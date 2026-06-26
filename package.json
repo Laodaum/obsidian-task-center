@@ -14,7 +14,7 @@
     "test:remote": "sh -lc 'set -a; . .crabbox/remote-test.env; set +a; test -n \"${CRABBOX_TEST_PREPARE:-}\" && eval \"$CRABBOX_TEST_PREPARE\"; eval \"$CRABBOX_TEST_GATE\"'",
     "test:e2e": "pnpm run build && wdio run ./wdio.conf.mts",
     "e2e:prefetch": "tsx wdio-prefetch.mts",
-    "test:e2e:ci": "pnpm run build && pnpm run e2e:prefetch && wdio run ./wdio.conf.mts",
+    "test:e2e:ci": "pnpm run build && (pnpm run e2e:prefetch || pnpm run e2e:prefetch || pnpm run e2e:prefetch) && wdio run ./wdio.conf.mts",
     "e2e": "pnpm run test:e2e",
     "lint": "eslint src",
     "version": "node version-bump.mjs && git add manifest.json versions.json"

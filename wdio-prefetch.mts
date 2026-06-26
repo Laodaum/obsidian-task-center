@@ -29,6 +29,15 @@ import dns from "node:dns";
 // pod's AAAA-without-route black-hole otherwise wastes the first connect.
 dns.setDefaultResultOrder("ipv4first");
 
+// obsidian-launcher's large binary download streams via undici; a mid-stream RST
+// surfaces as an *unhandled* `TypeError: terminated` that escapes the awaited
+// promise (so withRetry can't see it). Convert it to a clean non-zero exit so
+// the shell-level retry in `test:e2e:ci` re-runs the whole prefetch.
+process.on("unhandledRejection", (err) => {
+  console.error("[e2e-prefetch] unhandledRejection (likely a mid-download socket RST):", err);
+  process.exit(1);
+});
+
 import * as path from "node:path";
 import { env } from "node:process";
 import ObsidianLauncher from "obsidian-launcher";
