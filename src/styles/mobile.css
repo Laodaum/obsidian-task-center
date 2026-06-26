@@ -293,6 +293,12 @@
   .task-center-view[data-mobile-layout="true"] .bt-stack-row.bt-row-has-head > .bt-area:not(.bt-has-head) {
     margin-top: 0;
   }
+  /* 手风琴 area 必须按内容定高（head + 可选 body）。否则 row 子项的 `flex: 1 1 0`
+     会在受限高度的列里把折叠的 area 压成 height:0，让 38px 的 head 叠到下一个上面
+     （四象限在窄屏会四个标题糊成一坨）。 */
+  .task-center-view[data-mobile-layout="true"] .bt-area.bt-area-accordion {
+    flex: 0 0 auto;
+  }
   /* US-511: the accordion head is the single tap target that toggles a view's
      area open/closed, so it must read as an obviously tappable bar — a visible
      background, rounded corners, a comfortable touch height and a press state. */

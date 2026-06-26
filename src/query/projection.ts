@@ -204,28 +204,6 @@ export function projectListArea(
   return { type: "list", tasks: limited };
 }
 
-// US-720d: a view is "entirely empty" when every area is a (non-drop) list/grid
-// and they all project to zero top-level tasks — the view then shows ONE centered
-// view-level empty state instead of a small empty under each area. Returns false
-// when there are no areas, or any area is week/month/drop or an onDrop tray
-// (those carry structure worth keeping even when empty).
-export function areasAllEmpty(
-  areas: AreaConfig[],
-  tasks: EffectiveTask[],
-  weekStartsOn: 0 | 1,
-  exemptStatusIds?: ReadonlySet<string>,
-): boolean {
-  if (areas.length === 0) return false;
-  for (const a of areas) {
-    if ((a.type !== "list" && a.type !== "grid") || a.onDrop) return false;
-  }
-  return areas.every(
-    (a) =>
-      projectListArea(tasks, a as ListAreaConfig | GridAreaConfig, weekStartsOn, exemptStatusIds)
-        .tasks.filter((t) => t.isTopLevelInQuery).length === 0,
-  );
-}
-
 export function projectWeekArea(
   tasks: EffectiveTask[],
   area: WeekAreaConfig,

@@ -49,7 +49,23 @@ const {
   ensureBuiltinQueryPresets,
   restoreBuiltinQueryPresetById,
   restoreBuiltinQueryPresets,
+  collectAreas,
 } = await import("../test/.compiled/saved-views.js");
+
+// ── US-720d2: 全空布局不再折叠成一个 view 级居中空状态——每个 area 各显示各自
+// 的空状态。四象限 col[row,row] 全空时仍渲染 4 个 area（不被压平、不被一个空状态
+// 盖住）。collectAreas 仍按 DFS 收集到 4 个叶子。──
+
+test("US-720d2: collectAreas — four-quadrant col[row,row] keeps all 4 areas", () => {
+  const quad = {
+    dir: "col",
+    children: [
+      { dir: "row", children: [{ type: "list", title: "①" }, { type: "list", title: "②" }] },
+      { dir: "row", children: [{ type: "list", title: "③" }, { type: "list", title: "④" }] },
+    ],
+  };
+  assert.equal(collectAreas(quad).length, 4);
+});
 
 // ── US-109l: builtin presets are deletable; deletion is persisted via a
 // `deletedBuiltinIds` tombstone that ensureBuiltinQueryPresets honors. ──

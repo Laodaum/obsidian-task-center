@@ -12,7 +12,7 @@
  *   data-today-group="today"     — today's tasks section
  *   data-today-group="unscheduled-rec" — unscheduled recommendation
  *   data-action="reschedule-tomorrow"  — reschedule button per card
- *   data-today-empty             — empty-state element
+ *   [data-empty-state="area"]    — per-area empty state (US-720d2)
  */
 import { browser, expect, $, $$ } from "@wdio/globals";
 import { obsidianPage } from "wdio-obsidian-service";
@@ -124,10 +124,10 @@ describe("US-720 today execution view (task #63)", function () {
     expect(heads.length).toBe(3);
   });
 
-  // US-720d: when all three list areas are empty, Today shows ONE centered
-  // view-level empty state (data-today-empty), not three small ones. The future
-  // task keeps the vault non-empty (so this is the all-empty case, not onboarding).
-  it("US-720d: centered empty state when every Today group is empty", async function () {
+  // US-720d2: when all three Today groups are empty, each list area shows its OWN
+  // empty state — no single collapsed/centered view-level empty state swallows the
+  // three areas. The future task keeps the vault non-empty (all-empty, not onboarding).
+  it("US-720d2: each Today group shows its own empty state when all are empty", async function () {
     await writeAndWait("Tasks/Inbox.md", "- [ ] Future task ⏳ 2099-01-01\n");
     await resetTaskCacheForTest();
 
@@ -138,18 +138,10 @@ describe("US-720 today execution view (task #63)", function () {
     await todayTab.waitForExist({ timeout: 5000 });
     await todayTab.click();
 
-    await expect($('[data-today-empty]')).toExist();
-    const metrics = await browser.execute(() => {
-      const body = document.querySelector(".task-center-view .bt-body")!.getBoundingClientRect();
-      const empty = document.querySelector("[data-today-empty]")!.getBoundingClientRect();
-      return {
-        bodyHeight: body.height,
-        bodyCenter: body.top + body.height / 2,
-        emptyHeight: empty.height,
-        emptyCenter: empty.top + empty.height / 2,
-      };
-    });
-    expect(metrics.emptyHeight).toBeGreaterThan(metrics.bodyHeight * 0.3);
-    expect(Math.abs(metrics.emptyCenter - metrics.bodyCenter)).toBeLessThan(metrics.bodyHeight * 0.3);
+    // No more collapsed view-level empty state; each area renders its own.
+    await $('[data-view="today"] [data-empty-state="area"]').waitForExist({ timeout: 5000 });
+    await expect($('[data-today-empty]')).not.toExist();
+    const perAreaEmpties = await $$('[data-view="today"] .bt-area-list [data-empty-state="area"]');
+    expect(perAreaEmpties.length).toBe(3);
   });
 });

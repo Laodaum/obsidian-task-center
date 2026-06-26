@@ -236,6 +236,12 @@
   gap: 8px;
   margin: 0 0 8px;
   min-height: 26px;
+  /* 区段标题用一条底部细分隔线（box-shadow 当下划线，不改变盒高，
+     --tc-area-head-h 的 27px 对齐基线保持不变），把它和下方"日卡片 / 任务卡"
+     在视觉上分层。不做 sticky：多 area 累叠时（四象限 / 今日三组的手风琴）多个
+     sticky 头会在顶部相互重叠成一坨，反而更糟；扁平标题 vs 抬升卡片的层次已足够
+     区分。 */
+  box-shadow: 0 1px 0 var(--background-modifier-border);
 }
 .task-center-view .bt-area-head-title {
   flex: 1 1 auto;
@@ -419,30 +425,6 @@
   font-size: 11px;
   padding: 2px 10px;
   cursor: pointer;
-}
-
-/* US-720d: centered view-level empty state for an all-empty list/grid view. */
-.task-center-view .bt-view-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  min-height: 50vh;
-  padding: 24px;
-  text-align: center;
-}
-.task-center-view .bt-view-empty-icon {
-  display: inline-flex;
-  color: var(--text-faint);
-}
-.task-center-view .bt-view-empty-icon svg {
-  width: 40px;
-  height: 40px;
-}
-.task-center-view .bt-view-empty-title {
-  font-size: 14px;
-  color: var(--text-muted);
 }
 
 /* Unknown area — graceful fallback for an unsupported area type. */

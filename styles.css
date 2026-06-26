@@ -2117,6 +2117,7 @@
   gap: 8px;
   margin: 0 0 8px;
   min-height: 26px;
+  box-shadow: 0 1px 0 var(--background-modifier-border);
 }
 .task-center-view .bt-area-head-title {
   flex: 1 1 auto;
@@ -2294,28 +2295,6 @@
   font-size: 11px;
   padding: 2px 10px;
   cursor: pointer;
-}
-.task-center-view .bt-view-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  min-height: 50vh;
-  padding: 24px;
-  text-align: center;
-}
-.task-center-view .bt-view-empty-icon {
-  display: inline-flex;
-  color: var(--text-faint);
-}
-.task-center-view .bt-view-empty-icon svg {
-  width: 40px;
-  height: 40px;
-}
-.task-center-view .bt-view-empty-title {
-  font-size: 14px;
-  color: var(--text-muted);
 }
 .task-center-view .bt-unknown-area {
   border: 1px dashed var(--background-modifier-border);
@@ -2631,6 +2610,12 @@
   text-align: center;
   color: var(--text-muted);
 }
+.task-center-view .bt-tray-empty {
+  padding: 8px 10px;
+  text-align: left;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-faint);
+}
 .task-center-view .bt-filter-empty {
   display: flex;
   flex-direction: column;
@@ -2743,7 +2728,7 @@
 
 /* src/styles/mobile.css */
 .task-center-view[data-mobile-layout=true] {
-  padding: 0 8px;
+  padding: 0;
 }
 .task-center-view .bt-mobile-status {
   display: none;
@@ -2755,51 +2740,19 @@
   color: var(--text-muted);
   border-bottom: 1px solid var(--background-modifier-border);
 }
-.task-center-view .bt-mobile-action-bar {
-  display: none;
-}
-.task-center-view[data-mobile-layout=true] .bt-mobile-action-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  position: sticky;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  padding: 8px 12px calc(8px + env(safe-area-inset-bottom, 0px));
-  background: var(--background-primary);
-  border-top: 1px solid var(--background-modifier-border);
-  box-shadow: 0 -2px 6px rgba(0, 0, 0, 0.06);
-  z-index: 10;
-}
-.task-center-view[data-mobile-layout=true] .bt-mobile-add-btn {
-  flex: 0 0 auto;
-  padding: 6px 14px;
-  border-radius: 8px;
-  background: var(--interactive-accent);
-  color: var(--text-on-accent);
-  border: none;
-  font-weight: 600;
-}
-.task-center-view[data-mobile-layout=true] .bt-mobile-unscheduled-btn {
-  flex: 1 1 auto;
-  min-width: 0;
-  padding: 6px 12px;
-  border-radius: 8px;
-  background: var(--background-secondary);
-  border: 1px solid var(--background-modifier-border);
-  color: var(--text-normal);
-  font-weight: 600;
-}
+.task-center-view[data-mobile-layout=true] .bt-area-drop,
 .task-center-view[data-mobile-layout=true] .bt-trash {
   display: none;
 }
 .task-center-view[data-mobile-layout=true] .bt-toolbar .bt-add-btn {
-  display: none;
+  flex: 0 0 auto;
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: 8px;
+  font-weight: 600;
 }
 .task-center-view[data-mobile-layout=true] .bt-toolbar {
-  padding: 4px 0;
+  padding: 4px 8px;
 }
 .task-center-view[data-mobile-layout=true] .bt-toolbar-row {
   flex-wrap: nowrap;
@@ -2808,8 +2761,7 @@
   min-width: 0;
 }
 .task-center-view[data-mobile-layout=true] .bt-toolbar-main {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  display: flex;
   align-items: center;
   gap: 8px;
 }
@@ -2860,7 +2812,7 @@
 .task-center-view[data-mobile-layout=true] .bt-body {
   width: 100%;
   min-width: 0;
-  padding-bottom: calc(76px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
 }
 .task-center-view[data-mobile-layout=true] .bt-card {
   width: 100%;
@@ -2874,6 +2826,7 @@
   height: 40px;
   max-height: 40px;
   align-items: stretch;
+  padding-left: 8px;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior-y: contain;
   touch-action: pan-x;
@@ -2927,15 +2880,6 @@
   color: var(--text-muted);
   overflow: visible;
   white-space: normal;
-}
-.task-center-view[data-mobile-layout=true] .bt-meta-path {
-  display: none;
-}
-.task-center-view[data-mobile-layout=true] .bt-card-meta {
-  flex-wrap: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .task-center-view[data-mobile-layout=true] .bt-check,
 .task-center-view[data-mobile-layout=true] .bt-sub-check {
@@ -3015,6 +2959,43 @@
   to {
     opacity: 1;
   }
+}
+.task-center-view[data-mobile-layout=true] .bt-stack-row {
+  flex-direction: column;
+}
+.task-center-view[data-mobile-layout=true] .bt-stack-row.bt-row-has-head > .bt-area:not(.bt-has-head) {
+  margin-top: 0;
+}
+.task-center-view[data-mobile-layout=true] .bt-area.bt-area-accordion {
+  flex: 0 0 auto;
+}
+.task-center-view[data-mobile-layout=true] .bt-area-accordion > .bt-area-head {
+  cursor: pointer;
+  user-select: none;
+  padding: 2px 8px 6px;
+  min-height: 34px;
+  background: var(--background-primary);
+  border-radius: 0;
+}
+.task-center-view[data-mobile-layout=true] .bt-area-accordion > .bt-area-head:active {
+  background: var(--background-modifier-hover);
+}
+.task-center-view[data-mobile-layout=true] .bt-area-accordion > .bt-area-head .bt-area-head-title {
+  font-size: 12px;
+  color: var(--text-normal);
+}
+.task-center-view[data-mobile-layout=true] .bt-area-collapsed > :not(.bt-area-head) {
+  display: none;
+}
+.task-center-view[data-mobile-layout=true] .bt-area-caret {
+  flex: 0 0 auto;
+  margin-left: 6px;
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1;
+}
+.task-center-view[data-mobile-layout=true] .bt-area-accordion > .bt-area-head:hover .bt-area-caret {
+  color: var(--text-normal);
 }
 .task-center-view[data-mobile-layout=true] .bt-week {
   display: flex;
@@ -3993,18 +3974,8 @@
 .task-center-view[data-obsidian-mobile=true] {
   --tc-obsidian-mobile-toolbar-height: 72px;
 }
-.task-center-view[data-mobile-layout=true] {
-  --tc-mobile-action-height: 64px;
-}
 .task-center-view[data-mobile-layout=true][data-obsidian-mobile=true] .bt-body {
-  padding-bottom: calc(var(--tc-mobile-action-height) + var(--tc-obsidian-mobile-toolbar-height) + env(safe-area-inset-bottom, 0px) + 16px);
-}
-.task-center-view[data-mobile-layout=true][data-obsidian-mobile=true] .bt-mobile-action-bar {
-  bottom: calc(var(--tc-obsidian-mobile-toolbar-height) + env(safe-area-inset-bottom, 0px));
-  padding-bottom: 8px;
-}
-.task-center-view[data-mobile-layout=true][data-obsidian-mobile=true] .bt-footer {
-  padding-bottom: calc(var(--tc-mobile-action-height) + var(--tc-obsidian-mobile-toolbar-height) + env(safe-area-inset-bottom, 0px));
+  padding-bottom: calc(var(--tc-obsidian-mobile-toolbar-height) + env(safe-area-inset-bottom, 0px) + 16px);
 }
 .task-center-view[data-mobile-layout=true] .bt-toolbar-main {
   grid-template-columns: minmax(0, 1fr) auto;

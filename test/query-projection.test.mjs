@@ -503,45 +503,6 @@ test("US-109h: area-level when {status} filters the area's own cards", async () 
   );
 });
 
-// ── US-720d: areasAllEmpty (view-level empty state) ──
-
-test("US-720d: areasAllEmpty — true only when every list/grid area projects empty", async () => {
-  if (compileErr) throw compileErr;
-  const { areasAllEmpty } = await import("../test/.compiled/projection.js");
-  const tasks = [effectiveTask({ id: "a", tags: ["#x"] })];
-
-  // Two list areas that both filter to nothing → all empty.
-  assert.equal(
-    areasAllEmpty(
-      [
-        { type: "list", when: { tags: { expr: "#none1" } } },
-        { type: "list", when: { tags: { expr: "#none2" } } },
-      ],
-      tasks,
-      1,
-    ),
-    true,
-  );
-
-  // One area matches the task → not all empty.
-  assert.equal(
-    areasAllEmpty(
-      [
-        { type: "list", when: { tags: { expr: "#x" } } },
-        { type: "list", when: { tags: { expr: "#none" } } },
-      ],
-      tasks,
-      1,
-    ),
-    false,
-  );
-});
-
-test("US-720d: areasAllEmpty — false for non-list/grid, drop/tray, or empty layouts", async () => {
-  if (compileErr) throw compileErr;
-  const { areasAllEmpty } = await import("../test/.compiled/projection.js");
-  assert.equal(areasAllEmpty([{ type: "week" }], [], 1), false);
-  assert.equal(areasAllEmpty([{ type: "list", onDrop: { setStatus: "dropped" } }], [], 1), false);
-  assert.equal(areasAllEmpty([{ type: "drop", onDrop: { setStatus: "dropped" } }], [], 1), false);
-  assert.equal(areasAllEmpty([], [], 1), false);
-});
+// US-720d2: 全空布局不再折叠成一个 view 级居中空状态（areasAllEmpty 已删除）——
+// 每个 area 各自渲染各自的空状态。对应的视图层行为由 today-view.e2e.ts /
+// four-quadrant 的 e2e 守。

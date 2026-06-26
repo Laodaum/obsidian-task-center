@@ -308,7 +308,6 @@ const EN = {
   "savedViews.tag": "Tags",
   "savedViews.tagSearch": "Search tags",
   "savedViews.clearTags": "Clear",
-  "view.allEmpty": "Nothing to do here right now.",
   "savedViews.tagInsert": "Insert a tag…",
   "savedViews.tagEmpty": "No tags found. Add #hashtags to your tasks to filter by tag.",
   "savedViews.tagExprExample": "e.g. #a and #b · #a or #b · not #c · (#a or #b) and not #c",
@@ -455,6 +454,7 @@ const EN = {
 
   // US-109w: per-area filter + empty state
   "area.emptyArea": "No tasks match here.",
+  "area.emptyTray": "No unscheduled tasks.",
   "area.clearAreaFilter": "Clear this area's filter",
 
   // US-415: full-view upgrade gate (legacy SavedTaskView / old-DSL view →
@@ -757,7 +757,6 @@ const ZH: Partial<typeof EN> = {
   "savedViews.tag": "标签",
   "savedViews.tagSearch": "搜索标签",
   "savedViews.clearTags": "清空",
-  "view.allEmpty": "这里暂时没有要做的任务。",
   "savedViews.tagInsert": "插入标签…",
   "savedViews.tagEmpty": "未找到标签。在任务中添加 #hashtag 即可按标签筛选。",
   "savedViews.tagExprExample": "例：#a and #b · #a or #b · not #c · (#a or #b) and not #c",
@@ -898,6 +897,7 @@ const ZH: Partial<typeof EN> = {
   "area.unknownHint": "这个 area 类型不被支持。请编辑 Query DSL 修正。",
 
   "area.emptyArea": "本区无匹配任务。",
+  "area.emptyTray": "没有未排期任务。",
   "area.clearAreaFilter": "清空本区筛选",
 
   // US-415: 全屏升级闸门页

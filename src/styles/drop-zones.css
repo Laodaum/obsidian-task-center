@@ -87,6 +87,14 @@
   text-align: center;
   color: var(--text-muted);
 }
+/* 空未排期 tray：轻量左对齐占位，而不是一大块居中文案——它只是「这里现在没有
+   未排期任务，可往这里拖」的提示，不该抢视觉重心。 */
+.task-center-view .bt-tray-empty {
+  padding: 8px 10px;
+  text-align: left;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-faint);
+}
 .task-center-view .bt-filter-empty {
   display: flex;
   flex-direction: column;
