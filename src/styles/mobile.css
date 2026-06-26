@@ -328,10 +328,11 @@
   .task-center-view[data-mobile-layout="true"] .bt-area-accordion.bt-area-collapsed > .bt-area-head:active {
     background: var(--background-modifier-hover);
   }
-  /* 展开（选中）态：抬升底 + 左侧 3px accent 色条。 */
+  /* 展开（选中）态：用主题变量的软 accent 背景高亮——**不加左侧 accent 竖条**
+     (左 spine 被 local.no-inset-left-border 明令禁止，cards.css 也早有「No coloured
+     left spine」定论)。"当前打开哪个 area"由内容展开 + 软背景 + caret/标题着色表达。 */
   .task-center-view[data-mobile-layout="true"] .bt-area-accordion:not(.bt-area-collapsed) > .bt-area-head {
-    background: var(--background-modifier-hover);
-    box-shadow: inset 3px 0 0 0 var(--interactive-accent);
+    background: color-mix(in srgb, var(--interactive-accent) 8%, var(--background-modifier-hover));
   }
   /* 标题分态着色：折叠 muted、展开正文色。 */
   .task-center-view[data-mobile-layout="true"] .bt-area-accordion > .bt-area-head .bt-area-head-title {
@@ -345,6 +346,13 @@
   }
   .task-center-view[data-mobile-layout="true"] .bt-area-collapsed > :not(.bt-area-head) {
     display: none;
+  }
+  /* US-511a 修订：展开 area 的内容比 area 内缩一档(不再 edge-to-edge)。entry card /
+     周·月内容靠页面底色的留白槽读作「嵌在 area 里、比 area 小一圈」，强化层级感。
+     针对 body 包裹层(.bt-list-view / .bt-week / 月格容器)，不影响卡片自身内边距。 */
+  .task-center-view[data-mobile-layout="true"] .bt-area-accordion:not(.bt-area-collapsed) > :not(.bt-area-head) {
+    padding-left: 8px;
+    padding-right: 8px;
   }
   /* caret 分态着色 + 过渡：折叠 faint、展开 accent。 */
   .task-center-view[data-mobile-layout="true"] .bt-area-caret {
