@@ -16,6 +16,17 @@ Task Center 是一个 Obsidian 插件，用日 / 周 / 月看板管理 markdown 
 
 ![月视图拖拽演示](screenshots/month-drag.gif)
 
+## 安装
+
+<a href="https://obsidian.md/plugins?id=task-center"><img src="assets/install-button.svg" alt="在 Obsidian 中安装" height="52"></a>
+
+或在 **设置 → 第三方插件 → 浏览** 里搜索安装。
+
+使用前需要：
+
+1. 至少启用一个任务格式 companion：[Obsidian Tasks](https://github.com/obsidian-tasks-group/obsidian-tasks) 或 [Dataview](https://github.com/blacksmithgu/obsidian-dataview)。
+2. 启用 Obsidian 内置 **Daily Notes** 核心插件，并配置 "New file location"。Quick Add 会把新任务写入当天 Daily Note。
+
 ## 它解决什么
 
 - 全页任务看板：今日、周、月、已完成、未排期。
@@ -25,17 +36,6 @@ Task Center 是一个 Obsidian 插件，用日 / 周 / 月看板管理 markdown 
 - 用 `[estimate::]` / `[actual::]` 做估时复盘。
 - 移动端布局、长按菜单、滑动动作。
 - 面向 agent 的 `obsidian task-center:*` CLI。
-
-## 安装
-
-从 Obsidian 社区插件安装：
-
-[安装 Task Center](https://community.obsidian.md/plugins/task-center)
-
-使用前需要：
-
-1. 至少启用一个任务格式 companion：[Obsidian Tasks](https://github.com/obsidian-tasks-group/obsidian-tasks) 或 [Dataview](https://github.com/blacksmithgu/obsidian-dataview)。
-2. 启用 Obsidian 内置 **Daily Notes** 核心插件，并配置 "New file location"。Quick Add 会把新任务写入当天 Daily Note。
 
 ## 快速开始
 

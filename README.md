@@ -20,7 +20,7 @@ It keeps your tasks in plain markdown. No database. No private task format.
 
 <a href="https://obsidian.md/plugins?id=task-center"><img src="assets/install-button.svg" alt="Install in Obsidian" height="52"></a>
 
-Click the button to open the plugin page and install Task Center, or find it in **Settings → Community plugins → Browse**.
+Or find it in **Settings → Community plugins → Browse**.
 
 Before using it:
 
