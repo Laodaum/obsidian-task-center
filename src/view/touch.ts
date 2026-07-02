@@ -30,6 +30,10 @@ export interface LongPressOptions {
 function suppressNextClick(graceMs = 400): void {
   let timer: number | null = null;
   const swallow = (e: Event) => {
+    // Only the browser's own post-release click is the double-fire we're
+    // guarding against. Synthetic clicks (element.click() from tests or
+    // programmatic UI flows) are not part of this gesture — let them through.
+    if (!e.isTrusted) return;
     e.preventDefault();
     e.stopImmediatePropagation();
     cleanup();
