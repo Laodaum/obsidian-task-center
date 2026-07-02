@@ -249,11 +249,22 @@
 .task-center-view .bt-date-popover {
   display: grid;
   width: min(540px, calc(100vw - 32px));
-  max-height: min(520px, calc(100vh - 120px));
+  /* dvh, not vh: on mobile the dynamic browser/app chrome makes 100vh taller
+     than the visible viewport, letting the popover run under the toolbar. */
+  max-height: min(520px, calc(100dvh - 120px));
   grid-template-columns: 148px minmax(320px, 1fr);
   align-items: stretch;
   gap: 12px;
   padding: 12px;
+  overflow-y: auto;
+}
+/* The two-column preset+calendar grid needs 148+320px of content width; on a
+   narrow viewport the popover is capped at 100vw-32px and the grid would
+   overflow/clip. Collapse to a single column instead. */
+@media (max-width: 520px) {
+  .task-center-view .bt-date-popover {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 .task-center-view .bt-time-more-popover.bt-date-popover {
   width: min(640px, calc(100vw - 32px));

@@ -100,6 +100,8 @@
     min-width: 36px;
     min-height: 44px;
     padding: 0 8px;
+    border-radius: 999px;
+    font-size: 13px;
   }
 
   .task-center-view[data-mobile-layout="true"] .bt-nav-label {
@@ -108,20 +110,80 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    font-size: 13px;
+    color: var(--text-normal);
   }
 
   .task-center-view[data-mobile-layout="true"] .bt-body {
     width: 100%;
     min-width: 0;
     /* US-512: no bottom action bar to clear anymore — just a small safe-area
-       cushion (Obsidian Mobile's own toolbar is handled in mobile-repair.css). */
+       cushion (Obsidian Mobile's own toolbar is handled below). */
     padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
   }
+
+.task-center-view[data-obsidian-mobile="true"] {
+  /* Clearance for Obsidian Mobile's bottom toolbar (US-117c). The bar floats as a
+     rounded pill on newer builds and ran taller than the old 72px guess, clipping
+     the last card — bumped to a conservative 88px so the list always clears it. */
+  --tc-obsidian-mobile-toolbar-height: 88px;
+}
+
+/* US-512: no bottom action bar / footer on mobile. The body only needs to clear
+   Obsidian Mobile's own bottom toolbar (US-117c). */
+.task-center-view[data-mobile-layout="true"][data-obsidian-mobile="true"] .bt-body {
+  padding-bottom: calc(
+    var(--tc-obsidian-mobile-toolbar-height) +
+    env(safe-area-inset-bottom, 0px) +
+    16px
+  );
+}
 
   .task-center-view[data-mobile-layout="true"] .bt-card {
     width: 100%;
     max-width: 100%;
     box-sizing: border-box;
+    padding: 8px 9px;
+    border-radius: 7px;
+    cursor: pointer;
+  }
+
+  /* Selection = neutral soft fill, NOT an accent-blue ring. The old accent border +
+     inset ring clashed with the accent-blue `+新建` button and read as "two blue
+     things". Use Obsidian's native active-item fill (neutral, non-blue), matching the
+     "soft fill" form the area accordion's open state uses (US-168c). */
+  .task-center-view[data-mobile-layout="true"] .bt-card.selected {
+    outline: none;
+    box-shadow: none;
+    background: var(--background-modifier-active-hover);
+  }
+
+  .task-center-view[data-mobile-layout="true"] .bt-card-title-row {
+    gap: 8px;
+  }
+
+  .task-center-view[data-mobile-layout="true"] .bt-card-title {
+    font-size: 13px;
+    line-height: 1.45;
+  }
+
+  .task-center-view[data-mobile-layout="true"] .bt-card-tags,
+  .task-center-view[data-mobile-layout="true"] .bt-card-meta,
+  .task-center-view[data-mobile-layout="true"] .bt-card-children {
+    /* Was 34px — the deep indent left a wide empty gutter that read as "too much
+       padding". 24px still clears the check circle while tightening the card. */
+    margin-left: 24px;
+  }
+
+  /* The note path (Daily/xxx.md) is pure noise on a phone — the detail sheet already
+     shows `path:Lnn` on tap. Hide it on mobile; desktop keeps it. */
+  .task-center-view[data-mobile-layout="true"] .bt-meta-path {
+    display: none;
+  }
+
+  .task-center-view[data-mobile-layout="true"] .bt-task-tag {
+    font-size: 10.5px;
+    line-height: 1.45;
   }
 
   /* Tab bar: mobile pans horizontally across query tabs. The tail buttons
@@ -131,10 +193,12 @@
     overflow-x: auto;
     overflow-y: hidden;
     flex-wrap: nowrap;
-    height: 40px;
-    max-height: 40px;
+    height: 44px;
+    max-height: 44px;
+    gap: 6px;
     align-items: stretch;
-    padding-left: 8px;
+    padding: 0 2px;
+    border-bottom-color: color-mix(in srgb, var(--background-modifier-border) 70%, transparent);
     -webkit-overflow-scrolling: touch;
     overscroll-behavior-y: contain;
     touch-action: pan-x;
@@ -156,15 +220,30 @@
     flex: 0 0 auto;
     justify-content: center;
     min-width: 0;
-    max-width: 132px;
-    padding: 7px 6px;
+    max-width: none;
+    min-height: 38px;
+    padding: 7px 9px;
     gap: 6px;
+    border-radius: 8px 8px 0 0;
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-tab.active {
+    background: color-mix(in srgb, var(--interactive-accent) 14%, var(--background-primary));
+    border-color: color-mix(in srgb, var(--interactive-accent) 42%, var(--background-modifier-border));
   }
   .task-center-view[data-mobile-layout="true"] .bt-tab-label,
   .task-center-view[data-mobile-layout="true"] .bt-tab-name {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-tab-name {
+    font-size: 13px;
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-tab-count {
+    flex: 0 0 auto;
+    min-width: 20px;
+    padding: 1px 6px;
+    text-align: center;
   }
   .task-center-view[data-mobile-layout="true"] .bt-hotkey {
     display: none;
@@ -196,15 +275,29 @@
      the path footnote and meta row inherit the desktop card styles and simply
      wrap / ellipsis when the width runs out. */
 
-  /* Bigger touch target for the checkbox toggle (≥ 32px hit area while
-     keeping the visible icon the same size). */
+  /* Bigger touch target for the checkbox toggle. The visible circle stays
+     32px (US-505 compact card) but the HIT area extends to ≥44px via an
+     invisible overlay — UX-mobile §0.3 requires 44px targets and the check
+     is the single most-tapped control on the board.
+     US-505 alignment note: the row is `align-items: flex-start`, so any top
+     margin shifts the check off the first title line; keep only the `-4px`
+     horizontal nudge that aligns the check's optical left with the card
+     padding. */
   .task-center-view[data-mobile-layout="true"] .bt-check,
   .task-center-view[data-mobile-layout="true"] .bt-sub-check {
     min-width: 32px;
     min-height: 32px;
+    margin: 0 0 0 -4px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    position: relative;
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-check::before,
+  .task-center-view[data-mobile-layout="true"] .bt-sub-check::before {
+    content: "";
+    position: absolute;
+    inset: -6px;
   }
   .task-center-view[data-mobile-layout="true"] .bt-card-title,
   .task-center-view[data-mobile-layout="true"] .bt-subcard-title {
@@ -217,13 +310,21 @@
     flex: 0 0 auto;
     margin-left: auto;
     margin-right: 2px;
-    padding: 2px 8px;
+    padding: 4px 10px;
     border-radius: 10px;
     background: var(--background-modifier-border);
     color: var(--text-muted);
-    font-size: 10px;
+    font-size: 11px;
     cursor: pointer;
     user-select: none;
+    /* The visible pill stays small; the tap target extends to ~44px via the
+       invisible overlay (UX-mobile §0.3). */
+    position: relative;
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-subcard-more::before {
+    content: "";
+    position: absolute;
+    inset: -10px;
   }
   .task-center-view[data-mobile-layout="true"] .bt-subcard-more:active {
     background: var(--background-modifier-hover);
@@ -314,7 +415,9 @@
     user-select: none;
     position: relative;
     padding: 7px 10px;
-    min-height: 38px;
+    /* 44px: the head is the accordion's single toggle — full touch-target
+       height (UX-mobile §0.3), not the previous 38px. */
+    min-height: 44px;
     margin: 0 0 4px;
     background: transparent;
     border-radius: 8px;
@@ -389,6 +492,12 @@
     box-sizing: border-box;
     padding: 0;
     overflow: hidden;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 8px;
+    background: var(--background-secondary);
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-week-col.today {
+    background: color-mix(in srgb, var(--interactive-accent) 10%, var(--background-secondary));
   }
   .task-center-view[data-mobile-layout="true"] .bt-week-head {
     min-height: 44px;
@@ -449,7 +558,8 @@
   .task-center-view[data-mobile-layout="true"] .bt-month-cell {
     cursor: pointer;
     padding: 2px;
-    min-height: 36px;
+    /* Whole cell is the tap target that selects the day — 44px minimum. */
+    min-height: 44px;
   }
   /* D6: selected day uses the canonical soft-mix + inset accent treatment,
      matching today / week-col instead of a bespoke outline. */
@@ -549,6 +659,17 @@
 .is-mobile .task-center-bottom-sheet.modal {
   max-height: min(70vh, calc(100dvh - env(safe-area-inset-top) - 12px));
   border-radius: 14px 14px 0 0;
+  /* UX-mobile §13 #5 + §8.1: BottomSheet publishes --tc-vv-offset from
+     visualViewport (sheet rides above the soft keyboard) and --tc-sheet-drag
+     from the handle's swipe-down gesture (sheet follows the finger before
+     dismissing). */
+  transform: translateY(calc(var(--tc-sheet-drag, 0px) - var(--tc-vv-offset, 0px)));
+}
+/* Grab surfaces (handle + title) own their vertical pans — without this the
+   browser claims the pointer for scrolling and pointermove never fires. */
+.is-mobile .task-center-bottom-sheet .bt-sheet-grab,
+.is-mobile .task-center-bottom-sheet .modal-title {
+  touch-action: none;
 }
 .is-mobile .task-center-bottom-sheet.modal .modal-content {
   padding: 10px 18px max(18px, env(safe-area-inset-bottom));
@@ -559,6 +680,14 @@
   background: var(--background-modifier-border);
   border-radius: 2px;
   margin: 4px auto 8px;
+  /* The visible bar stays a 36×4 pill; the swipe-down grab area extends well
+     past it so a thumb can catch it without precision (UX-mobile §0.3). */
+  position: relative;
+}
+.task-center-bottom-sheet .bt-sheet-handle::before {
+  content: "";
+  position: absolute;
+  inset: -14px -60px;
 }
 .task-center-bottom-sheet .bt-sheet-empty {
   padding: 24px 8px;
@@ -1057,4 +1186,60 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
+}
+
+/* ───── Mobile platform touch-target + input-zoom guards ─────
+   Scoped by body.is-mobile (the actual phone/tablet app), NOT
+   data-mobile-layout: bottom sheets are Obsidian modals attached to <body>,
+   outside the view container, so the view's data attribute can't reach them —
+   and iOS焦点缩放 / 指尖命中都只是真机问题,桌面窄窗口不需要。 */
+
+/* UX-mobile §0.3: interactive rows / buttons inside sheets are ≥44px. */
+.is-mobile .task-center-bottom-sheet .bt-mobile-filter-sheet .bt-saved-view-select,
+.is-mobile .task-center-bottom-sheet .bt-mobile-filter-sheet .bt-saved-view-filter,
+.is-mobile .task-center-bottom-sheet .bt-mobile-filter-sheet .bt-tag-filter-trigger,
+.is-mobile .task-center-bottom-sheet .bt-mobile-filter-sheet .bt-saved-view-save,
+.is-mobile .task-center-bottom-sheet .bt-query-controls-sheet .bt-saved-view-save,
+.is-mobile .task-center-bottom-sheet .bt-query-controls-sheet .bt-saved-view-filter,
+.is-mobile .task-center-bottom-sheet .bt-query-controls-sheet .bt-tag-filter-trigger {
+  min-height: 44px;
+}
+.is-mobile .task-center-bottom-sheet .bt-area-tag-row {
+  min-height: 44px;
+  align-items: center;
+}
+
+/* iOS Safari/WebView auto-zooms the whole page when a focused text input's
+   font-size is under 16px. Every text input reachable on the phone gets a
+   16px floor (visual density is preserved elsewhere; zoom-jump is worse). */
+.is-mobile .task-center-view input[type="text"],
+.is-mobile .task-center-view input[type="search"],
+.is-mobile .task-center-view input[type="date"],
+.is-mobile .task-center-view input:not([type]),
+.is-mobile .task-center-view textarea,
+.is-mobile .task-center-bottom-sheet input[type="text"],
+.is-mobile .task-center-bottom-sheet input[type="search"],
+.is-mobile .task-center-bottom-sheet input[type="date"],
+.is-mobile .task-center-bottom-sheet input:not([type]),
+.is-mobile .task-center-bottom-sheet textarea,
+.is-mobile .task-center-source-edit-textarea,
+.is-mobile textarea[data-query-dsl-input] {
+  font-size: 16px;
+}
+
+/* UX-mobile §13: reduced motion — animations drop to ≤50ms but state changes
+   stay. Covers card transitions, swipe confirm flash, and sheet content. */
+@media (prefers-reduced-motion: reduce) {
+  .task-center-view .bt-card,
+  .task-center-view .bt-subcard,
+  .task-center-view .bt-check,
+  .task-center-view .bt-sub-check,
+  .task-center-view .bt-area-accordion > .bt-area-head,
+  .task-center-view .bt-area-caret {
+    transition-duration: 50ms;
+  }
+  .task-center-view .bt-card[data-swipe-ready="true"]::before,
+  .task-center-view .bt-card[data-swipe-ready="true"]::after {
+    animation-duration: 50ms;
+  }
 }

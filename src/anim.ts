@@ -14,6 +14,10 @@
  */
 export async function animateOut(el: HTMLElement, durationMs = 180): Promise<void> {
   if (!el.isConnected) return;
+  // UX-mobile §13: reduced motion caps animations at ≤50ms (state change kept).
+  if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+    durationMs = Math.min(durationMs, 50);
+  }
   const cs = getComputedStyle(el);
   const h = el.getBoundingClientRect().height;
   const mt = cs.marginTop;
