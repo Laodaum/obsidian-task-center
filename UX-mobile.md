@@ -21,7 +21,7 @@
 | Query Tab Strip | 横向滚动 tab 条 + 更多 | tab 是 QueryPreset，不是固定页面名（US-109g / US-109q） |
 | Query 编辑 | bottom sheet | 入口必须叫“编辑 Query”或等价对象名（US-109p4 / US-117） |
 | Quick Add | bottom sheet | 唯一新增主路径；写入 Daily Note（US-169 / US-509） |
-| 卡片动作 | long-press action sheet / swipe | 替代右键、hover、拖拽（US-506~508） |
+| 卡片动作 | tap / long-press → 任务详情 sheet；swipe | 替代右键、hover、拖拽（US-506~508） |
 | CLI | 不在移动端露出 | Obsidian Mobile 不支持 CLI；AI skill 指引只在设置页作为帮助信息（US-501 / US-215） |
 
 移动端不渲染桌面放弃 drop zone，不渲染拖拽目标，不提供跨 tab dwell 进度。
@@ -42,8 +42,6 @@
 │ 当前 view body                       │
 │ list / week / month / matrix         │
 │                                      │
-├──────────────────────────────────────┤
-│                          [+]         │  Quick Add FAB / bottom button
 └──────────────────────────────────────┘
 ```
 
@@ -52,8 +50,9 @@
 - Tab 条横向滚动；过多 tab 收进“更多”，仍是完整 Query Tab，不降级为菜单项。（US-109q）
 - Tab badge 显示实际渲染顶层卡数；不显示桌面快捷键编号。（US-105 / US-510）
 - Header 嵌入 `📋 N today · ⚠ M overdue`；点击不需要再“打开看板”，因为用户已经在看板内。（US-106）
+  - 零态（today 0 且 overdue 0）时该行不渲染：它紧贴 tab 条，空的「今日 0」会被误读为“当前 tab 没有内容”，与 tab 自己的计数徽标撞车。（US-512）
 - Toolbar 首屏只放当前 Query 摘要与“编辑 Query”；不把搜索、标签、排期、状态按钮铺满首屏。（US-117）
-- Quick Add 入口可为右下 FAB 或底部按钮，但不能与系统 Home indicator / Obsidian 底栏冲突。
+- Quick Add 入口是 toolbar 的 `+`（accent 按钮，US-512）。不做 FAB / 底部动作条——竖向空间留给内容，且避免与系统 Home indicator / Obsidian 底栏冲突。（US-512 / US-169）
 - 屏幕 `< 600px` 使用移动布局；`≥ 600px` 使用桌面布局；用户可强制保持移动布局。（US-502）
 
 ## 3. Query Tab 移动端管理
@@ -163,8 +162,8 @@ Week 移动端是 7 行折叠面板，不是 7 列。（US-503）
 Month 移动端显示“月历 + 日期数字 + 任务数圆点”。（US-504）
 
 - 日期格不渲染完整卡片。
-- 点击日期格打开该日任务 list bottom sheet。
-- 该日 sheet 中卡片仍使用通用移动卡片和 action sheet。
+- 点击日期格只更新月历下方的当天排期内联面板，不弹 dialog / bottom sheet（与验收 checklist 一致；sheet 会遮住月历本身，破坏“边看月历边翻天”的浏览节奏）。
+- 当天面板中卡片仍使用通用移动卡片和 action sheet。
 - 日期格不是 drop target。
 - 上月 / 今天 / 下月用可点击按钮。
 
@@ -210,7 +209,7 @@ Matrix 移动端不强塞二维大表。默认展示为按行轴分组的纵向 
 - meta 与 tag 合并为一行；空间不足按 tag、用户配置时长字段、deadline 风险顺序保留，其余截断。
 - 子任务默认只显示 1 层；更多层级用 `+N` 打开完整子树 bottom sheet。
 - 单击卡片打开任务详情 bottom sheet；单击子任务行打开对应子任务详情。源 Markdown 只能从详情或动作 sheet 的“编辑原文”显式进入。（US-168 / US-506 / US-142a）
-- 长按卡片打开动作 sheet，不进入 drag mode。（US-506）
+- 长按卡片打开与单击相同的任务详情 sheet（分组动作面板），不进入 drag mode。长按只是第二条进入路径——不再维护一份独立的扁平动作菜单，避免同一批动作出现两种排布。长按触发后必须吞掉抬指产生的 click，不得叠开第二层 sheet。（US-506）
 - 卡片不是 draggable，不显示 grab / drop target 视觉。（US-501 / US-505）
 - overdue / near-deadline 仍有左侧风险条，并配文字 / badge 辅助，不只依赖颜色。（US-115）
 
@@ -230,21 +229,23 @@ Matrix 移动端不强塞二维大表。默认展示为按行轴分组的纵向 
 
 ### 8.1 长按菜单
 
-长按卡片 ≥ 500ms 且未滚动时弹 action sheet。（US-506）
+长按卡片 ≥ 500ms 且未滚动时弹任务详情 sheet（与单击同一面板，见 §6）。（US-506）
+
+面板按分区组织动作，覆盖以下语义：
 
 ```text
-切完成
-安排到今天
-安排到明天
-改期...
+切完成（主动作）
+安排到今天 / 明天 / 下周（快捷改期）
+改期...（日期选择器）
 清空排期
 设为子任务...
 编辑 tag
-放弃
+编辑原文
+放弃（危险区）
 ```
 
-- 外部点击 / 下滑关闭。
-- 手指移动超过滚动 / swipe 阈值时取消 long-press。
+- 外部点击 / 下滑关闭（把手或标题下拉超过阈值即关闭）。
+- 手指移动超过滚动 / swipe 阈值时取消 long-press；长按触发时给触觉反馈（如平台支持）。
 - 菜单不包含桌面专属说明。
 
 ### 8.2 改期
@@ -272,8 +273,8 @@ Matrix 移动端不强塞二维大表。默认展示为按行轴分组的纵向 
 
 - 左滑卡片 = 完成。
 - 右滑卡片 = 放弃。
-- 阈值 50% 卡宽；未过半不显示确认反馈，退回阈值内松手取消。
-- 触发后 1 秒 toast undo。（US-508）
+- 阈值 50% 卡宽；未过半不显示确认反馈，退回阈值内松手取消；越过阈值给触觉反馈。
+- 触发后 toast 内嵌可点的「撤销」（移动端没有 Ctrl/Cmd+Z，toast 是唯一撤销入口，时长须足够点到，约 5 秒）。（US-508 / US-128）
 - 不做 swipe-to-delete。
 
 ## 9. Quick Add Bottom Sheet
@@ -348,7 +349,7 @@ Quick Add 是移动端唯一新增入口。（US-169 / US-509）
 ### 布局
 
 - [ ] `< 600px` 走移动布局；`≥ 600px` 走桌面布局；设置可强制移动布局。（US-502）
-- [ ] Header 显示 `📋 N today · ⚠ M overdue`。（US-106）
+- [ ] Header 显示 `📋 N today · ⚠ M overdue`；今日 0 且逾期 0 时隐藏（零态规则见 §2）。（US-106）
 - [ ] Tab strip 横向滚动，更多 tab 在“更多”sheet 中仍保留 badge / 排序 / 默认语义。（US-109q）
 - [ ] 首屏只有“编辑 Query”，没有铺满搜索 / 标签 / 排期 / 状态按钮。（US-117）
 
@@ -368,10 +369,10 @@ Quick Add 是移动端唯一新增入口。（US-169 / US-509）
 
 ### 卡片 / 动作
 
-- [ ] 单击卡片打开任务详情 bottom sheet；编辑原文只从详情或动作 sheet 的显式动作进入。（US-168 / US-506）
+- [ ] 单击与长按都打开任务详情 bottom sheet（长按吞掉后续 click，不叠开）；编辑原文只从详情 sheet 的显式动作进入。（US-168 / US-506）
 - [ ] 卡片不可拖拽；没有 drop target、放弃拖入区、跨 tab dwell。（US-501 / US-507）
 - [ ] 改期、清空排期、放弃、嵌套都有显式动作路径。（US-507）
-- [ ] 左滑完成、右滑放弃，阈值 50%，1 秒 undo。（US-508）
+- [ ] 左滑完成、右滑放弃，阈值 50%，toast 内嵌可点撤销。（US-508）
 - [ ] 子任务默认 1 层，`+N` 可打开完整树。（US-505）
 
 ### Quick Add / 输入
