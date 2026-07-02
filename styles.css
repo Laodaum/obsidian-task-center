@@ -3261,7 +3261,7 @@
   align-items: flex-end;
 }
 .is-mobile .task-center-bottom-sheet.modal {
-  max-height: min(70vh, calc(100dvh - env(safe-area-inset-top) - 12px));
+  max-height: min(70vh, calc(100dvh - var(--tc-vv-offset, 0px) - env(safe-area-inset-top) - 12px));
   border-radius: 14px 14px 0 0;
   transform: translateY(calc(var(--tc-sheet-drag, 0px) - var(--tc-vv-offset, 0px)));
 }

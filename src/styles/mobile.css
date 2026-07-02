@@ -657,7 +657,13 @@
   align-items: flex-end;
 }
 .is-mobile .task-center-bottom-sheet.modal {
-  max-height: min(70vh, calc(100dvh - env(safe-area-inset-top) - 12px));
+  /* Subtract the keyboard offset too: the avoidance transform lifts the whole
+     sheet, so an un-shrunk 70vh sheet would push its top off-screen. dvh does
+     not track the iOS keyboard — only --tc-vv-offset knows about it. */
+  max-height: min(
+    70vh,
+    calc(100dvh - var(--tc-vv-offset, 0px) - env(safe-area-inset-top) - 12px)
+  );
   border-radius: 14px 14px 0 0;
   /* UX-mobile §13 #5 + §8.1: BottomSheet publishes --tc-vv-offset from
      visualViewport (sheet rides above the soft keyboard) and --tc-sheet-drag

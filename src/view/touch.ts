@@ -21,10 +21,13 @@ export interface LongPressOptions {
  * dispatches a `click` on the SAME element when the finger lifts. Without
  * suppression that click runs the element's tap action too — e.g. long-press
  * a tab opened its management sheet AND switched to the tab underneath.
- * Swallow exactly one click (capture phase) within a short window; the
- * timeout covers pointercancel / drags where no click ever arrives.
+ *
+ * The finger can stay down arbitrarily long after the long-press fires, so a
+ * fixed timeout can't work: stay armed until the pointer lifts, then swallow
+ * at most one click (capture phase) inside a short grace window. pointercancel
+ * produces no click, so it just disarms.
  */
-function suppressNextClick(timeoutMs = 600): void {
+function suppressNextClick(graceMs = 400): void {
   let timer: number | null = null;
   const swallow = (e: Event) => {
     e.preventDefault();
@@ -33,10 +36,17 @@ function suppressNextClick(timeoutMs = 600): void {
   };
   const cleanup = () => {
     window.removeEventListener("click", swallow, true);
+    window.removeEventListener("pointerup", onRelease, true);
+    window.removeEventListener("pointercancel", onCancel, true);
     if (timer !== null) window.clearTimeout(timer);
   };
-  timer = window.setTimeout(cleanup, timeoutMs);
+  const onRelease = () => {
+    if (timer === null) timer = window.setTimeout(cleanup, graceMs);
+  };
+  const onCancel = () => cleanup();
   window.addEventListener("click", swallow, true);
+  window.addEventListener("pointerup", onRelease, true);
+  window.addEventListener("pointercancel", onCancel, true);
 }
 
 /**
@@ -264,9 +274,8 @@ export function attachCardGestures(
       const progress = elWidth > 0 ? Math.abs(dx) / (elWidth * swipeRatio) : 0;
       reset();
       if (progress < 1) return;
-      // A committed swipe releases over the card — eat the trailing click so
-      // it doesn't also open the task detail sheet.
-      suppressNextClick();
+      // No click suppression here: a half-card-width drag is far past the
+      // browser's tap slop, so no click follows a committed swipe.
       if (direction === "left" && opts.onSwipeLeft) opts.onSwipeLeft();
       else if (direction === "right" && opts.onSwipeRight) opts.onSwipeRight();
       return;
