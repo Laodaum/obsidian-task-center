@@ -14,6 +14,25 @@ export function columnStats(tasks: ParsedTask[]): string {
   return `${tasks.length} · ${formatMinutes(sum)}`;
 }
 
+// Bucket tasks by their effective `⏳` day in ONE pass. The week / month
+// renderers previously ran `tasks.filter(t => t.effectiveScheduled === day)`
+// once per rendered day (7× for week, up to 42× for month) — an O(days × N)
+// sweep that added up on mobile. Tasks failing `accept` or without a
+// scheduled day are skipped; per-day order preserves the input order.
+export function bucketByScheduledDay<T extends { effectiveScheduled: string | null }>(
+  tasks: T[],
+  accept: (t: T) => boolean,
+): Map<string, T[]> {
+  const buckets = new Map<string, T[]>();
+  for (const t of tasks) {
+    if (!t.effectiveScheduled || !accept(t)) continue;
+    const bucket = buckets.get(t.effectiveScheduled);
+    if (bucket) bucket.push(t);
+    else buckets.set(t.effectiveScheduled, [t]);
+  }
+  return buckets;
+}
+
 // The 7 ISO days of the week containing `anchorISO`, aligned to `weekStartsOn`.
 export function buildWeekDays(anchorISO: string, weekStartsOn: 0 | 1): string[] {
   const weekStart = startOfWeek(anchorISO, weekStartsOn);

@@ -197,6 +197,10 @@ export class TaskCenterView extends ItemView {
   tasks: ParsedTask[] = [];
   /** Cached effective tasks derived from `this.tasks` via `deriveEffectiveTasks`. */
   private _effectiveTasks: EffectiveTask[] = [];
+  /** Cached renderParentId→children buckets over `getEffectiveTasks()`.
+      Built once per reload instead of one full-array filter per rendered
+      card (which was O(cards × tasks) — visibly slow on mobile). */
+  private _childrenByParent: Map<string, EffectiveTask[]> | null = null;
   state: ViewState;
   private refreshTimer: number | null = null;
   private cacheVersion = 0;
@@ -570,6 +574,7 @@ export class TaskCenterView extends ItemView {
     // Filtering here also removes them from tab counts and tree traversals.
     this.tasks = all.filter((t) => t.title.trim() !== "");
     this._effectiveTasks = [];
+    this._childrenByParent = null;
   }
 
   /**
@@ -583,6 +588,25 @@ export class TaskCenterView extends ItemView {
       this._effectiveTasks = deriveEffectiveTasks(this.tasks);
     }
     return this._effectiveTasks;
+  }
+
+  /**
+   * renderParentId→children buckets over `getEffectiveTasks()`, memoised
+   * until the next `reloadTasks`. Card rendering reads its inline children
+   * from here in O(1) instead of filtering the full effective array per card.
+   */
+  getEffectiveChildren(parentId: string): EffectiveTask[] {
+    if (!this._childrenByParent) {
+      const buckets = new Map<string, EffectiveTask[]>();
+      for (const e of this.getEffectiveTasks()) {
+        if (!e.renderParentId) continue;
+        const bucket = buckets.get(e.renderParentId);
+        if (bucket) bucket.push(e);
+        else buckets.set(e.renderParentId, [e]);
+      }
+      this._childrenByParent = buckets;
+    }
+    return this._childrenByParent.get(parentId) ?? [];
   }
 
   /**
@@ -953,47 +977,10 @@ export class TaskCenterView extends ItemView {
     this.render();
   }
 
-  // US-109z2: there is no tab-level filter anymore, so the global filter state
-  // is always empty — these are constant false. (Per-area `when` does the
-  // narrowing inside projection / the area renderers.)
-  private hasSaveableFilters(): boolean {
-    return false;
-  }
-
-  hasActiveFilters(): boolean {
-    return false;
-  }
-
-  /**
-   * VAL-GUI-010: Empty-state explanations distinguish between:
-   * 1. Vault has no tasks at all
-   * 2. Current filters produce no results (with clear/switch actions)
-   */
-  renderFilterEmptyState(parent: HTMLElement): void {
-    const empty = parent.createDiv({ cls: "bt-filter-empty" });
-    empty.dataset.emptyState = "filters";
-
-    const icon = empty.createDiv({ cls: "bt-filter-empty-icon" });
-
-    // Distinguish: is the vault completely empty or just filtered empty?
-    const totalAll = this.tasks.length;
-    if (totalAll === 0) {
-      setIcon(icon, "inbox");
-      empty.createDiv({ text: tr("filters.emptyVault"), cls: "bt-filter-empty-title" });
-      empty.createDiv({ text: tr("filters.emptyVaultHint"), cls: "bt-filter-empty-hint" });
-    } else {
-      setIcon(icon, "search-x");
-      empty.createDiv({ text: tr("filters.emptyFiltersTitle"), cls: "bt-filter-empty-title" });
-      empty.createDiv({ text: tr("filters.emptyFiltersHint"), cls: "bt-filter-empty-hint" });
-      const actions = empty.createDiv({ cls: "bt-filter-empty-actions" });
-      const clear = actions.createEl("button", { text: tr("filters.clear"), cls: "bt-filter-empty-clear" });
-      clear.dataset.action = "clear-filters";
-      clear.addEventListener("click", () => {
-        this.resetActiveFilters();
-        this.render();
-      });
-    }
-  }
+  // US-109z2: there is no tab-level filter anymore (per-area `when` does the
+  // narrowing inside projection / the area renderers), so the old
+  // hasActiveFilters/renderFilterEmptyState/resetActiveFilters trio was
+  // unreachable and has been removed.
 
   // US-109p10: the Query editor panel lives in view/query-editor.ts now. Entry
   // points (toolbar / tab menu / area head) call this thin delegator.
@@ -1125,12 +1112,22 @@ export class TaskCenterView extends ItemView {
       this.scheduleRefresh();
     };
 
+    const scheduleTo = async (date: string | null) => {
+      const r = await this.api.schedule(t.id, date);
+      this.recordUndoableWrite(
+        date === null ? "clear schedule" : `schedule ${date}`,
+        t,
+        r,
+        date === null ? tr("notice.clearedSchedule") : tr("notice.scheduled", { date }),
+      );
+    };
+
     const scheduleWithPicker = async () => {
       const date = await openMobileDatePicker(this.app, {
         initialISO: t.effectiveScheduled ?? todayISO(),
         weekStartsOn: this.plugin.settings.weekStartsOn,
       });
-      if (date !== null) await this.api.schedule(t.id, date);
+      if (date !== null) await scheduleTo(date);
     };
 
     sheet = new BottomSheet(this.app, {
@@ -1157,15 +1154,24 @@ export class TaskCenterView extends ItemView {
         });
         doneBtn.dataset.mobileDetailAction = "done";
         doneBtn.addEventListener("click", () => {
-          void run(() => isDone ? this.api.undone(t.id) : this.api.done(t.id));
+          void run(async () => {
+            const r = isDone ? await this.api.undone(t.id) : await this.api.done(t.id);
+            this.recordUndoableWrite(
+              isDone ? "mark undone" : "mark done",
+              t,
+              r,
+              isDone ? tr("notice.undone") : tr("sheet.done"),
+            );
+          });
         });
 
         // ── Quick reschedule ───────────────────────────────
         const rescheduleZone = detail.createDiv({ cls: "bt-mobile-task-detail-reschedule" });
         const quickRow = rescheduleZone.createDiv({ cls: "bt-mobile-task-detail-quick-row" });
 
-        const tomorrow = addDays(todayISO(), 1);
-        const nextWeekStart = startOfWeek(addDays(todayISO(), 7), this.plugin.settings.weekStartsOn);
+        const today = todayISO();
+        const tomorrow = addDays(today, 1);
+        const nextWeekStart = startOfWeek(addDays(today, 7), this.plugin.settings.weekStartsOn);
 
         const quickBtn = (id: string, label: string, date: string) => {
           const btn = quickRow.createEl("button", {
@@ -1173,8 +1179,10 @@ export class TaskCenterView extends ItemView {
             text: label,
           });
           btn.dataset.mobileDetailAction = id;
-          btn.addEventListener("click", () => { void run(() => this.api.schedule(t.id, date)); });
+          btn.addEventListener("click", () => { void run(() => scheduleTo(date)); });
         };
+        // UX-mobile §8.1/§8.2 quick items: today / tomorrow / next week.
+        quickBtn("quick-today", tr("toolbar.today"), today);
         quickBtn("quick-tomorrow", tr("sheet.tomorrow"), tomorrow);
         quickBtn("quick-next-week", tr("sheet.nextWeek"), nextWeekStart);
         const pickerBtn = quickRow.createEl("button", {
@@ -1190,7 +1198,7 @@ export class TaskCenterView extends ItemView {
             text: tr("sheet.clearSchedule"),
           });
           clearBtn.dataset.mobileDetailAction = "clear-schedule";
-          clearBtn.addEventListener("click", () => { void run(() => this.api.schedule(t.id, null)); });
+          clearBtn.addEventListener("click", () => { void run(() => scheduleTo(null)); });
         }
 
         // ── Secondary actions ──────────────────────────────
@@ -1222,7 +1230,12 @@ export class TaskCenterView extends ItemView {
           text: tr("sheet.drop"),
         });
         dropBtn.dataset.mobileDetailAction = "drop";
-        dropBtn.addEventListener("click", () => { void run(() => this.api.drop(t.id)); });
+        dropBtn.addEventListener("click", () => {
+          void run(async () => {
+            const r = await this.api.drop(t.id);
+            this.recordUndoableWrite("drop", t, r, tr("trash.dropped"));
+          });
+        });
       },
     });
     sheet.open();
@@ -1255,7 +1268,37 @@ export class TaskCenterView extends ItemView {
     await this.waitForCacheUpdate(awaitCachePaths);
   }
 
-  private showUndoableNotice(message: string, duration = 5000): void {
+  /**
+   * US-128 / US-508 (mobile reachability): record a completed line-level
+   * write on the undo stack and surface a toast whose embedded "Undo" span
+   * is tappable — on mobile there is no Ctrl/Cmd+Z, so the toast IS the undo
+   * entry point. Accepts either a single-line result or a cascade result
+   * carrying per-line `results` (done / drop cascades).
+   */
+  recordUndoableWrite(
+    label: string,
+    fallback: { path: string; line: number },
+    r: {
+      before: string;
+      after: string;
+      unchanged: boolean;
+      results?: Array<{ path: string; line: number; before: string; after: string; unchanged?: boolean }>;
+    },
+    message?: string,
+  ): void {
+    if (r.unchanged && !(r.results?.some((d) => d.before !== d.after))) return;
+    const lineResults = r.results && r.results.length > 0
+      ? r.results
+      : [{ path: fallback.path, line: fallback.line, before: r.before, after: r.after }];
+    const ops = lineResults
+      .filter((d) => d.before !== d.after)
+      .map((d) => ({ path: d.path, line: d.line, before: [d.before], after: [d.after] }));
+    if (ops.length === 0) return;
+    this.undoStack.push({ label, ops });
+    if (message) this.showUndoableNotice(message);
+  }
+
+  showUndoableNotice(message: string, duration = 5000): void {
     const notice = new Notice(message, duration);
     const undo = notice.messageEl.createSpan({
       text: `  ${tr("notice.undoAction")}`,
@@ -1277,8 +1320,19 @@ export class TaskCenterView extends ItemView {
    * explicit confirmation button before the shared nest writer runs.
    */
   private async applyTagEditResult(t: EffectiveTask, edit: TagEditResult): Promise<void> {
-    for (const tag of edit.remove) await this.api.tag(t.id, tag, true);
-    for (const tag of edit.add) await this.api.tag(t.id, tag);
+    // Collect every changed line into ONE undo entry (ops in forward order;
+    // the stack replays them in reverse), so a mobile tag edit is atomically
+    // undoable from the toast.
+    const ops: Array<{ path: string; line: number; before: string[]; after: string[] }> = [];
+    const record = (r: { before: string; after: string; unchanged: boolean }) => {
+      if (!r.unchanged) ops.push({ path: t.path, line: t.line, before: [r.before], after: [r.after] });
+    };
+    for (const tag of edit.remove) record(await this.api.tag(t.id, tag, true));
+    for (const tag of edit.add) record(await this.api.tag(t.id, tag));
+    if (ops.length > 0) {
+      this.undoStack.push({ label: "edit tags", ops });
+      this.showUndoableNotice(tr("notice.tagsUpdated"));
+    }
   }
 
   // US-123: bottom abandon target — dragging a card here marks it
@@ -1869,15 +1923,6 @@ export class TaskCenterView extends ItemView {
     const active = this.activeSavedView();
     this.tabDrafts.delete(active.id);
     this.applySavedView(active);
-  }
-
-  private resetActiveFilters(): void {
-    this.state.filter = "";
-    this.state.savedViewTag = "";
-    this.state.savedViewTime = {};
-    this.state.savedViewStatus = "all";
-    this.filterPopoverOpen = null;
-    this.pendingDateRangeStart = null;
   }
 
   applySavedView(view: QueryPreset): void {

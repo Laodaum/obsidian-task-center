@@ -113,6 +113,8 @@ const EN = {
   "notice.deleted": "Deleted tab \"{name}\" — no tasks were removed.",
   "notice.undoAction": "Undo",
   "notice.undoRestored": "Restored tab \"{name}\".",
+  "notice.undone": "Marked undone",
+  "notice.tagsUpdated": "Tags updated",
 
   // Context menu
   "ctx.markDone": "Mark done",
@@ -590,6 +592,8 @@ const ZH: Partial<typeof EN> = {
   "notice.deleted": "已删除 Tab「{name}」——任务本身未被删除。",
   "notice.undoAction": "撤销",
   "notice.undoRestored": "已恢复 Tab「{name}」。",
+  "notice.undone": "已取消完成",
+  "notice.tagsUpdated": "已更新 tag",
 
   "ctx.markDone": "标记完成",
   "ctx.markTodo": "取消完成",

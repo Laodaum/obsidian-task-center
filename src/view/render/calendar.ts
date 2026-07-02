@@ -12,7 +12,7 @@ import { t as tr } from "../../i18n";
 import { todayISO, fromISO, addDays, daysBetween, pad } from "../../dates";
 import { weekdayLabel } from "../../weekday";
 import { recomputeTopLevelInQuery } from "../../task-tree";
-import { columnStats, buildWeekDays, buildMonthGrid } from "./calendar-grid";
+import { columnStats, buildWeekDays, buildMonthGrid, bucketByScheduledDay } from "./calendar-grid";
 import { renderCard, wireCardEvents } from "./card";
 
 export function renderWeek(
@@ -36,30 +36,14 @@ export function renderWeek(
 
   const filter = v.getTextFilter();
   const effectiveTasks = v.scopeTasksToArea(v.getEffectiveTasks(), area.when);
-
-  if (v.hasActiveFilters()) {
-    const unfilteredCount = days.reduce(
-      (sum, day) => sum + effectiveTasks.filter(
-        (t) => t.effectiveScheduled === day && t.isTopLevelInQuery,
-      ).length,
-      0,
-    );
-    const filteredCount = days.reduce(
-      (sum, day) => sum + effectiveTasks.filter(
-        (t) => t.effectiveScheduled === day && t.isTopLevelInQuery,
-      ).filter(filter).length,
-      0,
-    );
-    if (unfilteredCount > 0 && filteredCount === 0) v.renderFilterEmptyState(parent);
-  }
+  // One pass over the task set instead of one full filter per day column.
+  const dayBuckets = bucketByScheduledDay(effectiveTasks, filter);
 
   const wrapper = parent.createDiv({ cls: "bt-week" });
   wrapper.dataset.view = "week";
 
   for (const day of days) {
-    const dayTasks = effectiveTasks
-      .filter((t) => t.effectiveScheduled === day)
-      .filter(filter);
+    const dayTasks = dayBuckets.get(day) ?? [];
     // Recompute top-level after query filtering: children whose parent
     // was filtered out must appear as top-level cards rather than
     // being hidden behind a parent that isn't in the result.
@@ -166,21 +150,9 @@ export function renderMonth(
 
   const effectiveTasks = v.scopeTasksToArea(v.getEffectiveTasks(), area.when);
   const filter = v.getTextFilter();
-  if (v.hasActiveFilters()) {
-    const unfilteredCount = gridDays.reduce(
-      (sum, day) => sum + effectiveTasks.filter(
-        (t) => t.effectiveScheduled === day && t.isTopLevelInQuery,
-      ).length,
-      0,
-    );
-    const filteredCount = gridDays.reduce(
-      (sum, day) => sum + effectiveTasks.filter(
-        (t) => t.effectiveScheduled === day && t.isTopLevelInQuery,
-      ).filter(filter).length,
-      0,
-    );
-    if (unfilteredCount > 0 && filteredCount === 0) v.renderFilterEmptyState(wrapper);
-  }
+  // One pass over the task set instead of one full filter per grid cell
+  // (up to 42 cells — the old per-cell sweep was O(cells × N)).
+  const dayBuckets = bucketByScheduledDay(effectiveTasks, filter);
 
   const grid = wrapper.createDiv({ cls: "bt-month-grid" });
   const isMobileLayout = v.contentEl.dataset.mobileLayout === "true";
@@ -201,9 +173,7 @@ export function renderMonth(
     });
     // e2e drop-target selector — same contract as the week view.
     cell.dataset.date = day;
-    const dayTasksAll = effectiveTasks
-      .filter((t) => t.effectiveScheduled === day)
-      .filter(filter);
+    const dayTasksAll = dayBuckets.get(day) ?? [];
     // Recompute top-level after query filtering so children whose
     // parent was filtered out become top-level cards in the cell.
     const dayTasksRecomputed = recomputeTopLevelInQuery(dayTasksAll);

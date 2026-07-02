@@ -299,11 +299,21 @@ export class TaskCenterApi {
     const targets = [task, ...descendants];
     // Bottom-up so line numbers stay stable across each mutation.
     targets.sort((a, b) => b.line - a.line);
-    let lastResult = await markDone(this.app, targets[0], at, this.taskFormatFlavor());
-    for (let i = 1; i < targets.length; i++) {
-      lastResult = await markDone(this.app, targets[i], at, this.taskFormatFlavor());
+    // Mirror `drop`: return one entry per affected line in `results` so undo
+    // callers can restore the parent AND every cascaded child atomically,
+    // with the parent's fields kept at top level for backward compatibility.
+    const results: DropResult[] = [];
+    for (const t of targets) {
+      const r = await markDone(this.app, t, at, this.taskFormatFlavor());
+      results.push({ path: t.path, line: t.line, before: r.before, after: r.after, unchanged: r.unchanged });
     }
-    return lastResult;
+    const parentResult = results.find((r) => r.line === task.line) ?? results[results.length - 1];
+    return {
+      before: parentResult.before,
+      after: parentResult.after,
+      unchanged: parentResult.unchanged,
+      results,
+    };
   }
 
   async undone(id: string) {

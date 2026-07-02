@@ -102,9 +102,8 @@ export function renderCard(
   path.title = t.path;
 
   // Children expansion — uses the EffectiveTask tree's renderParentId
-  // to determine which children render inline under this card.
-  const effectiveTasksForChildren = v.getEffectiveTasks();
-  const children = effectiveTasksForChildren.filter((e) => e.renderParentId === t.id);
+  // buckets to determine which children render inline under this card.
+  const children = v.getEffectiveChildren(t.id);
   if (children.length > 0) {
     const expander = card.createDiv({ cls: "bt-card-children" });
     for (const c of children) renderSubcard(v, expander, c, t.effectiveScheduled);
@@ -154,37 +153,20 @@ export function renderCard(
 }
 
 /**
- * US-508: commit a swipe action. Pushes the resulting byte-level diff to
- * the undo stack so the user can recover via the long-press menu (M-3
- * step 3 will surface an explicit undo button there). Notice toast is
- * 1s — short enough not to block, long enough to register what happened.
+ * US-508: commit a swipe action. `recordUndoableWrite` pushes the byte-level
+ * diff (parent + cascaded children) onto the undo stack AND shows a toast
+ * with a tappable Undo — on mobile there is no Ctrl/Cmd+Z, so the toast is
+ * the only reachable undo entry point for a swipe.
  */
 async function swipeAction(v: TaskCenterView, t: ParsedTask, kind: "done" | "drop"): Promise<void> {
   try {
-    if (kind === "done") {
-      const r = await v.api.done(t.id);
-      if (!r.unchanged) {
-        v.undoStack.push({
-          label: "swipe done",
-          ops: [{ path: t.path, line: t.line, before: [r.before], after: [r.after] }],
-        });
-      }
-    } else {
-      const r = await v.api.drop(t.id);
-      if (!r.unchanged) {
-        // fix-m4-abandon-undo-cascade: record one UndoOp per affected
-        // line (parent + cascaded children) so undo restores the
-        // entire cascade atomically.
-        const ops = (r.results ?? []).map((d) => ({
-          path: d.path,
-          line: d.line,
-          before: [d.before],
-          after: [d.after],
-        }));
-        v.undoStack.push({ label: "swipe drop", ops });
-      }
-    }
-    new Notice(kind === "done" ? "✓ Done" : tr("trash.dropped"), 1000);
+    const r = kind === "done" ? await v.api.done(t.id) : await v.api.drop(t.id);
+    v.recordUndoableWrite(
+      kind === "done" ? "swipe done" : "swipe drop",
+      t,
+      r,
+      kind === "done" ? tr("sheet.done") : tr("trash.dropped"),
+    );
   } catch (err) {
     new Notice(tr("notice.error", { msg: (err as Error).message }), 4000);
   }
@@ -270,10 +252,9 @@ function renderSubcard(
   // when it has its own ⏳.
   wireCardEvents(v, subCard, c, { acceptNestDrop: false });
 
-  // Grandchildren — use the EffectiveTask tree's renderParentId to
-  // determine which grandchildren render inline.
-  const effectiveTasksForGrand = v.getEffectiveTasks();
-  const grand = effectiveTasksForGrand.filter((e) => e.renderParentId === c.id);
+  // Grandchildren — use the EffectiveTask tree's renderParentId buckets
+  // to determine which grandchildren render inline.
+  const grand = v.getEffectiveChildren(c.id);
   if (grand.length > 0) {
     if (Platform.isMobile) {
       // US-505: mobile collapses to 1 level.
@@ -455,10 +436,14 @@ export function wireCardEvents(
     }
   });
 
-  // Right-click context menu
+  // Right-click context menu. On mobile layout, Android webviews synthesize
+  // `contextmenu` from a long-press — the pointer gesture controller already
+  // opens the task detail sheet for that hold, so only swallow the event here
+  // instead of stacking the desktop menu on top of the sheet.
   el.addEventListener("contextmenu", (e) => {
     e.preventDefault();
     e.stopPropagation();
+    if (v.contentEl.dataset.mobileLayout === "true") return;
     v.openContextMenu(e, t);
   });
 }

@@ -2334,18 +2334,19 @@
   font-size: 12px;
   cursor: grab;
   touch-action: pan-y;
-  will-change: transform;
   transition:
     transform 0.12s ease,
     border-color 0.12s ease,
     background-color 0.12s ease,
     box-shadow 0.12s ease;
 }
-.task-center-view .bt-card:hover {
-  border-color: var(--interactive-accent-hover, var(--interactive-accent));
-  background: color-mix(in srgb, var(--interactive-accent) 4%, var(--background-primary));
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--interactive-accent) 24%, transparent);
-  transform: translateY(-1px);
+@media (hover: hover) {
+  .task-center-view .bt-card:hover {
+    border-color: var(--interactive-accent-hover, var(--interactive-accent));
+    background: color-mix(in srgb, var(--interactive-accent) 4%, var(--background-primary));
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--interactive-accent) 24%, transparent);
+    transform: translateY(-1px);
+  }
 }
 .task-center-view .bt-card:active {
   cursor: grabbing;
@@ -2389,8 +2390,10 @@
   justify-content: center;
   transition: color 0.12s ease;
 }
-.task-center-view .bt-check:hover {
-  color: var(--interactive-accent);
+@media (hover: hover) {
+  .task-center-view .bt-check:hover {
+    color: var(--interactive-accent);
+  }
 }
 .task-center-view .bt-card-title {
   flex: 1;
@@ -2404,8 +2407,10 @@
   margin: 0;
   box-sizing: border-box;
 }
-.task-center-view .bt-card-title:hover {
-  color: var(--text-accent);
+@media (hover: hover) {
+  .task-center-view .bt-card-title:hover {
+    color: var(--text-accent);
+  }
 }
 .task-center-view .bt-task-tags {
   display: flex;
@@ -2477,10 +2482,12 @@
     box-shadow 0.12s ease,
     transform 0.12s ease;
 }
-.task-center-view .bt-subcard:hover {
-  background: color-mix(in srgb, var(--interactive-accent) 7%, transparent);
-  border-color: color-mix(in srgb, var(--interactive-accent) 22%, var(--background-modifier-border));
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--interactive-accent) 12%, transparent) inset;
+@media (hover: hover) {
+  .task-center-view .bt-subcard:hover {
+    background: color-mix(in srgb, var(--interactive-accent) 7%, transparent);
+    border-color: color-mix(in srgb, var(--interactive-accent) 22%, var(--background-modifier-border));
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--interactive-accent) 12%, transparent) inset;
+  }
 }
 .task-center-view .bt-subcard.dragging {
   opacity: 0.72;
@@ -2506,13 +2513,21 @@
   cursor: pointer;
   transition: color 0.12s ease;
 }
-.task-center-view .bt-sub-check:hover,
 .task-center-view .bt-sub-check:focus-visible {
   color: var(--interactive-accent);
   border-color: transparent;
   background: transparent;
   box-shadow: none;
   outline: none;
+}
+@media (hover: hover) {
+  .task-center-view .bt-sub-check:hover {
+    color: var(--interactive-accent);
+    border-color: transparent;
+    background: transparent;
+    box-shadow: none;
+    outline: none;
+  }
 }
 .task-center-view .bt-subcard-title {
   flex: 1;
