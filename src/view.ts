@@ -22,7 +22,7 @@ import {
 import { t as tr } from "./i18n";
 import { animateOut } from "./anim";
 import { TabDwellTracker } from "./view/dnd";
-import { UndoStack, UndoEntry, UndoOp } from "./view/undo";
+import { UndoStack, UndoEntry, UndoOp, buildLineUndoOps } from "./view/undo";
 import { BottomSheet } from "./view/bottom-sheet";
 import { openMobileDatePicker, openMobileTagEditor, type TagEditResult } from "./view/mobile-task-sheet";
 import { shouldCloseFilterPopoverOnPointerDown, isClickInsideFilterControls } from "./view/filter-popover";
@@ -1286,13 +1286,7 @@ export class TaskCenterView extends ItemView {
     },
     message?: string,
   ): void {
-    if (r.unchanged && !(r.results?.some((d) => d.before !== d.after))) return;
-    const lineResults = r.results && r.results.length > 0
-      ? r.results
-      : [{ path: fallback.path, line: fallback.line, before: r.before, after: r.after }];
-    const ops = lineResults
-      .filter((d) => d.before !== d.after)
-      .map((d) => ({ path: d.path, line: d.line, before: [d.before], after: [d.after] }));
+    const ops = buildLineUndoOps(fallback, r);
     if (ops.length === 0) return;
     this.undoStack.push({ label, ops });
     if (message) this.showUndoableNotice(message);
