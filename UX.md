@@ -10,7 +10,7 @@
 
 1. **Markdown 是唯一事实源**：界面显示和操作都围绕 vault 中的 `- [ ]` 任务行，不创建数据库，不创建 UI 私有任务格式。（US-401 / US-407）
 2. **Query 是任务中心的核心对象**：用户看到的是保存下来的 Query Tab；搜索、标签、时间、状态、view、summary 都是在编辑同一份 Query DSL。（US-109t / US-109u）
-3. **View 只改变呈现，不改变集合**：`list / week / month / matrix` 是布局和操作方式，不是业务分类。（US-100 / US-109k）
+3. **View 只改变呈现，不改变集合**：`list / week / month / matrix / horizon` 是布局和操作方式，不是业务分类。（US-100 / US-109k / US-103b）
 4. **界面文案解释对象语义**：入口叫“编辑 Query”，不是泛化的“筛选”；未保存改动、更新、另存为、丢弃必须有不同含义。（US-109p4 / US-109c1）
 5. **桌面和移动端语义一致，交互不同**：桌面可以拖拽和快捷键，移动端用 bottom sheet、swipe、动作 sheet 等显式路径。（US-501 / US-507）
 6. **保留 Obsidian 体验**：视觉变量、字体、焦点、菜单、编辑器能力尽量使用 Obsidian 原生模式，不引入独立应用感。
@@ -41,7 +41,8 @@ Task Center
 │  ├─ list
 │  ├─ week
 │  ├─ month
-│  └─ matrix
+│  ├─ matrix
+│  └─ horizon
 └─ Context Actions
    ├─ 卡片菜单
    ├─ 桌面拖拽目标
@@ -75,6 +76,7 @@ Tab 的运行时状态：
 | 本月 | 查看月度分布 | month | 月历 + 可选未排期 tray |
 | TODO | 查看所有待办 | list | 连续任务列表 |
 | 未排期 | 处理缺少 `⏳` 的任务 | list | 未排期解释为空集合原因 |
+| 视界 | 查看今天到本月的全景 | horizon | 今日 / 本周 / 下周 / 本月四列，可选未排期 tray |
 | 已完成 | 复盘完成记录 | list | 按完成时间倒序，显示 summary |
 | 已放弃 | 复盘放弃记录 | list | 与完成分开统计 |
 
@@ -275,10 +277,34 @@ Matrix 是用户配置的二维 bucket。（US-103a）
 
 - 横轴、纵轴、bucket 名称全部由用户配置。
 - bucket 匹配条件可来自 tag、inline field、时间、状态。
-- 未命中任务进入“未分组”。
+- 未命中任务进入"未分组"。
 - 同一任务命中多个格子时，默认放入第一个匹配格；用户可选择允许重复显示。
 
-Matrix 不内置“重要 / 紧急 / 等待 / 下一步”等方法论字面。（US-301）
+Matrix 不内置"重要 / 紧急 / 等待 / 下一步"等方法论字面。（US-301）
+
+### 6.5 Horizon View
+
+Horizon 把当前 query 命中的任务按时间远近放入四个固定列：今天、本周（不含今天）、下周、本月（不含本周/下周）。（US-103b）
+
+桌面：4 列水平排列，按时间远近从左到右：今天、本周、下周、本月。
+移动端：4 个折叠行，当前日默认展开；行 header 显示 `今天 · N tasks · XhYm` 等。
+
+每列/行顶部显示任务数与估时合计；今天列默认高亮。
+
+分桶规则：
+
+| 列 | 条件 |
+| --- | --- |
+| 今天 | `effectiveScheduled == today` |
+| 本周 | `effectiveScheduled >= weekStart` 且 `effectiveScheduled <= weekEnd` 且 `!= today` |
+| 下周 | `effectiveScheduled >= nextWeekStart` 且 `effectiveScheduled <= nextWeekEnd` |
+| 本月 | `effectiveScheduled >= monthStart` 且 `effectiveScheduled <= monthEnd` 且不在本周/下周内 |
+
+本周边界遵循一周第一天设置（US-112）。
+
+主要操作：打开源 Markdown 编辑层、完成/放弃、改期。桌面支持拖拽到不同列改 `⏳`、拖回未排期 tray 清空排期。
+
+可选未排期 tray 位于日期区下方，语义与 Week/Month 一致。
 
 ## 7. 今日预设 Query
 

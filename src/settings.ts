@@ -53,6 +53,7 @@ export class TaskCenterSettingTab extends PluginSettingTab {
               completed: tr("tab.completed"),
               dropped: tr("tab.dropped"),
               unscheduled: tr("tab.unscheduled"),
+              horizon: tr("tab.horizon"),
             });
             const visible = visibleQueryPresets(this.plugin.settings.queryPresets);
             if (

@@ -1,6 +1,6 @@
 import type { SavedViewStatus, SavedViewTimeField, SavedViewTimeFilters } from "../types";
 
-export type TabKey = "today" | "week" | "month" | "completed" | "unscheduled" | "list" | "matrix";
+export type TabKey = "today" | "week" | "month" | "completed" | "unscheduled" | "list" | "matrix" | "horizon";
 export type FilterPopoverKey = "view" | "tag" | "status" | "time-more" | `time:${SavedViewTimeField}`;
 
 export interface ViewState {

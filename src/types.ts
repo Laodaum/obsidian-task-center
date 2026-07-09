@@ -73,7 +73,7 @@ export interface TaskCenterSettings {
   // during loadSettings — no migration path exists.
   queryPresets: QueryPreset[];
   defaultSavedViewId: string | null;
-  defaultView: "today" | "week" | "month" | "completed" | "unscheduled";
+  defaultView: "today" | "week" | "month" | "completed" | "unscheduled" | "horizon";
   openOnStartup: boolean;
   weekStartsOn: 0 | 1;
   stampCreated: boolean;
@@ -106,7 +106,7 @@ export type TaskFormatFlavor = "tasks" | "dataview";
 export type SavedViewStatus = "all" | TaskStatus | TaskStatus[];
 export type SavedViewTimeField = "scheduled" | "deadline" | "completed" | "created" | "dropped";
 export type SavedViewTimeFilters = Partial<Record<SavedViewTimeField, string>>;
-export type QueryViewType = "list" | "week" | "month" | "matrix";
+export type QueryViewType = "list" | "week" | "month" | "matrix" | "horizon";
 
 export interface SavedViewConfig {
   type: QueryViewType;

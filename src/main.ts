@@ -556,7 +556,7 @@ export default class TaskCenterPlugin extends Plugin {
       "Run a saved query preset and render its view",
       {
         id: { value: "<preset-id>", description: "Saved query preset id", required: true },
-        view: { value: "list|week|month|matrix", description: "Temporary view override" },
+        view: { value: "list|week|month|matrix|horizon", description: "Temporary view override" },
         anchor: { value: "YYYY-MM-DD", description: "Date anchor for week/month projection" },
         format: { value: "text|json", description: "Output format (default: text)" },
       },
@@ -672,7 +672,7 @@ export default class TaskCenterPlugin extends Plugin {
       "Query Tab verbs:",
       "  task-center:query-list [hidden=true] [format=json]",
       "  task-center:query-show id=<tab-id>",
-      "  task-center:query-run id=<tab-id> [view=list|week|month|matrix] [anchor=YYYY-MM-DD] [format=json]",
+      "  task-center:query-run id=<tab-id> [view=list|week|month|matrix|horizon] [anchor=YYYY-MM-DD] [format=json]",
       "  task-center:query-create dsl=<json>",
       "  task-center:query-save dsl=<json>",
       "  task-center:query-update id=<tab-id> dsl=<json>",
@@ -1117,9 +1117,9 @@ function requireArg(v: string | undefined, name: string): string {
   return v;
 }
 
-function parseQueryViewType(raw: string): "list" | "week" | "month" | "matrix" {
-  if (raw === "list" || raw === "week" || raw === "month" || raw === "matrix") return raw;
-  throw new TaskWriterError("invalid_query", `view must be list|week|month|matrix: ${raw}`);
+function parseQueryViewType(raw: string): "list" | "week" | "month" | "matrix" | "horizon" {
+  if (raw === "list" || raw === "week" || raw === "month" || raw === "matrix" || raw === "horizon") return raw;
+  throw new TaskWriterError("invalid_query", `view must be list|week|month|matrix|horizon: ${raw}`);
 }
 
 function toQueryRunJson(result: QueryRunResult): unknown {

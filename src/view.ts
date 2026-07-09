@@ -614,6 +614,10 @@ export class TaskCenterView extends ItemView {
         case "matrix":
           this.renderMatrix(body);
           break;
+        case "horizon":
+          this.renderHorizon(body);
+          this.renderUnscheduledPool(body);
+          break;
         case "completed":
           this.renderCompleted(body);
           break;
@@ -1436,6 +1440,8 @@ export class TaskCenterView extends ItemView {
         return builtinSavedViewId("completed");
       case "unscheduled":
         return builtinSavedViewId("unscheduled");
+      case "horizon":
+        return builtinSavedViewId("horizon");
       case "list":
       default:
         return null;
@@ -1450,6 +1456,7 @@ export class TaskCenterView extends ItemView {
     if (normalized.id === builtinSavedViewId("completed")) return "completed";
     if (normalized.id === builtinSavedViewId("unscheduled")) return "unscheduled";
     if (normalized.view?.type === "matrix") return "matrix";
+    if (normalized.view?.type === "horizon") return "horizon";
     return normalized.view?.type === "list" ? "list" : this.tabForSavedView(normalized, "list");
   }
 
@@ -4252,6 +4259,41 @@ export class TaskCenterView extends ItemView {
     }
   }
 
+  private renderHorizon(parent: HTMLElement): void {
+    const active = this.activeSavedView();
+    const view = active.view;
+    const weekStartsOn = this.plugin.settings.weekStartsOn;
+
+    const effectiveTasks = deriveEffectiveTasks(this.tasks);
+    const filtered = Object.keys(active.filters).length > 0
+      ? applyQueryFilters(effectiveTasks, active.filters, weekStartsOn)
+      : effectiveTasks;
+    const viewModel = applyViewProjection(filtered, view, weekStartsOn, this.state.anchorISO);
+
+    if (viewModel.type !== "horizon") return;
+
+    const wrapper = parent.createDiv({ cls: "bt-horizon" });
+    wrapper.dataset.view = "horizon";
+
+    for (const bucket of viewModel.buckets) {
+      const tasks = bucket.tasks;
+      const col = wrapper.createDiv({ cls: `bt-horizon-col bt-horizon-${bucket.id}` });
+      const header = col.createDiv({ cls: "bt-horizon-header" });
+      header.createSpan({ text: tr(`horizon.bucket.${bucket.id}`), cls: "bt-horizon-label" });
+      header.createSpan({ text: `(${tasks.length})`, cls: "bt-horizon-count" });
+
+      if (bucket.id === "today") col.addClass("bt-horizon-today");
+
+      if (tasks.length === 0) {
+        col.createDiv({ text: tr("horizon.empty"), cls: "bt-horizon-empty" });
+        continue;
+      }
+      for (const task of tasks) {
+        this.renderCard(col, task);
+      }
+    }
+  }
+
   private renderList(parent: HTMLElement): void {
     const active = this.activeSavedView();
     const filter = this.getTextFilter();
@@ -5218,6 +5260,8 @@ export class TaskCenterView extends ItemView {
         return { type: "list", preset: "completed", orderBy: ["completed_desc"] };
       case "unscheduled":
         return { type: "list", preset: "unscheduled", orderBy: ["deadline_risk", "created_desc"] };
+      case "horizon":
+        return { type: "horizon" };
       case "today":
       default:
         return { type: "list", preset: "today" };
@@ -5260,6 +5304,7 @@ export class TaskCenterView extends ItemView {
     if (config?.type === "week") return "week";
     if (config?.type === "month") return "month";
     if (config?.type === "matrix") return "matrix";
+    if (config?.type === "horizon") return "horizon";
     if (config?.preset === "completed") return "completed";
     if (config?.preset === "unscheduled") return "unscheduled";
     if (config?.preset === "today") return "today";

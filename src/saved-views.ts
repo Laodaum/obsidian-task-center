@@ -20,7 +20,7 @@ import type {
 } from "./types";
 
 const KNOWN_STATUS_VALUES: TaskStatus[] = ["todo", "done", "dropped", "in_progress", "cancelled", "custom"];
-const BUILTIN_QUERY_TABS = ["today", "week", "month", "todo", "unscheduled", "completed", "dropped"] as const;
+const BUILTIN_QUERY_TABS = ["today", "week", "month", "todo", "unscheduled", "completed", "dropped", "horizon"] as const;
 type BuiltinQueryTab = typeof BUILTIN_QUERY_TABS[number];
 
 export const BUILTIN_SAVED_VIEW_IDS: Record<BuiltinQueryTab, string> = {
@@ -31,6 +31,7 @@ export const BUILTIN_SAVED_VIEW_IDS: Record<BuiltinQueryTab, string> = {
   unscheduled: "preset-unscheduled",
   completed: "preset-completed",
   dropped: "preset-dropped",
+  horizon: "preset-horizon",
 };
 
 const DEFAULT_BUILTIN_LABELS: Record<BuiltinQueryTab, string> = {
@@ -41,6 +42,7 @@ const DEFAULT_BUILTIN_LABELS: Record<BuiltinQueryTab, string> = {
   unscheduled: "Unscheduled",
   completed: "Completed",
   dropped: "Dropped",
+  horizon: "Horizon",
 };
 
 export interface SavedViewFilters {
@@ -417,7 +419,7 @@ function normalizeSavedViewSummary(summary: SavedViewSummaryMetric[] | null | un
 }
 
 function normalizeQueryViewType(type: string | null | undefined): QueryViewType {
-  return type === "week" || type === "month" || type === "matrix" ? type : "list";
+  return type === "week" || type === "month" || type === "matrix" || type === "horizon" ? type : "list";
 }
 
 function normalizeTimeFilters(time: unknown): SavedViewTimeFilters {
@@ -521,6 +523,19 @@ function seededBuiltinSavedView(tab: BuiltinQueryTab, name: string): SavedTaskVi
         time: {},
         status: ["dropped"],
         view: { type: "list", preset: "dropped" },
+        summary: [{ type: "count" }],
+      });
+    case "horizon":
+      return normalizeSavedTaskView({
+        id: BUILTIN_SAVED_VIEW_IDS.horizon,
+        name,
+        builtin: true,
+        hidden: false,
+        search: "",
+        tag: "",
+        time: {},
+        status: ["todo"],
+        view: { type: "horizon" },
         summary: [{ type: "count" }],
       });
     case "unscheduled":
@@ -826,13 +841,13 @@ export function validateQueryPreset(raw: unknown): QueryPresetValidationResult {
       errors.push({
         section: "view",
         code: "invalid_view_type",
-        message: 'view.type 必须是 "list" | "week" | "month" | "matrix"。',
+        message: 'view.type 必须是 "list" | "week" | "month" | "matrix" | "horizon"。',
       });
-    } else if (typeof viewType === "string" && !["list", "week", "month", "matrix"].includes(viewType)) {
+    } else if (typeof viewType === "string" && !["list", "week", "month", "matrix", "horizon"].includes(viewType)) {
       errors.push({
         section: "view",
         code: "unknown_view_type",
-        message: `未知 view.type "${viewType}"，允许: list, week, month, matrix。`,
+        message: `未知 view.type "${viewType}"，允许: list, week, month, matrix, horizon。`,
       });
     }
     // Validate orderBy
@@ -1018,8 +1033,8 @@ export function parseQueryDsl(
 }
 
 /**
- * Builtin QueryPreset factory — produces the 7 default presets
- * matching VAL-GUI-003: 今日, 本周, 本月, TODO, 未排期, 已完成, 已放弃.
+ * Builtin QueryPreset factory — produces the 8 default presets
+ * matching VAL-GUI-003: 今日, 本周, 本月, TODO, 未排期, 已完成, 已放弃, 视界.
  */
 export function createBuiltinQueryPresets(
   labels: Partial<Record<BuiltinQueryTab, string>> = {},
@@ -1033,7 +1048,7 @@ export function createBuiltinQueryPresets(
 // ── QueryPreset-native runtime helpers (VAL-CORE-005: no fromQueryPreset bridge) ──
 
 /**
- * Ensure the 7 builtin QueryPreset tabs are present, preserving user
+ * Ensure the 8 builtin QueryPreset tabs are present, preserving user
  * modifications. Custom presets are appended after builtins.
  * This is the QueryPreset-native replacement for `ensureBuiltinSavedViews`
  * — it does NOT call `fromQueryPreset`.

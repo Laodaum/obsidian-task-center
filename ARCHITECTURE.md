@@ -10,7 +10,7 @@
 2. **字节级写回**：改名、移动、嵌套、改期、完成、放弃都必须最小化改动目标行 / 目标块，保留未知 emoji、inline field、tag、block id、wikilink anchor 与用户原文。（US-407 / US-409）
 3. **一份 Query DSL**：filters、view、summary、tab preset、GUI 可视化编辑、GUI DSL 直编、CLI query 管理共用同一份 schema 与校验。（US-109t / US-219）
 4. **Tab 是持久 Query**：不存在独立持久化的“current query”。运行时只有 tab saved query、tab draft、effective query。（US-109u）
-5. **View 不拥有业务集合**：list / week / month / matrix 只消费 Query 结果并提供对应操作；TODO、今日、未排期、已完成等都是 QueryPreset。（US-100 / US-109k）
+5. **View 不拥有业务集合**：list / week / month / matrix / horizon 只消费 Query 结果并提供对应操作；TODO、今日、未排期、已完成等都是 QueryPreset。（US-100 / US-109k / US-103b）
 6. **GUI 与 CLI 共用业务层**：解析、筛选、summary、写回、嵌套、QueryPreset CRUD 都必须通过同一服务层，不允许 CLI 和 GUI 各自实现。（US-201~219）
 7. **缓存是唯一读入口**：状态栏、看板、CLI 不直接扫 vault；所有任务读取经 TaskCache。（US-404）
 8. **事件增量优先**：文件变更只重解析该文件；打开看板 / list / stats / hash disambiguation 才允许显式全量 ensure。（US-404）
@@ -90,7 +90,7 @@ interface EffectiveTask extends ParsedTask {
 ### 1.3 QueryPreset
 
 ```ts
-type QueryViewType = "list" | "week" | "month" | "matrix";
+type QueryViewType = "list" | "week" | "month" | "matrix" | "horizon";
 type TaskStateFilter = "todo" | "done" | "dropped";
 
 type DateToken =
@@ -400,13 +400,21 @@ type ViewModel =
   | { type: "list"; sections: ListSectionModel[] }
   | { type: "week"; days: DayColumnModel[]; tray?: ListSectionModel }
   | { type: "month"; cells: MonthCellModel[]; tray?: ListSectionModel }
-  | { type: "matrix"; buckets: MatrixCellModel[]; unmatched: EffectiveTask[] };
+  | { type: "matrix"; buckets: MatrixCellModel[]; unmatched: EffectiveTask[] }
+  | { type: "horizon"; buckets: HorizonBucketModel[]; tray?: ListSectionModel };
+
+interface HorizonBucketModel {
+  id: "today" | "this-week" | "next-week" | "this-month";
+  title: string;
+  tasks: EffectiveTask[];
+}
 ```
 
 - List：按 sections 分组；无 sections 时使用一个默认 section。
 - Week：按有效 `scheduled` 落入 7 天；无有效 scheduled 不进日期区，可进入 tray。移动端折叠状态只影响 day row body 可见性，不改变 day model。
 - Month：按有效 `scheduled` 落入月历日期格；移动端只改变渲染密度，并把当前选中日期的任务列表作为月历下方内联 panel 渲染。
 - Matrix：按用户配置 bucket 条件匹配；未命中进入 unmatched。
+- Horizon：按有效 `scheduled` 落入 4 个时间桶（今天、本周、下周、本月）；无有效 scheduled 不进日期区，可进入 tray。移动端折叠状态只影响 row body 可见性，不改变 bucket model。
 
 ### 4.4 Summary
 

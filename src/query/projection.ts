@@ -1,12 +1,15 @@
 // View projection — projects a filtered EffectiveTask[] into layout models
-// for list, week, month, and matrix views.  Does NOT own business collections;
-// Today/TODO/Unscheduled/Completed/Dropped are QueryPresets, not view types.
+// for list, week, month, matrix, and horizon views.  Does NOT own business
+// collections; Today/TODO/Unscheduled/Completed/Dropped are QueryPresets, not
+// view types.
 //
 // ARCHITECTURE.md §4.3 defines the projection semantics:
 //   - List: sections from view.sections; one default section if unconfigured.
 //   - Week/Month: date columns/cells from effectiveScheduled; tray from explicit
 //     view.tray filters (independent query, does not alter main date area).
 //   - Matrix: 2D cells (X buckets × Y buckets) with unmatched handling.
+//   - Horizon: 4 time buckets (today, this-week, next-week, this-month) based on
+//     effectiveScheduled; tray optional.
 // Pure functions, no DOM, no Obsidian dependency.
 
 import type { EffectiveTask } from "../task-tree";
@@ -15,7 +18,7 @@ import type {
   QueryPresetViewConfig,
 } from "../types";
 import { applyQueryFilters, queryFilterHasActiveConditions } from "./filter";
-import { startOfWeek, addDays, startOfMonth, endOfMonth, daysBetween, todayISO } from "../dates";
+import { startOfWeek, addDays, startOfMonth, endOfMonth, daysBetween, todayISO, endOfWeek } from "../dates";
 
 // ── View model types ──
 
@@ -72,11 +75,24 @@ export interface MatrixViewModel {
   unmatched: EffectiveTask[];
 }
 
+export interface HorizonBucketModel {
+  id: "today" | "this-week" | "next-week" | "this-month";
+  title: string;
+  tasks: EffectiveTask[];
+}
+
+export interface HorizonViewModel {
+  type: "horizon";
+  buckets: HorizonBucketModel[];
+  tray?: ListSectionModel;
+}
+
 export type ViewModel =
   | ListViewModel
   | WeekViewModel
   | MonthViewModel
-  | MatrixViewModel;
+  | MatrixViewModel
+  | HorizonViewModel;
 
 // ── Sorting ──
 
@@ -417,12 +433,73 @@ function projectMatrix(
   };
 }
 
+/**
+ * Horizon projection: split tasks into 4 time buckets:
+ *   today, this-week, next-week, this-month.
+ *
+ * Bucket boundaries follow the user's week-start setting.
+ * Tasks without effectiveScheduled do not enter date buckets
+ * (they may appear in the optional tray).
+ */
+function projectHorizon(
+  tasks: EffectiveTask[],
+  traySourceTasks: EffectiveTask[],
+  view: QueryPresetViewConfig,
+  weekStartsOn: 0 | 1,
+  anchorISO: string,
+): HorizonViewModel {
+  const today = todayISO();
+  const weekStart = startOfWeek(anchorISO, weekStartsOn);
+  const weekEnd = endOfWeek(anchorISO, weekStartsOn);
+  const nextWeekStart = addDays(weekStart, 7);
+  const nextWeekEnd = addDays(weekEnd, 7);
+  const monthStart = startOfMonth(anchorISO);
+  const monthEnd = endOfMonth(anchorISO);
+
+  const buckets: HorizonBucketModel[] = [
+    { id: "today", title: "Today", tasks: [] },
+    { id: "this-week", title: "This Week", tasks: [] },
+    { id: "next-week", title: "Next Week", tasks: [] },
+    { id: "this-month", title: "This Month", tasks: [] },
+  ];
+
+  const mainAreaIds = new Set<string>();
+
+  const sorted = sortTasks(tasks, view.orderBy);
+  for (const task of sorted) {
+    const s = task.effectiveScheduled;
+    if (!s) continue;
+
+    if (s === today) {
+      buckets[0].tasks.push(task);
+      mainAreaIds.add(task.id);
+    } else if (s >= weekStart && s <= weekEnd) {
+      buckets[1].tasks.push(task);
+      mainAreaIds.add(task.id);
+    } else if (s >= nextWeekStart && s <= nextWeekEnd) {
+      buckets[2].tasks.push(task);
+      mainAreaIds.add(task.id);
+    } else if (s >= monthStart && s <= monthEnd) {
+      buckets[3].tasks.push(task);
+      mainAreaIds.add(task.id);
+    }
+  }
+
+  const tray = computeTray(traySourceTasks, view, weekStartsOn, mainAreaIds);
+
+  return {
+    type: "horizon",
+    buckets,
+    ...(tray ? { tray } : {}),
+  };
+}
+
 // ── Main entry point ──
 
 /**
  * Project a filtered EffectiveTask[] into a view layout model.
  *
- * The same task set can be projected into list, week, month, or matrix.
+ * The same task set can be projected into list, week, month, matrix, or horizon.
  * Views do not own business collections — they only organize the given tasks.
  *
  * @param tasks  Filtered EffectiveTask[] (output of applyQueryFilters)
@@ -447,6 +524,8 @@ export function applyViewProjection(
       return projectMonth(tasks, traySourceTasks, view, anchorISO);
     case "matrix":
       return projectMatrix(tasks, view, weekStartsOn);
+    case "horizon":
+      return projectHorizon(tasks, traySourceTasks, view, weekStartsOn, anchorISO);
     default:
       return projectList(tasks, view);
   }
