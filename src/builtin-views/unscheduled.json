@@ -1,0 +1,28 @@
+{
+  "id": "preset-unscheduled",
+  "name": "Unscheduled",
+  "builtin": true,
+  "hidden": false,
+  "view": {
+    "layout": {
+      "dir": "col",
+      "children": [
+        {
+          "type": "list",
+          "when": {
+            "time": {
+              "scheduled": "unscheduled"
+            },
+            "status": [
+              "todo"
+            ]
+          },
+          "orderBy": [
+            "deadline_risk",
+            "created_desc"
+          ]
+        }
+      ]
+    }
+  }
+}

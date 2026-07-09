@@ -1,0 +1,16 @@
+[
+  {
+    "date": "2026-06-24",
+    "mode": "Tech Debt Assessment",
+    "score": 68,
+    "findings": { "critical": 1, "warning": 3, "suggestion": 2 },
+    "scope": "entire project (src/, 16.8k LOC)"
+  },
+  {
+    "date": "2026-06-24",
+    "mode": "Architecture Audit",
+    "score": 73,
+    "findings": { "critical": 1, "warning": 2, "suggestion": 2 },
+    "scope": "entire project (src/, 39 TS files, ~16.8k LOC)"
+  }
+]

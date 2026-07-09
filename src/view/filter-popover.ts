@@ -24,7 +24,10 @@ export function isClickInsideFilterControls(event: { composedPath(): EventTarget
     if (!(target instanceof HTMLElement)) return false;
     return (
       !!target.closest("[data-saved-views]") ||
-      !!target.closest(".bt-filter-popover, .bt-tag-popover, .bt-date-popover, .bt-status-popover, .bt-time-more-popover")
+      !!target.closest(".bt-filter-popover, .bt-tag-popover, .bt-date-popover, .bt-status-popover, .bt-time-more-popover") ||
+      // US-109w: per-area filter trigger + popover live in the area header, not
+      // inside [data-saved-views]; clicking them must not count as "outside".
+      !!target.closest(".bt-area-filter")
     );
   });
 }

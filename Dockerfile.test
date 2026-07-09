@@ -1,0 +1,43 @@
+FROM node:22-bookworm
+
+ENV CI=true \
+    GITHUB_ACTIONS=true \
+    OBSIDIAN_VERSIONS=latest/latest \
+    WDIO_MAX_INSTANCES=1 \
+    PNPM_HOME=/pnpm \
+    PATH=/pnpm:$PATH
+
+WORKDIR /workspace
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+      ca-certificates \
+      git \
+      libasound2 \
+      libgbm1 \
+      libgtk-3-0 \
+      libnss3 \
+      openssh-server \
+      libxi6 \
+      libxss1 \
+      rsync \
+      sudo \
+      xauth \
+      xvfb \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN corepack enable \
+    && corepack prepare pnpm@10.32.1 --activate
+
+RUN useradd --create-home --shell /bin/bash crabbox \
+    && mkdir -p /run/sshd /home/crabbox/.ssh \
+    && chown -R crabbox:crabbox /home/crabbox/.ssh \
+    && chmod 700 /home/crabbox/.ssh \
+    && printf 'crabbox ALL=(ALL) NOPASSWD:ALL\n' > /etc/sudoers.d/crabbox \
+    && chmod 440 /etc/sudoers.d/crabbox \
+    && sed -i 's/#PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config \
+    && sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin no/' /etc/ssh/sshd_config
+
+EXPOSE 22
+
+CMD ["sh", "-lc", "if [ -n \"$CRABBOX_AUTHORIZED_KEYS\" ]; then printf '%s\n' \"$CRABBOX_AUTHORIZED_KEYS\" > /home/crabbox/.ssh/authorized_keys && chown crabbox:crabbox /home/crabbox/.ssh/authorized_keys && chmod 600 /home/crabbox/.ssh/authorized_keys; fi; exec /usr/sbin/sshd -D -e"]

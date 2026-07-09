@@ -182,6 +182,7 @@ async function createPluginForQueryCli(overrides = {}) {
   const calls = { save: 0, refresh: 0 };
   plugin.settings = {
     queryPresets: [],
+    deletedBuiltinIds: [],
     defaultSavedViewId: null,
     lastSavedViewId: null,
     groupingTags: [],
@@ -296,6 +297,120 @@ test("loadSettings seeds built-in query tabs and migrates legacy defaultView/las
   assert.equal(plugin.settings.lastSavedViewId, "preset-completed");
 });
 
+test("US-414: loadSettings migrates legacy flat SavedTaskView instead of dropping it", async () => {
+  await compile();
+  const { default: TaskCenterPlugin } = await import(`../${compiledPath}?t=${Date.now()}-${Math.random()}`);
+  const app = makeAppWithExistingTaskCenterView();
+  app.__viewCreators.clear();
+  const plugin = new TaskCenterPlugin(app);
+  plugin.loadData = async () => ({
+    queryPresets: [
+      // legacy flat shape (0.8.27): top-level search/tag/status/time, no nested filters
+      { id: "sv-legacy", name: "Legacy", builtin: false, hidden: true, search: "report", tag: "work", status: ["todo"], time: {}, view: { type: "week" }, summary: [] },
+    ],
+  });
+
+  await plugin.loadSettings();
+
+  const migrated = plugin.settings.queryPresets.find((p) => p.id === "sv-legacy");
+  assert.ok(migrated, "legacy custom view survives as a migrated QueryPreset");
+  assert.equal(migrated.hidden, true, "user hidden flag preserved");
+  // US-109z2: legacy flat tab-level filters are dropped (no tab filter).
+  assert.equal(migrated.filters, undefined, "flat tab-level filters dropped");
+  assert.ok(migrated.view.layout, "legacy view migrated to a layout tree");
+});
+
+test("US-414: loadSettings flags old-DSL view (nested filters but no layout) for the gate", async () => {
+  await compile();
+  const { default: TaskCenterPlugin } = await import(`../${compiledPath}?t=${Date.now()}-${Math.random()}`);
+  const app = makeAppWithExistingTaskCenterView();
+  app.__viewCreators.clear();
+  const plugin = new TaskCenterPlugin(app);
+  plugin.loadData = async () => ({
+    queryPresets: [
+      // old DSL: filters already nested, but view is the old {type} shape
+      { id: "sv-old-dsl", name: "Old DSL", builtin: false, hidden: false, filters: { status: ["todo"] }, view: { type: "month" }, summary: [] },
+    ],
+  });
+
+  await plugin.loadSettings();
+
+  assert.equal(plugin.migratedLegacyCount, 1, "old-DSL view counted as legacy");
+  const migrated = plugin.settings.queryPresets.find((p) => p.id === "sv-old-dsl");
+  assert.ok(migrated.view.layout, "old-DSL view migrated to a layout tree in memory");
+});
+
+test("US-415: onload does NOT persist migration — the gate must be confirmed first", async () => {
+  await compile();
+  const { default: TaskCenterPlugin } = await import(`../${compiledPath}?t=${Date.now()}-${Math.random()}`);
+  const app = makeAppWithExistingTaskCenterView();
+  app.__viewCreators.clear();
+  const plugin = new TaskCenterPlugin(app);
+  plugin.loadData = async () => ({
+    queryPresets: [
+      { id: "sv-legacy", name: "Legacy", builtin: false, hidden: false, search: "x", tag: "deep", status: "all", time: {}, view: { type: "list" }, summary: [] },
+    ],
+  });
+  let saves = 0;
+  plugin.saveSettings = async () => { saves++; };
+
+  await plugin.onload();
+  for (const cb of app.__layoutCallbacks) cb();
+
+  assert.equal(plugin.migratedLegacyCount, 1, "gate stays armed until user confirms");
+  assert.equal(saves, 0, "onload never auto-persists the migration");
+});
+
+test("US-415: completeMigration persists once, clears the gate, and refreshes views", async () => {
+  await compile();
+  const { default: TaskCenterPlugin } = await import(`../${compiledPath}?t=${Date.now()}-${Math.random()}`);
+  const app = makeAppWithExistingTaskCenterView();
+  app.__viewCreators.clear();
+  const plugin = new TaskCenterPlugin(app);
+  plugin.loadData = async () => ({
+    queryPresets: [
+      { id: "sv-legacy", name: "Legacy", builtin: false, hidden: false, search: "x", tag: "deep", status: "all", time: {}, view: { type: "list" }, summary: [] },
+    ],
+  });
+  let saves = 0;
+  let refreshes = 0;
+  plugin.saveSettings = async () => { saves++; };
+  plugin.refreshOpenViews = async () => { refreshes++; };
+
+  await plugin.loadSettings();
+  assert.equal(plugin.migratedLegacyCount, 1);
+
+  await plugin.completeMigration();
+  assert.equal(saves, 1, "migration persisted exactly once on confirm");
+  assert.equal(plugin.migratedLegacyCount, 0, "gate cleared after confirm");
+  assert.equal(refreshes, 1, "open boards refreshed to leave the gate");
+
+  // idempotent: a second confirm is a no-op
+  await plugin.completeMigration();
+  assert.equal(saves, 1, "no extra persist after the gate is cleared");
+});
+
+test("US-415: completeMigration is a no-op when nothing was migrated", async () => {
+  await compile();
+  const { default: TaskCenterPlugin } = await import(`../${compiledPath}?t=${Date.now()}-${Math.random()}`);
+  const app = makeAppWithExistingTaskCenterView();
+  app.__viewCreators.clear();
+  const plugin = new TaskCenterPlugin(app);
+  plugin.loadData = async () => ({
+    queryPresets: [
+      { id: "sv-modern", name: "Modern", builtin: false, hidden: false, filters: { status: "all" }, view: { layout: { type: "list" } }, summary: [] },
+    ],
+  });
+  let saves = 0;
+  plugin.saveSettings = async () => { saves++; };
+
+  await plugin.loadSettings();
+  assert.equal(plugin.migratedLegacyCount, 0, "modern data is not flagged");
+
+  await plugin.completeMigration();
+  assert.equal(saves, 0, "nothing to persist for new-structure data");
+});
+
 test("query-list 默认隐藏 hidden preset，format=json 会带出 builtin/default/hidden 元数据", async () => {
   const { plugin } = await createPluginForQueryCli({
     defaultSavedViewId: "sv-alpha",
@@ -360,19 +475,13 @@ test("query-show 返回当前 preset 的 DSL JSON", async () => {
   });
 
   const shown = JSON.parse(await plugin.cliQueryShow({ id: "sv-alpha" }));
+  // US-109z2: presets carry no tab-level filters; DSL is identity + view only.
   assert.deepEqual(shown, {
     id: "sv-alpha",
     name: "Alpha",
     builtin: false,
     hidden: false,
-    filters: {
-      search: "deep work",
-      tags: ["#alpha", "#beta"],
-      status: ["todo", "done"],
-      time: { scheduled: "week" },
-    },
-    view: { type: "month", preset: "today" },
-    summary: [{ type: "count" }],
+    view: { layout: { type: "month" } },
   });
 });
 
@@ -420,13 +529,16 @@ test("query-save 总是新建 preset id，而不是复用 DSL 里的 id", async 
       dsl: JSON.stringify({
         id: "sv-from-dsl",
         name: " Deep Work ",
-        filters: {
-          search: " docs ",
-          tags: ["alpha"],
-          status: ["todo"],
+        view: {
+          layout: {
+            type: "week",
+            when: {
+              search: " docs ",
+              tags: ["alpha"],
+              status: ["todo"],
+            },
+          },
         },
-        view: { type: "week" },
-        summary: [{ type: "count" }],
       }),
     });
 
@@ -439,9 +551,10 @@ test("query-save 总是新建 preset id，而不是复用 DSL 里的 id", async 
   assert.match(createdId, /^sv-[a-z0-9]+-4fzz$/);
   assert.equal(createdId === "sv-from-dsl", false);
   assert.equal(plugin.settings.queryPresets[0].name, "Deep Work");
-  assert.equal(plugin.settings.queryPresets[0].filters.search, "docs");
-  assert.deepEqual(plugin.settings.queryPresets[0].filters.status, ["todo"]);
-  assert.deepEqual(plugin.settings.queryPresets[0].view, { type: "week" });
+  assert.equal(plugin.settings.queryPresets[0].filters, undefined);
+  assert.deepEqual(plugin.settings.queryPresets[0].view, {
+    layout: { type: "week", when: { search: "docs", tags: { expr: "#alpha" }, status: ["todo"] } },
+  });
   assert.equal(calls.save, 1);
   assert.equal(calls.refresh, 1);
 });
@@ -466,14 +579,17 @@ test("query-update 固定覆盖当前 id，不允许 DSL 偷换 preset 身份", 
     dsl: JSON.stringify({
       id: "sv-should-not-win",
       name: "Alpha Updated",
-      filters: {
-        search: "new",
-        tags: ["#beta"],
-        status: ["done"],
-        time: { completed: "month" },
+      view: {
+        layout: {
+          type: "month",
+          when: {
+            search: "new",
+            tags: ["#beta"],
+            status: ["done"],
+            time: { completed: "month" },
+          },
+        },
       },
-      view: { type: "month", preset: "completed" },
-      summary: [{ type: "sum", field: "actual", format: "duration" }],
     }),
   });
 
@@ -484,9 +600,7 @@ test("query-update 固定覆盖当前 id，不允许 DSL 偷换 preset 身份", 
       name: "Alpha Updated",
       builtin: false,
       hidden: false,
-      filters: { search: "new", tags: ["#beta"], status: ["done"], time: { completed: "month" } },
-      view: { type: "month", preset: "completed" },
-      summary: [{ type: "sum", field: "actual", format: "duration" }],
+      view: { layout: { type: "month", when: { search: "new", tags: { expr: "#beta" }, status: ["done"], time: { completed: "month" } } } },
     },
   ]);
   assert.equal(calls.save, 1);
@@ -546,9 +660,7 @@ test("query-copy / hide / set-default / delete 维护 preset 生命周期与默�
       name: "Alpha",
       builtin: false,
       hidden: true,
-      filters: { search: "focus", tags: ["#alpha"], status: ["todo"] },
-      view: { type: "list" },
-      summary: [],
+      view: { layout: { type: "list" } },
     },
   ]);
   assert.equal(calls.save, 5);
@@ -585,7 +697,7 @@ test("query-save rejects legacy flat SavedTaskView DSL with invalid_query", asyn
 
   await assert.rejects(
     () => plugin.cliQuerySave({ dsl: legacyDsl }),
-    (err) => err.code === "invalid_query" && /旧版 SavedTaskView 扁平格式/.test(err.message),
+    (err) => err.code === "invalid_query" && /更新 skill/.test(err.message) && /view\.layout/.test(err.message),
   );
 
   // Presets unchanged — no save/refresh side effects
@@ -606,7 +718,7 @@ test("query-save rejects legacy flat DSL with only search field", async () => {
 
   await assert.rejects(
     () => plugin.cliQuerySave({ dsl: legacyDsl }),
-    (err) => err.code === "invalid_query" && /旧版 SavedTaskView 扁平格式/.test(err.message),
+    (err) => err.code === "invalid_query" && /更新 skill/.test(err.message) && /view\.layout/.test(err.message),
   );
 
   assert.equal(plugin.settings.queryPresets.length, 0);
@@ -625,7 +737,7 @@ test("query-save rejects legacy flat DSL with only status field", async () => {
 
   await assert.rejects(
     () => plugin.cliQuerySave({ dsl: legacyDsl }),
-    (err) => err.code === "invalid_query" && /旧版 SavedTaskView 扁平格式/.test(err.message),
+    (err) => err.code === "invalid_query" && /更新 skill/.test(err.message) && /view\.layout/.test(err.message),
   );
 
   assert.equal(plugin.settings.queryPresets.length, 0);
@@ -650,39 +762,17 @@ test("query-save rejects invalid QueryPreset DSL (unknown view type) with invali
 
   const invalidDsl = JSON.stringify({
     name: "Bad View",
-    filters: {},
-    view: { type: "gantt" },
-    summary: [],
+    view: { layout: { type: 42 } },
   });
 
   await assert.rejects(
     () => plugin.cliQuerySave({ dsl: invalidDsl }),
-    (err) => err.code === "invalid_query" && /unknown_view_type/.test(err.message),
+    (err) => err.code === "invalid_query" && /invalid_area_type/.test(err.message),
   );
 
   // Presets unchanged
   assert.equal(plugin.settings.queryPresets.length, 1);
   assert.equal(plugin.settings.queryPresets[0].id, "sv-alpha");
-  assert.equal(calls.save, 0);
-  assert.equal(calls.refresh, 0);
-});
-
-test("query-save rejects invalid QueryPreset DSL (bad summary) with invalid_query", async () => {
-  const { plugin, calls } = await createPluginForQueryCli();
-
-  const invalidDsl = JSON.stringify({
-    name: "Bad Summary",
-    filters: {},
-    view: { type: "list" },
-    summary: [{ type: "bad_metric" }],
-  });
-
-  await assert.rejects(
-    () => plugin.cliQuerySave({ dsl: invalidDsl }),
-    (err) => err.code === "invalid_query" && /invalid_metric_type/.test(err.message),
-  );
-
-  assert.equal(plugin.settings.queryPresets.length, 0);
   assert.equal(calls.save, 0);
   assert.equal(calls.refresh, 0);
 });
@@ -714,7 +804,7 @@ test("query-save rejects legacy DSL wrapped in query key with invalid_query", as
 
   await assert.rejects(
     () => plugin.cliQuerySave({ dsl: wrappedLegacy }),
-    (err) => err.code === "invalid_query" && /旧版 SavedTaskView 扁平格式/.test(err.message),
+    (err) => err.code === "invalid_query" && /更新 skill/.test(err.message) && /view\.layout/.test(err.message),
   );
 
   assert.equal(plugin.settings.queryPresets.length, 0);
@@ -748,14 +838,13 @@ test("query-update rejects legacy flat SavedTaskView DSL with invalid_query", as
 
   await assert.rejects(
     () => plugin.cliQueryUpdate({ id: "sv-alpha", dsl: legacyDsl }),
-    (err) => err.code === "invalid_query" && /旧版 SavedTaskView 扁平格式/.test(err.message),
+    (err) => err.code === "invalid_query" && /更新 skill/.test(err.message) && /view\.layout/.test(err.message),
   );
 
   // Existing preset unchanged — no save/refresh
   assert.equal(plugin.settings.queryPresets.length, 1);
   assert.equal(plugin.settings.queryPresets[0].id, "sv-alpha");
   assert.equal(plugin.settings.queryPresets[0].name, "Alpha");
-  assert.equal(plugin.settings.queryPresets[0].filters.search, "focus");
   assert.equal(calls.save, 0);
   assert.equal(calls.refresh, 0);
 });
@@ -777,55 +866,18 @@ test("query-update rejects invalid QueryPreset DSL (unknown view type) with inva
 
   const invalidDsl = JSON.stringify({
     name: "Bad View",
-    filters: {},
-    view: { type: "gantt" },
-    summary: [],
+    view: { layout: { type: 42 } },
   });
 
   await assert.rejects(
     () => plugin.cliQueryUpdate({ id: "sv-alpha", dsl: invalidDsl }),
-    (err) => err.code === "invalid_query" && /unknown_view_type/.test(err.message),
+    (err) => err.code === "invalid_query" && /invalid_area_type/.test(err.message),
   );
 
   // Existing preset unchanged
   assert.equal(plugin.settings.queryPresets.length, 1);
   assert.equal(plugin.settings.queryPresets[0].id, "sv-alpha");
   assert.equal(plugin.settings.queryPresets[0].name, "Alpha");
-  assert.equal(plugin.settings.queryPresets[0].filters.search, "focus");
-  assert.equal(calls.save, 0);
-  assert.equal(calls.refresh, 0);
-});
-
-test("query-update rejects invalid QueryPreset DSL (bad summary) with invalid_query", async () => {
-  const { plugin, calls } = await createPluginForQueryCli({
-    queryPresets: [
-      {
-        id: "sv-alpha",
-        name: "Alpha",
-        builtin: false,
-        hidden: false,
-        filters: { search: "focus", tags: ["#alpha"], status: ["todo"] },
-        view: { type: "list" },
-        summary: [],
-      },
-    ],
-  });
-
-  const invalidDsl = JSON.stringify({
-    name: "Bad Summary",
-    filters: {},
-    view: { type: "list" },
-    summary: [{ type: "bad_metric" }],
-  });
-
-  await assert.rejects(
-    () => plugin.cliQueryUpdate({ id: "sv-alpha", dsl: invalidDsl }),
-    (err) => err.code === "invalid_query" && /invalid_metric_type/.test(err.message),
-  );
-
-  // Existing preset unchanged
-  assert.equal(plugin.settings.queryPresets.length, 1);
-  assert.equal(plugin.settings.queryPresets[0].id, "sv-alpha");
   assert.equal(calls.save, 0);
   assert.equal(calls.refresh, 0);
 });
@@ -846,8 +898,7 @@ test("query-update rejects invalid QueryPreset DSL (missing name) with invalid_q
   });
 
   const invalidDsl = JSON.stringify({
-    filters: {},
-    view: { type: "list" },
+    view: { layout: { type: "list" } },
   });
 
   await assert.rejects(
@@ -879,9 +930,7 @@ test("query-update rejects invalid QueryPreset DSL (multi-section errors) with i
 
   const invalidDsl = JSON.stringify({
     name: "Multi Bad",
-    filters: { tags: 42 },
-    view: { type: "gantt" },
-    summary: [{ type: "bad" }],
+    view: { layout: { dir: "diagonal", children: [] } },
   });
 
   let caught = null;
@@ -893,10 +942,10 @@ test("query-update rejects invalid QueryPreset DSL (multi-section errors) with i
 
   assert.ok(caught, "Should throw");
   assert.equal(caught.code, "invalid_query");
-  // Error message should surface all three sections
-  assert.match(caught.message, /filters/);
+  // Error message should surface the failing sections
   assert.match(caught.message, /view/);
-  assert.match(caught.message, /summary/);
+  assert.match(caught.message, /invalid_stack_dir/);
+  assert.match(caught.message, /invalid_stack_children/);
 
   // Existing preset unchanged
   assert.equal(plugin.settings.queryPresets.length, 1);
@@ -965,13 +1014,16 @@ test("query-create 创建新 preset，输出稳定 id，且不覆盖已有 prese
     const result = await plugin.cliQuerySave({
       dsl: JSON.stringify({
         name: " New via Create ",
-        filters: {
-          search: " focus ",
-          tags: ["#work"],
-          status: ["todo"],
+        view: {
+          layout: {
+            type: "week",
+            when: {
+              search: " focus ",
+              tags: ["#work"],
+              status: ["todo"],
+            },
+          },
         },
-        view: { type: "week" },
-        summary: [{ type: "count" }],
       }),
     });
 
@@ -989,10 +1041,8 @@ test("query-create 创建新 preset，输出稳定 id，且不覆盖已有 prese
   const created = plugin.settings.queryPresets[1];
   assert.match(created.id, /^sv-[a-z0-9]+-4fzz$/);
   assert.equal(created.name, "New via Create");
-  assert.equal(created.filters.search, "focus");
-  assert.deepEqual(created.filters.tags, ["#work"]);
-  assert.deepEqual(created.view, { type: "week" });
-  assert.deepEqual(created.summary, [{ type: "count" }]);
+  assert.equal(created.filters, undefined);
+  assert.deepEqual(created.view, { layout: { type: "week", when: { search: "focus", tags: { expr: "#work" }, status: ["todo"] } } });
   assert.equal(calls.save, 1);
   assert.equal(calls.refresh, 1);
 });
@@ -1023,7 +1073,7 @@ test("query-create rejects legacy flat SavedTaskView DSL with invalid_query, lea
 
   await assert.rejects(
     () => plugin.cliQuerySave({ dsl: legacyDsl }),
-    (err) => err.code === "invalid_query" && /旧版 SavedTaskView 扁平格式/.test(err.message),
+    (err) => err.code === "invalid_query" && /更新 skill/.test(err.message) && /view\.layout/.test(err.message),
   );
 
   // Presets unchanged — no save/refresh side effects
@@ -1038,14 +1088,12 @@ test("query-create rejects invalid QueryPreset DSL (unknown view type) with inva
 
   const invalidDsl = JSON.stringify({
     name: "Bad View",
-    filters: {},
-    view: { type: "gantt" },
-    summary: [],
+    view: { layout: { type: 42 } },
   });
 
   await assert.rejects(
     () => plugin.cliQuerySave({ dsl: invalidDsl }),
-    (err) => err.code === "invalid_query" && /unknown_view_type/.test(err.message),
+    (err) => err.code === "invalid_query" && /invalid_area_type/.test(err.message),
   );
 
   assert.equal(plugin.settings.queryPresets.length, 0);
@@ -1133,7 +1181,9 @@ test("task-center root CLI handler prints help with AI skill install command", a
 });
 
 // VAL-CLI-006: builtins cannot be permanently deleted via CLI
-test("query-delete rejects builtin query preset with invalid_query", async () => {
+// US-109l: builtins are now deletable; deleting one tombstones its id so it is
+// not re-seeded on next load (recoverable via 「恢复预设 Tabs」).
+test("query-delete 删除内置 preset 并把 id 记入 deletedBuiltinIds 墓碑", async () => {
   const { plugin, calls } = await createPluginForQueryCli({
     queryPresets: [
       {
@@ -1157,16 +1207,16 @@ test("query-delete rejects builtin query preset with invalid_query", async () =>
     ],
   });
 
-  await assert.rejects(
-    () => plugin.cliQueryDelete({ id: "preset-today" }),
-    (err) => err.code === "invalid_query" && /无法删除内置/.test(err.message),
-  );
+  const result = await plugin.cliQueryDelete({ id: "preset-today" });
+  assert.match(result, /^ok  preset-today  今日/);
+  assert.match(result, /deleted query preset/);
 
-  // Builtin preset still present, no save/refresh side effects
-  assert.equal(plugin.settings.queryPresets.length, 2);
-  assert.equal(plugin.settings.queryPresets.find((v) => v.id === "preset-today")?.id, "preset-today");
-  assert.equal(calls.save, 0);
-  assert.equal(calls.refresh, 0);
+  // Builtin preset removed and tombstoned; custom preset untouched.
+  assert.equal(plugin.settings.queryPresets.length, 1);
+  assert.equal(plugin.settings.queryPresets.find((v) => v.id === "preset-today"), undefined);
+  assert.deepEqual(plugin.settings.deletedBuiltinIds, ["preset-today"]);
+  assert.equal(calls.save, 1);
+  assert.equal(calls.refresh, 1);
 });
 
 test("query-delete 允许删除非内置的自定义 preset", async () => {

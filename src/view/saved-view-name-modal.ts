@@ -1,7 +1,9 @@
-import { App, Modal, TextComponent } from "obsidian";
+import { App, TextComponent } from "obsidian";
 import { t as tr } from "../i18n";
+import { TcBaseModal } from "./tc-modal";
 
-export class SavedViewNameModal extends Modal {
+export class SavedViewNameModal extends TcBaseModal {
+  protected readonly modalContentClass = "task-center-saved-view-name-modal";
   private value: string;
   private resolved = false;
   private resolve: (name: string | null) => void;
@@ -12,11 +14,9 @@ export class SavedViewNameModal extends Modal {
     this.resolve = resolve;
   }
 
-  onOpen(): void {
+  protected populate(): void {
     const { contentEl } = this;
-    contentEl.empty();
-    contentEl.addClass("task-center-saved-view-name-modal");
-    contentEl.createEl("h3", { text: tr("savedViews.promptName") });
+    this.titleEl.setText(tr("savedViews.promptName"));
 
     const input = new TextComponent(contentEl);
     input.inputEl.dataset.savedViewNameInput = "true";

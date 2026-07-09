@@ -1,13 +1,15 @@
-import { App, Modal, TextComponent } from "obsidian";
+import { App, TextComponent } from "obsidian";
 import { todayISO, addDays, isValidISO } from "./dates";
 import { t as tr } from "./i18n";
+import { TcBaseModal } from "./view/tc-modal";
 
 /**
  * Small modal that accepts a date as YYYY-MM-DD or a natural-language hint
  * (today / tomorrow / 明天 / 周六 / etc.) and resolves it to an ISO date.
  * Enter commits, Escape closes without saving, blank string signals "clear".
  */
-export class DatePromptModal extends Modal {
+export class DatePromptModal extends TcBaseModal {
+  protected readonly modalContentClass = "task-center-date-prompt";
   private value: string;
   private onResolve: (iso: string | null | undefined) => void;
   private title: string;
@@ -26,11 +28,9 @@ export class DatePromptModal extends Modal {
     this.onResolve = onResolve;
   }
 
-  onOpen() {
+  protected populate(): void {
     const { contentEl } = this;
-    contentEl.empty();
-    contentEl.addClass("task-center-date-prompt");
-    contentEl.createEl("h3", { text: this.title });
+    this.titleEl.setText(this.title);
 
     const input = new TextComponent(contentEl);
     input.inputEl.addClass("tc-full-width-input");

@@ -6,6 +6,8 @@ import { todayISO, addDays, isValidISO, fromISO } from "./dates";
 import { isMobileMode } from "./platform";
 import { extractMarkdownTags, stripMarkdownTags } from "./tags";
 import type { TaskCenterSettings } from "./types";
+import { collectAreas } from "./saved-views";
+import { installKeyboardAvoidance } from "./view/bottom-sheet";
 
 // US-167-3: prefill chips. Token strings must match parseQuickAdd's
 // existing recognizers (resolveRelativeDate / markdown tag parser). Tag chips come from
@@ -44,10 +46,10 @@ export class QuickAddModal extends Modal {
   private onDone?: () => void;
   private settings?: TaskCenterSettings;
   private tagChips: ReadonlyArray<string>;
-  // visualViewport listeners for soft-keyboard avoidance (US-509). Stored so
+  // Detach hook for the shared soft-keyboard avoidance (US-509). Stored so
   // we can detach in onClose; visualViewport is a singleton so leaks would
   // accumulate across modal reopens.
-  private vvOnResize: (() => void) | null = null;
+  private detachKeyboardAvoidance: (() => void) | null = null;
   // US-167-4 inline error slot. Reused across retries so we don't stack
   // ⚠ lines on repeated failures. Only created on desktop v2.
   private errorEl: HTMLElement | null = null;
@@ -208,7 +210,7 @@ export class QuickAddModal extends Modal {
       });
     }
 
-    if (Platform.isMobile) this.installKeyboardAvoidance(modalEl);
+    if (Platform.isMobile) this.detachKeyboardAvoidance = installKeyboardAvoidance(modalEl);
 
     window.setTimeout(() => text.inputEl.focus(), 10);
   }
@@ -241,32 +243,9 @@ export class QuickAddModal extends Modal {
   onClose() {
     // Detach visualViewport listeners — failing to do so leaks one closure
     // per modal reopen since visualViewport is a global singleton.
-    if (this.vvOnResize && typeof window.visualViewport !== "undefined" && window.visualViewport) {
-      window.visualViewport.removeEventListener("resize", this.vvOnResize);
-      window.visualViewport.removeEventListener("scroll", this.vvOnResize);
-      this.vvOnResize = null;
-    }
+    this.detachKeyboardAvoidance?.();
+    this.detachKeyboardAvoidance = null;
     super.onClose();
-  }
-
-  /**
-   * UX-mobile §13 #5 / US-509: when soft keyboard pops up, the inner
-   * viewport shrinks — measure the offset between layout viewport
-   * (`window.innerHeight`) and visual viewport (`visualViewport.height`)
-   * and shift the bottom-sheet up by that delta. Listen on both
-   * `resize` (keyboard show/hide) and `scroll` (visualViewport pan).
-   */
-  private installKeyboardAvoidance(modalEl: HTMLElement): void {
-    if (typeof window.visualViewport === "undefined" || !window.visualViewport) return;
-    const vv = window.visualViewport;
-    const apply = () => {
-      const offset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
-      modalEl.style.setProperty("--tc-vv-offset", `${offset}px`);
-    };
-    apply();
-    vv.addEventListener("resize", apply);
-    vv.addEventListener("scroll", apply);
-    this.vvOnResize = apply;
   }
 
   async submit() {
@@ -304,12 +283,15 @@ function contentErr(e: unknown): string {
 function savedViewTags(settings?: TaskCenterSettings): string[] {
   if (!settings) return [];
   const out: string[] = [];
+  // US-109z2: tags live on each area's `when` now (no tab-level filter).
   for (const view of settings.queryPresets) {
-    const tags = view.filters.tags;
-    if (Array.isArray(tags)) {
-      for (const t of tags) out.push(t);
-    } else if (typeof tags === "string" && tags) {
-      out.push(tags);
+    for (const area of collectAreas(view.view.layout)) {
+      const tags = (area as { when?: { tags?: string[] | string } }).when?.tags;
+      if (Array.isArray(tags)) {
+        for (const t of tags) out.push(t);
+      } else if (typeof tags === "string" && tags) {
+        out.push(tags);
+      }
     }
   }
   return out;

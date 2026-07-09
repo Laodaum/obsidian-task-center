@@ -72,6 +72,11 @@ export interface TaskCenterSettings {
   // Legacy SavedTaskView entries in data.json are detected and rejected
   // during loadSettings — no migration path exists.
   queryPresets: QueryPreset[];
+  // US-109l: builtin (preset) tabs the user permanently deleted. `ensureBuiltin
+  // QueryPresets` skips re-seeding these on load so a deleted preset stays gone
+  // across restarts. Cleared per-id by 行内「恢复预设」 and wholesale by
+  // 「恢复预设 Tabs」; an entry is removed when the delete is undone.
+  deletedBuiltinIds: string[];
   defaultSavedViewId: string | null;
   defaultView: "today" | "week" | "month" | "completed" | "unscheduled" | "horizon";
   openOnStartup: boolean;
@@ -85,7 +90,7 @@ export interface TaskCenterSettings {
   // left off. Read in `TaskCenterView.constructor`'s ViewState init,
   // written in `setTab`.
   // see USER_STORIES.md
-  lastTab: "today" | "week" | "month" | "completed" | "unscheduled" | "list" | "matrix" | null;
+  lastTab: "today" | "week" | "month" | "completed" | "unscheduled" | "list" | null;
   lastSavedViewId: string | null;
   // US-510: platform-conditional UI strings — shortcut hints / mouse
   // descriptions are branched per platform (desktop hint vs mobile hint),
@@ -103,9 +108,9 @@ export interface TaskCenterSettings {
 
 export type TaskFormatFlavor = "tasks" | "dataview";
 
-export type SavedViewStatus = "all" | TaskStatus | TaskStatus[];
-export type SavedViewTimeField = "scheduled" | "deadline" | "completed" | "created" | "dropped";
-export type SavedViewTimeFilters = Partial<Record<SavedViewTimeField, string>>;
+export type QueryStatus = "all" | TaskStatus | TaskStatus[];
+export type QueryTimeField = "scheduled" | "deadline" | "completed" | "created" | "dropped";
+export type QueryTimeFilters = Partial<Record<QueryTimeField, string>>;
 export type QueryViewType = "list" | "week" | "month" | "matrix" | "horizon";
 
 export interface SavedViewConfig {
@@ -115,22 +120,8 @@ export interface SavedViewConfig {
   // which query preset semantics the user saved.
   preset?: string;
   orderBy?: string[];
-  // ARCHITECTURE.md §1.3: QuerySection — named filter groups for list views.
-  sections?: QuerySection[];
   // ARCHITECTURE.md §1.3: QueryTray — separate query area for week/month views.
   tray?: QueryTray;
-  // ARCHITECTURE.md §1.3: QueryPresetMatrixConfig — matrix view config.
-  matrix?: QueryPresetMatrixConfig;
-}
-
-export interface SavedViewSummaryMetric {
-  type: "count" | "sum" | "ratio" | "top_n" | "group_by";
-  field?: string;
-  numerator?: string;
-  denominator?: string;
-  by?: string;
-  limit?: number;
-  format?: string;
 }
 
 export interface SavedTaskView {
@@ -140,55 +131,38 @@ export interface SavedTaskView {
   hidden?: boolean;
   search: string;
   tag: string;
-  time: SavedViewTimeFilters;
-  status: SavedViewStatus;
+  time: QueryTimeFilters;
+  status: QueryStatus;
   view?: SavedViewConfig;
-  summary?: SavedViewSummaryMetric[];
 }
 
 // ── QueryPreset DSL — the canonical query model (ARCHITECTURE.md §1.3) ──
 // Legacy SavedTaskView is the flat predecessor; QueryPreset nests
-// filters/view/summary into a single DSL object shared by GUI, CLI,
+// filters/view into a single DSL object shared by GUI, CLI,
 // and settings storage. No migration path exists for old SavedTaskView
 // data.json entries (VAL-CORE-005 / VAL-CROSS-002).
 
+// 标签过滤的匹配模式。裸 `string[]` / 逗号串（向后兼容）= AND；对象形态
+// `{ values, mode }` 让预设表达 OR（「含任一标签」），四象限等用得上。归一化
+// 输出：AND 收敛回裸数组，只有 OR 才用对象形态。
+export interface TagSelector {
+  values: string[];
+  mode: "and" | "or";
+  // US-109d3: 排除组——任务只要带其中任一标签就被过滤掉。与 values（包含组）互斥。
+  exclude?: string[];
+}
+
+// US-109d4: 自由布尔表达式形态的标签过滤（`#a and (#b or #c) not #d`）。与三态
+// （TagSelector / 裸数组）互斥，是同一份 when.tags 的另一种形态。
+export interface TagExprFilter {
+  expr: string;
+}
+
 export interface QueryPresetFilters {
   search?: string;
-  tags?: string[] | string;
-  status?: SavedViewStatus;
-  time?: SavedViewTimeFilters;
-}
-
-export interface QueryPresetMatrixBucket {
-  id: string;
-  title: string;
-  when: QueryPresetFilters;
-}
-
-export interface QueryPresetMatrixAxis {
-  id: string;
-  title: string;
-  buckets: QueryPresetMatrixBucket[];
-}
-
-export interface QueryPresetMatrixConfig {
-  x: QueryPresetMatrixAxis;
-  y: QueryPresetMatrixAxis;
-  unmatched: "show" | "hide";
-  multiMatch: "first" | "duplicate";
-  showEmptyBuckets: boolean;
-}
-
-// ARCHITECTURE.md §1.3: QuerySection — a named filter group for list views.
-// Each section applies its own `when` filter to the effective task set and
-// may override sorting and limit independently.
-export interface QuerySection {
-  id: string;
-  title: string;
-  when: QueryPresetFilters;
-  orderBy?: string[];
-  limit?: number;
-  emptyText?: string;
+  tags?: string[] | string | TagSelector | TagExprFilter;
+  status?: QueryStatus;
+  time?: QueryTimeFilters;
 }
 
 // ARCHITECTURE.md §1.3: QueryTray — a separate query area for week/month
@@ -202,36 +176,131 @@ export interface QueryTray {
   orderBy?: string[];
 }
 
-export interface QueryPresetViewConfig {
-  type: QueryViewType;
-  preset?: string;
+// ── View = SwiftUI 式布局树（ARCHITECTURE.md §1.3）──
+// 没有单一 view 类型，也没有 preset。一个 view 是一棵布局树：row / col
+// 容器（≈ HStack / VStack）嵌套 area 叶子组件。旧的 {type, preset,
+// sections, tray} 形状由 normalize 迁移成 { layout }。
+
+// 受支持的 area 类型。`type` 是其它字符串的 area 会被归一化成 unknown area
+// 并在视图里渲染成「未知类型 + JSON」。四象限等二维布局用 row / col 嵌套
+// 多个带标题（title）的 grid area 表达，不需要专门的 area 类型。
+export type AreaType = "list" | "grid" | "week" | "month" | "drop";
+
+// 卡片被拖入某个 area 时的写操作；三种语义互斥。
+export interface DropEffect {
+  setStatus?: "dropped";    // 放弃区
+  setScheduled?: string;    // 写排期 DateToken（week / month 日格隐式用当日）
+  clearScheduled?: true;    // tray：清空被拖任务自己行的 ⏳
+}
+
+export interface AreaBase {
+  // Stable id for builtin areas, used to localize the title at render time
+  // (builtin defaults are localized; user-set titles are shown verbatim).
+  id?: string;
+  title?: string;
+  weight?: number;
+  onDrop?: DropEffect;
+}
+
+// list / grid 共享字段：when 收窄、排序、限制。list 没有内部分组——多段（如
+// 今日）用 col 容器叠多个各自带 when 的 list area 表达，不是一个 list 内部分组。
+export interface ListLikeFields {
+  when?: QueryPresetFilters;
   orderBy?: string[];
-  sections?: QuerySection[];
-  tray?: QueryTray;
-  matrix?: QueryPresetMatrixConfig;
-}
-
-export interface QueryPresetSummaryMetric {
-  type: "count" | "sum" | "ratio" | "top_n" | "group_by";
-  field?: string;
-  numerator?: string;
-  denominator?: string;
-  by?: string;
   limit?: number;
-  format?: string;
+  emptyText?: string;
 }
 
+// list：渲染一列任务卡。今日 = col 叠 3 个 list area（逾期 / 今日 / 未排期），
+// 每个 area 自带 when、各自 filter 自己；与 TODO 同组件、看起来一样。
+export interface ListAreaConfig extends AreaBase, ListLikeFields {
+  type: "list";
+}
+
+// grid：与 list 同配置、同投影，但卡片以响应式多列网格排列（未排期 tray 用）。
+export interface GridAreaConfig extends AreaBase, ListLikeFields {
+  type: "grid";
+}
+
+export interface WeekAreaConfig extends AreaBase {
+  type: "week";
+  // US-109z2: date areas carry their own `when` too, so filtering is always
+  // per-area (there is no tab-level base filter anymore). e.g. a week view that
+  // only shows todo tasks sets `when: { status: ["todo"] }`.
+  when?: QueryPresetFilters;
+  firstDayOfWeek?: "monday" | "sunday";
+}
+
+export interface MonthAreaConfig extends AreaBase {
+  type: "month";
+  when?: QueryPresetFilters;
+  firstDayOfWeek?: "monday" | "sunday";
+  density?: "compact" | "cards";
+}
+
+// drop：纯动作落区，无 query；onDrop 必填。放弃区就是 drop area。
+export interface DropAreaConfig extends AreaBase {
+  type: "drop";
+  onDrop: DropEffect;
+}
+
+// 视界：按时间桶分区（今天 / 本周 / 下周 / 本月），底层多路 query 但归一化为
+// 一个 area，渲染成 4 列紧凑时间卡。
+export interface HorizonAreaConfig extends AreaBase {
+  type: "horizon";
+  when?: QueryPresetFilters;
+}
+
+// unknown：归一化时遇到不认识的 area.type 时的兜底。保留原始类型字符串与
+// 原始 JSON，视图层渲染成「未知类型 + JSON」，而不是静默退化或丢弃。
+export interface UnknownAreaConfig extends AreaBase {
+  type: "unknown";
+  rawType: string;
+  raw: unknown;
+}
+
+export type AreaConfig =
+  | ListAreaConfig
+  | GridAreaConfig
+  | WeekAreaConfig
+  | MonthAreaConfig
+  | DropAreaConfig
+  | HorizonAreaConfig
+  | UnknownAreaConfig;
+
+// US-109z2: area *behaviour* / capabilities (rendersTasks / filterable /
+// editable / acceptsDrop / icon / label) live in the AreaHandler class
+// hierarchy in `areas.ts`, keyed by type. types.ts stays pure data so the DSL
+// serializes cleanly. See `areas.ts` for `areaHandler()` / `areaSupportsWhen()`.
+
+export interface StackConfig {
+  dir: "row" | "col"; // row ≈ HStack，col ≈ VStack
+  weight?: number;
+  children: LayoutNode[];
+}
+
+export type LayoutNode = StackConfig | AreaConfig;
+
+export function isStackNode(node: LayoutNode): node is StackConfig {
+  return (node as StackConfig).dir !== undefined && Array.isArray((node as StackConfig).children);
+}
+
+export interface QueryPresetViewConfig {
+  layout: LayoutNode; // 根节点：可以是 Stack，也可以直接是单个 area
+}
+
+// US-109z2: a tab has NO tab-level filter. All filtering lives on each area's
+// `when` (list / grid / week / month). `QueryPresetFilters` survives only as the
+// shape of an area's `when`.
 export interface QueryPreset {
   id: string;
   name: string;
   builtin: boolean;
   hidden: boolean;
-  filters: QueryPresetFilters;
   view: QueryPresetViewConfig;
-  summary: QueryPresetSummaryMetric[];
 }
 
-export type QueryPresetSection = "filters" | "view" | "summary";
+export type QueryPresetSection = "filters" | "view";
 
 export interface QueryPresetValidationError {
   section: QueryPresetSection;
@@ -246,6 +315,7 @@ export interface QueryPresetValidationResult {
 
 export const DEFAULT_SETTINGS: TaskCenterSettings = {
   queryPresets: [],
+  deletedBuiltinIds: [],
   defaultSavedViewId: null,
   defaultView: "week",
   openOnStartup: false,

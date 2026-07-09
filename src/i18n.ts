@@ -37,7 +37,9 @@ const EN = {
   // Toolbar
   "toolbar.today": "Today",
   "toolbar.weekNo": "W{n}",
+  "toolbar.monthNo": "M{n}",
   "toolbar.add": "+ Add",
+  "toolbar.settings": "Settings",
   "toolbar.filter": "Search tasks",
   "filters.empty": "No tasks match the current filters.",
   "filters.clear": "Clear filters",
@@ -68,7 +70,7 @@ const EN = {
 
   // Abandon target
   "trash.title": "Abandon",
-  "trash.hint": "Drop here → [-] ❌",
+  "trash.hint": "Drop here to abandon",
   "trash.dropped": "Abandoned",
   "dnd.inheritedSchedule":
     "Schedule is inherited from parent; edit source or move out of parent first.",
@@ -117,6 +119,8 @@ const EN = {
   "notice.deleted": "Deleted tab \"{name}\" — no tasks were removed.",
   "notice.undoAction": "Undo",
   "notice.undoRestored": "Restored tab \"{name}\".",
+  "notice.undone": "Marked undone",
+  "notice.tagsUpdated": "Tags updated",
 
   // Context menu
   "ctx.markDone": "Mark done",
@@ -186,6 +190,9 @@ const EN = {
     "Read supports Tasks emoji and Dataview inline fields. New task metadata writes use this flavor.",
   "settings.taskFormatFlavor.tasks": "Tasks emoji: ⏳ 📅 ➕ ✅",
   "settings.taskFormatFlavor.dataview": "Dataview inline fields: [scheduled::] [due::]",
+  "settings.groupTabs": "Query tabs",
+  "settings.groupGeneral": "General",
+  "settings.groupWriting": "Task writing",
   "settings.mobileHeader": "Mobile",
   "settings.mobileLongPress.name": "Long-press duration (ms)",
   "settings.mobileLongPress.desc":
@@ -231,19 +238,23 @@ const EN = {
   "meta.est": "est {dur}",
   "meta.act": "act {dur}",
 
-  // task #43: mobile long-press action sheet (view.ts:openCardActionSheet).
-  // `sheet.scheduleAt` formats a single ⏳ button with an explicit ISO date;
-  // the date is opaque to the translator (no language-specific reformatting)
-  // so EN and ZH share the literal template.
+  // Mobile task sheet labels (view.ts:openMobileTaskDetailSheet — the single
+  // grouped sheet that both tap and long-press now open). `sheet.scheduleAt`
+  // formats a ⏳ button with an explicit ISO date; the date is opaque to the
+  // translator (no language-specific reformatting) so EN and ZH share the
+  // literal template.
   "sheet.markUndone": "↩ Mark undone",
   "sheet.done": "✓ Done",
   "sheet.scheduleAt": "⏳ {date}",
   "sheet.schedule": "Schedule",
   "sheet.reschedule": "Reschedule",
   "sheet.scheduleClear": "⏳ —",
+  "sheet.tomorrow": "Tomorrow",
+  "sheet.nextWeek": "Next week",
+  "sheet.clearSchedule": "Clear schedule",
   "sheet.unscheduled": "Unscheduled",
   "sheet.drop": "Abandon",
-  "sheet.scheduleCustom": "⏳ Pick a date…",
+  "sheet.scheduleCustom": "Pick a date…",
   "sheet.nest": "Set as subtask…",
   "sheet.parentPickerTitle": "Choose parent task",
   "sheet.parentPickerSubtitle": "Move “{title}” under a parent task.",
@@ -296,22 +307,20 @@ const EN = {
     "Enable Tasks or Dataview — task metadata may not render or query elsewhere",
   "dep.openSettings": "Click to open Obsidian settings",
 
-  // US-720 (task #63): today execution view — entry-point tab that
-  // answers "what should I do today?". Three groups + minimal actions.
+  // US-720: builtin "Today" area titles — localized at render by area id
+  // (今日 = col[ list×3 ]; each area's id maps to one of these via BUILTIN_TITLE_KEYS).
   "today.groupOverdue": "Overdue",
   "today.groupToday": "Today",
-  "today.groupRec": "Recommended",
-  "today.groupEmpty": "Nothing in this group.",
-  "today.empty": "Nothing to do today — enjoy the quiet.",
-  "today.actionDone": "✓ Done",
-  "today.actionReschedule": "↷ Tomorrow",
-  "today.actionDrop": "Abandon",
+  "today.groupRec": "Unscheduled",
 
   // US-724 (task #67): saved views / custom filters.
   "savedViews.tag": "Tags",
   "savedViews.tagSearch": "Search tags",
   "savedViews.clearTags": "Clear",
+  "savedViews.tagInsert": "Insert a tag…",
   "savedViews.tagEmpty": "No tags found. Add #hashtags to your tasks to filter by tag.",
+  "savedViews.tagExprExample": "e.g. #a and #b · #a or #b · not #c · (#a or #b) and not #c",
+  "savedViews.tagExprError": "Invalid expression — check tags, and/or/not, and parentheses.",
   "savedViews.emptyHint": "Set filters, then save a new query tab.",
   "savedViews.timeScheduled": "Schedule",
   "savedViews.timeDeadline": "Deadline",
@@ -346,7 +355,8 @@ const EN = {
   "savedViews.switchDirtyDiscard": "Switch without saving",
   "savedViews.switchDirtyCancel": "Cancel",
   "savedViews.editDsl": "Edit Query DSL",
-  "savedViews.editQuery": "Edit query",
+  "savedViews.editQuery": "Edit view",
+  "savedViews.editArea": "Edit area",
   "savedViews.open": "Open tab",
   "savedViews.create": "New tab",
   "savedViews.saveDisabled": "Set at least one filter before saving or updating.",
@@ -357,7 +367,8 @@ const EN = {
   "savedViews.show": "Show tab",
   "savedViews.delete": "Delete tab",
   "savedViews.manage": "Manage tabs",
-  "savedViews.manageTitle": "Manage query tabs",
+  "savedViews.manageTitle": "Query Tabs",
+  "savedViews.more": "More",
   "savedViews.moveLeft": "Move left",
   "savedViews.moveRight": "Move right",
   "savedViews.restore": "Restore preset",
@@ -382,12 +393,21 @@ const EN = {
   "savedViews.mobileEntry": "Filters",
   "savedViews.mobileTitle": "Query, view, and filters",
   "savedViews.queryEditorTitle": "Edit current query",
+  "savedViews.editViewTitle": "Edit current view",
+  "savedViews.editAreaTitle": "Edit current area",
   "savedViews.queryEditorHelp": "Edit the active query tab — filters, view, summary, and DSL are all editable here.",
   "savedViews.queryEditorFilters": "Filters",
+  "savedViews.queryEditorAreaFilters": "Filters",
+  "savedViews.queryEditorBaseFilters": "Base set (shared by all areas)",
+  "savedViews.queryEditorBaseFiltersNote": "Search / status / scheduled / tags added here stack onto every area in this view.",
+  "savedViews.viewName": "View name",
+  "savedViews.queryEditorAreaTitle": "Title",
   "savedViews.queryEditorActions": "Save and manage",
   "savedViews.queryEditorActionsNote": "Save, save-as, DSL editing, and tab management here all work on the current tab's query draft.",
   "savedViews.dslTitle": "Edit query DSL",
   "savedViews.dslHelp": "Advanced mode. Edit the same query preset as JSON; save only writes after validation succeeds.",
+  "savedViews.dslDocs": "DSL reference ↗",
+  "savedViews.dslValid": "Validation passed",
   "savedViews.deleteConfirmTitle": "Delete tab",
   "savedViews.deleteConfirmBody": "Only removes this view — no tasks are deleted.",
   "savedViews.deleteConfirmAction": "Delete",
@@ -399,21 +419,33 @@ const EN = {
   "savedViews.viewList": "List",
   "savedViews.viewWeek": "Week",
   "savedViews.viewMonth": "Month",
-  "savedViews.viewMatrix": "Matrix",
-  "savedViews.queryEditorSummary": "Summary",
-  "savedViews.queryEditorSummaryHelp": "Add metrics to show above the task list.",
-  "savedViews.summaryAdd": "Add metric",
-  "savedViews.summaryRemove": "Remove",
-  "savedViews.summaryMetricCount": "Count",
-  "savedViews.summaryMetricSum": "Sum",
-  "savedViews.summaryMetricRatio": "Ratio",
-  "savedViews.summaryMetricTopN": "Top N",
-  "savedViews.summaryMetricGroupBy": "Group by",
-  "savedViews.summaryField": "Field",
-  "savedViews.summaryNumerator": "Numerator",
-  "savedViews.summaryDenominator": "Denominator",
-  "savedViews.summaryBy": "Group by field",
-  "savedViews.summaryLimit": "Limit",
+  "savedViews.queryEditorDsl": "DSL",
+  // US-109z2: area filter — searchable tag list + per-field date range.
+  "savedViews.tagMore": "{n} more — type to filter",
+  "savedViews.dateRangeTo": "to",
+  "savedViews.searchContains": "Task text contains…",
+  "savedViews.addTimeField": "Add date filter",
+  "savedViews.dateOrRange": "or a date range",
+  // US-109p10 / US-109p11: two-panel Query editor + visual layout tree.
+  "savedViews.areaTabAppearance": "Appearance",
+  "savedViews.layout": "Layout",
+  "savedViews.layoutSummary": "{count} areas · {dir}",
+  "savedViews.layoutAddArea": "Add area",
+  "savedViews.layoutToggleDir": "Toggle direction",
+  "savedViews.layoutWrapRow": "Wrap in row",
+  "savedViews.layoutWrapCol": "Wrap in column",
+  "savedViews.layoutDelete": "Delete area",
+  "savedViews.layoutDuplicate": "Duplicate area",
+  "savedViews.layoutMoveUp": "Move up",
+  "savedViews.layoutMoveDown": "Move down",
+  "savedViews.layoutRow": "Row",
+  "savedViews.layoutCol": "Column",
+  "savedViews.viewGrid": "Grid",
+  "savedViews.areaTypeDrop": "Drop zone",
+  "savedViews.baseSetHint": "Base set ({summary}) also applies here",
+  "savedViews.baseSetHintEmpty": "The tab base set also applies here",
+  "savedViews.goEditBaseSet": "Edit base set",
+  "savedViews.backToTab": "Edit whole tab",
 
   // US-168: in-place source Markdown edit overlay.
   "sourceEdit.title": "Edit in Obsidian",
@@ -423,9 +455,67 @@ const EN = {
   "sourceEdit.saved": "Saved",
   "sourceEdit.unsaved": "Unsaved",
   "sourceEdit.nativeFailed": "Could not open Obsidian's native editor.",
-  "matrix.noConfig": "Matrix view requires x/y axis configuration. Edit Query to set up axes.",
-  "matrix.empty": "No tasks match the matrix conditions.",
-  "matrix.unmatched": "Unmatched",
+
+  // Unknown area type — graceful degradation when a view config uses an
+  // unsupported area `type` (typo, or a removed view type).
+  "area.unknownType": "Unknown view type: {type}",
+  "area.unknownHint": "This area type is not supported. Edit the Query DSL to fix it.",
+
+  // US-109w: per-area filter + empty state
+  "area.emptyArea": "No tasks match here.",
+  "area.emptyTray": "No unscheduled tasks.",
+  "area.clearAreaFilter": "Clear this area's filter",
+
+  // US-415: full-view upgrade gate (legacy SavedTaskView / old-DSL view →
+  // new QueryPreset model). Shown instead of the board when legacy data is
+  // detected; the board renders only after the user confirms.
+  "migration.badge": "Upgrade",
+  "migration.title": "Task Center has been upgraded",
+  "migration.lead":
+    "This version refreshes how your views are set up. The {n} view(s) below upgrade automatically — just confirm to continue. Your tasks and notes are untouched.",
+  "migration.scrollHint": "Scroll down to confirm and enter",
+  "migration.whatsNewTitle": "What's new",
+  "migration.feature1Title": "Mix and match layouts",
+  "migration.feature1Desc":
+    "Put lists, a week and a month side by side in one tab.",
+  "migration.feature2Title": "Set it up once",
+  "migration.feature2Desc":
+    "What you set up in the app works the same from the command line — one place, no surprises.",
+  "migration.feature3Title": "Built-in views are editable",
+  "migration.feature3Desc":
+    "Copy a built-in view like Today or Week and tweak it into your own.",
+  "migration.feature5Title": "One edit button per section",
+  "migration.feature5Desc":
+    "Every list, week and month has the same edit button — open it to change what shows and how it looks. No more hunting for little icons.",
+  "migration.feature4Title": "A fresh look",
+  "migration.feature4Desc":
+    "Cleaner board, tabs and edit panels.",
+  "migration.feature6Title": "Done tasks don't jump away",
+  "migration.feature6Desc":
+    "Tick a task and it turns done right where it is instead of vanishing — it only clears when you reopen the view, so a mis-tap is easy to undo.",
+  "migration.roadmapTitle": "On the roadmap",
+  "migration.roadmapTag": "Planned",
+  "migration.roadmap1Title": "Customizable stat cards",
+  "migration.roadmap1Desc":
+    "The old summary chips are gone for now. They'll come back as stat cards you can arrange freely — pick the numbers you want (count, sum, ratio, charts) instead of a fixed strip.",
+  "migration.roadmap2Title": "More drag-to-edit",
+  "migration.roadmap2Desc":
+    "Grouping, sorting and limits will become drag-to-edit in the app too — no hand-written config.",
+  "migration.viewsTitle": "Views migrating automatically ({n})",
+  "migration.viewsBuiltin": "Built-in",
+  "migration.viewsCustom": "Custom",
+  "migration.untitledView": "Untitled view",
+  "migration.note":
+    "Both your built-in views (rename / hide / order) and your custom views migrate automatically and are kept. This only updates local settings — no task files are touched.",
+  "migration.flavorTitle": "Pick your task format",
+  "migration.flavorDesc":
+    "Task Center reads both. New task metadata is written in the format you choose here.",
+  "migration.flavorDataviewTitle": "Dataview inline fields",
+  "migration.flavorTasksTitle": "Tasks emoji",
+  "migration.aiTipTitle": "Manage tasks with AI? Update the skill",
+  "migration.aiTipDesc":
+    "This release changed the query DSL shape. If you read or write tasks through Task Center's AI skill / CLI, update the skill after upgrading — otherwise the agent will keep emitting the old DSL:",
+  "migration.cta": "Upgrade and open the board",
 };
 
 const ZH: Partial<typeof EN> = {
@@ -445,7 +535,9 @@ const ZH: Partial<typeof EN> = {
 
   "toolbar.today": "今天",
   "toolbar.weekNo": "第{n}周",
+  "toolbar.monthNo": "{n}月",
   "toolbar.add": "+ 新建",
+  "toolbar.settings": "设置",
   "toolbar.filter": "搜索任务",
   "filters.empty": "没有符合当前筛选的任务。",
   "filters.clear": "清空筛选",
@@ -472,7 +564,7 @@ const ZH: Partial<typeof EN> = {
     "长按卡片打开操作 · 左滑 = 完成 · 右滑 = 放弃",
 
   "trash.title": "放弃区",
-  "trash.hint": "拖到此处 → [-] ❌",
+  "trash.hint": "拖到此处放弃",
   "trash.dropped": "已放弃",
   "dnd.inheritedSchedule":
     "排期继承自父任务，请编辑源 Markdown 或将任务移出父级。",
@@ -513,6 +605,8 @@ const ZH: Partial<typeof EN> = {
   "notice.deleted": "已删除 Tab「{name}」——任务本身未被删除。",
   "notice.undoAction": "撤销",
   "notice.undoRestored": "已恢复 Tab「{name}」。",
+  "notice.undone": "已取消完成",
+  "notice.tagsUpdated": "已更新 tag",
 
   "ctx.markDone": "标记完成",
   "ctx.markTodo": "取消完成",
@@ -570,6 +664,9 @@ const ZH: Partial<typeof EN> = {
     "读取同时兼容 Tasks emoji 与 Dataview inline fields；新的任务元数据写入使用这里选择的风味。",
   "settings.taskFormatFlavor.tasks": "Tasks emoji：⏳ 📅 ➕ ✅",
   "settings.taskFormatFlavor.dataview": "Dataview inline fields：[scheduled::] [due::]",
+  "settings.groupTabs": "Query 标签页",
+  "settings.groupGeneral": "通用",
+  "settings.groupWriting": "任务写入",
   "settings.mobileHeader": "移动端",
   "settings.mobileLongPress.name": "长按时长 (ms)",
   "settings.mobileLongPress.desc":
@@ -618,9 +715,12 @@ const ZH: Partial<typeof EN> = {
   "sheet.schedule": "排期",
   "sheet.reschedule": "改期",
   "sheet.scheduleClear": "⏳ —",
+  "sheet.tomorrow": "明天",
+  "sheet.nextWeek": "下周",
+  "sheet.clearSchedule": "清除排期",
   "sheet.unscheduled": "未排期",
   "sheet.drop": "放弃",
-  "sheet.scheduleCustom": "⏳ 改期…",
+  "sheet.scheduleCustom": "改期…",
   "sheet.nest": "设为子任务…",
   "sheet.parentPickerTitle": "选择父任务",
   "sheet.parentPickerSubtitle": "把「{title}」移动到父任务下。",
@@ -669,18 +769,16 @@ const ZH: Partial<typeof EN> = {
   // US-720: 今日执行视图
   "today.groupOverdue": "逾期",
   "today.groupToday": "今天",
-  "today.groupRec": "未排期推荐",
-  "today.groupEmpty": "本组暂无内容。",
-  "today.empty": "今天没有可执行任务。",
-  "today.actionDone": "✓ 完成",
-  "today.actionReschedule": "↷ 明天",
-  "today.actionDrop": "放弃",
+  "today.groupRec": "未排期",
 
   // US-724: 保存视图 / 自定义过滤
   "savedViews.tag": "标签",
   "savedViews.tagSearch": "搜索标签",
   "savedViews.clearTags": "清空",
+  "savedViews.tagInsert": "插入标签…",
   "savedViews.tagEmpty": "未找到标签。在任务中添加 #hashtag 即可按标签筛选。",
+  "savedViews.tagExprExample": "例：#a and #b · #a or #b · not #c · (#a or #b) and not #c",
+  "savedViews.tagExprError": "表达式有误——检查标签、and / or / not 与括号。",
   "savedViews.emptyHint": "设置过滤条件后可保存为新的 query tab。",
   "savedViews.timeScheduled": "排期",
   "savedViews.timeDeadline": "截止",
@@ -715,7 +813,8 @@ const ZH: Partial<typeof EN> = {
   "savedViews.switchDirtyDiscard": "不保存，直接切换",
   "savedViews.switchDirtyCancel": "取消",
   "savedViews.editDsl": "编辑 Query DSL",
-  "savedViews.editQuery": "编辑 Query",
+  "savedViews.editQuery": "编辑视图",
+  "savedViews.editArea": "编辑区域",
   "savedViews.open": "打开 Tab",
   "savedViews.create": "新建 Tab",
   "savedViews.saveDisabled": "先设置至少一个筛选条件再保存或更新。",
@@ -726,7 +825,8 @@ const ZH: Partial<typeof EN> = {
   "savedViews.show": "显示 Tab",
   "savedViews.delete": "删除 Tab",
   "savedViews.manage": "管理 Tabs",
-  "savedViews.manageTitle": "管理 Query Tabs",
+  "savedViews.manageTitle": "Query Tabs",
+  "savedViews.more": "更多",
   "savedViews.moveLeft": "左移",
   "savedViews.moveRight": "右移",
   "savedViews.restore": "恢复预设",
@@ -751,12 +851,21 @@ const ZH: Partial<typeof EN> = {
   "savedViews.mobileEntry": "过滤 / 视图",
   "savedViews.mobileTitle": "Query、视图与过滤",
   "savedViews.queryEditorTitle": "编辑当前 Query",
+  "savedViews.editViewTitle": "编辑当前视图",
+  "savedViews.editAreaTitle": "编辑当前区域",
   "savedViews.queryEditorHelp": "编辑当前 Query Tab——筛选、视图、统计与 DSL 均可在同一面板完成。",
   "savedViews.queryEditorFilters": "过滤条件",
+  "savedViews.queryEditorAreaFilters": "过滤条件",
+  "savedViews.queryEditorBaseFilters": "基础集（所有区域共享）",
+  "savedViews.queryEditorBaseFiltersNote": "在这里加的搜索 / 状态 / 排期 / 标签，会叠加到本视图的每一个区域上。",
+  "savedViews.viewName": "视图名称",
+  "savedViews.queryEditorAreaTitle": "标题",
   "savedViews.queryEditorActions": "保存与管理",
   "savedViews.queryEditorActionsNote": "这里的保存、另存为、DSL 与 Tabs 管理，作用的都是当前 Tab 的 query draft。",
   "savedViews.dslTitle": "编辑 Query DSL",
   "savedViews.dslHelp": "高级入口。直接以 JSON 编辑同一份 query preset；只有校验通过才会写入。",
+  "savedViews.dslDocs": "DSL 文档 ↗",
+  "savedViews.dslValid": "校验通过",
   "savedViews.deleteConfirmTitle": "删除 Tab",
   "savedViews.deleteConfirmBody": "只删除这个视图，不删除任何任务。",
   "savedViews.deleteConfirmAction": "删除",
@@ -768,21 +877,31 @@ const ZH: Partial<typeof EN> = {
   "savedViews.viewList": "列表",
   "savedViews.viewWeek": "周",
   "savedViews.viewMonth": "月",
-  "savedViews.viewMatrix": "矩阵",
-  "savedViews.queryEditorSummary": "统计",
-  "savedViews.queryEditorSummaryHelp": "添加统计指标，显示在任务列表上方。",
-  "savedViews.summaryAdd": "添加指标",
-  "savedViews.summaryRemove": "移除",
-  "savedViews.summaryMetricCount": "计数",
-  "savedViews.summaryMetricSum": "求和",
-  "savedViews.summaryMetricRatio": "比率",
-  "savedViews.summaryMetricTopN": "前 N 项",
-  "savedViews.summaryMetricGroupBy": "按...分组",
-  "savedViews.summaryField": "字段",
-  "savedViews.summaryNumerator": "分子",
-  "savedViews.summaryDenominator": "分母",
-  "savedViews.summaryBy": "分组字段",
-  "savedViews.summaryLimit": "数量上限",
+  "savedViews.queryEditorDsl": "DSL",
+  "savedViews.tagMore": "还有 {n} 个，输入以筛选",
+  "savedViews.dateRangeTo": "至",
+  "savedViews.searchContains": "任务文本包含…",
+  "savedViews.addTimeField": "添加日期筛选",
+  "savedViews.dateOrRange": "或自定义范围",
+  "savedViews.areaTabAppearance": "外观",
+  "savedViews.layout": "布局",
+  "savedViews.layoutSummary": "{count} 个区域 · {dir}",
+  "savedViews.layoutAddArea": "添加区域",
+  "savedViews.layoutToggleDir": "切换排列",
+  "savedViews.layoutWrapRow": "嵌套成行",
+  "savedViews.layoutWrapCol": "嵌套成列",
+  "savedViews.layoutDelete": "删除区域",
+  "savedViews.layoutDuplicate": "复制区域",
+  "savedViews.layoutMoveUp": "上移",
+  "savedViews.layoutMoveDown": "下移",
+  "savedViews.layoutRow": "横排",
+  "savedViews.layoutCol": "竖排",
+  "savedViews.viewGrid": "网格",
+  "savedViews.areaTypeDrop": "放弃区",
+  "savedViews.baseSetHint": "基础集（{summary}）也叠加在本区",
+  "savedViews.baseSetHintEmpty": "本 Tab 的基础集也叠加在本区",
+  "savedViews.goEditBaseSet": "去改基础集",
+  "savedViews.backToTab": "编辑整个 Tab",
 
   "sourceEdit.title": "在 Obsidian 中编辑",
   "sourceEdit.openInNewTab": "打开（新标签页）",
@@ -791,9 +910,62 @@ const ZH: Partial<typeof EN> = {
   "sourceEdit.saved": "已保存",
   "sourceEdit.unsaved": "未保存",
   "sourceEdit.nativeFailed": "无法打开 Obsidian 原生编辑器。",
-  "matrix.noConfig": "矩阵视图需要配置 x/y 轴。请编辑 Query 来设置轴。",
-  "matrix.empty": "没有任务匹配矩阵条件。",
-  "matrix.unmatched": "未匹配",
+
+  "area.unknownType": "未知视图类型：{type}",
+  "area.unknownHint": "这个 area 类型不被支持。请编辑 Query DSL 修正。",
+
+  "area.emptyArea": "本区无匹配任务。",
+  "area.emptyTray": "没有未排期任务。",
+  "area.clearAreaFilter": "清空本区筛选",
+
+  // US-415: 全屏升级闸门页
+  "migration.badge": "升级",
+  "migration.title": "Task Center 已升级",
+  "migration.lead":
+    "这一版换了视图的配置方式。下面 {n} 个视图会自动升级，确认即可继续；你的任务和笔记不受影响。",
+  "migration.scrollHint": "向下滑动，到底部确认升级",
+  "migration.whatsNewTitle": "新版变化",
+  "migration.feature1Title": "布局自由拼",
+  "migration.feature1Desc":
+    "列表、周历、月历能拼在同一个标签页里。",
+  "migration.feature2Title": "配置只设一次",
+  "migration.feature2Desc":
+    "在界面里配好的，在命令行里也照样用——一处设置，结果一致。",
+  "migration.feature3Title": "内置视图可改",
+  "migration.feature3Desc":
+    "Today、本周这些内置视图都能复制一份，改成你自己的样子。",
+  "migration.feature5Title": "每块内容一个编辑入口",
+  "migration.feature5Desc":
+    "每个列表、周历、月历都带同一个编辑按钮，点开就能改“显示什么”和“长什么样”，不用再到处找小按钮。",
+  "migration.feature4Title": "界面焕新",
+  "migration.feature4Desc":
+    "看板、标签页和编辑面板都更清爽。",
+  "migration.feature6Title": "完成不急着消失",
+  "migration.feature6Desc":
+    "勾完一条任务，它会原地变成完成态而不是立刻消失；重新打开这个视图时才隐去——点错了随手就能撤。",
+  "migration.roadmapTitle": "接下来",
+  "migration.roadmapTag": "计划中",
+  "migration.roadmap1Title": "可自定义的统计卡",
+  "migration.roadmap1Desc":
+    "原来的统计小标签先下线，以后会以可自由摆放的统计卡回归——自己选要看的数字（计数 / 合计 / 比率 / 图表），像拼看板一样排，而不是固定一条。",
+  "migration.roadmap2Title": "更多拖拽编辑",
+  "migration.roadmap2Desc":
+    "分组、排序、数量上限这些也会陆续做成界面里直接拖着改，不用手写配置。",
+  "migration.viewsTitle": "将自动迁移的视图（{n}）",
+  "migration.viewsBuiltin": "内置",
+  "migration.viewsCustom": "自定义",
+  "migration.untitledView": "未命名视图",
+  "migration.note":
+    "你的内置视图（重命名 / 隐藏 / 排序）和自定义视图都会自动迁移并保留。本次只更新本地配置，不会改动任何任务文件。",
+  "migration.flavorTitle": "选择任务格式",
+  "migration.flavorDesc":
+    "读取时两种格式都兼容。新写入的任务元数据使用你在这里选择的格式。",
+  "migration.flavorDataviewTitle": "Dataview inline fields",
+  "migration.flavorTasksTitle": "Tasks emoji",
+  "migration.aiTipTitle": "用 AI 管理任务？记得更新 skill",
+  "migration.aiTipDesc":
+    "这次升级改了查询 DSL 的结构。如果你通过 Task Center 的 AI skill / CLI 读写任务，升级后请运行下面的命令更新 skill，否则 AI 还会按旧结构生成 DSL：",
+  "migration.cta": "升级并进入看板",
 };
 
 // US-408: re-detect locale on every `t()` call so that flipping the

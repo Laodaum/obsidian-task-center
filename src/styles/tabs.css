@@ -1,0 +1,162 @@
+/* Tab drag-to-reorder: dragged tab becomes semi-transparent */
+.task-center-view .bt-tab.bt-tab-dragging {
+  opacity: 0.4;
+}
+/* Insertion indicator: drop before this tab (left edge) */
+.task-center-view .bt-tab.bt-tab-drop-before {
+  border-left: 2px solid var(--interactive-accent);
+}
+/* Insertion indicator: drop after this tab (right edge) */
+.task-center-view .bt-tab.bt-tab-drop-after {
+  border-right: 2px solid var(--interactive-accent);
+}
+/* Tab bar drag active: all tabs get a subtle cursor hint */
+.task-center-view .bt-tabbar.bt-tabbar-dragging .bt-tab:not(.bt-tab-dragging) {
+  cursor: copy;
+}
+/* Cross-tab drag dwell progress bar (UX.md §6.1). The TabDwellTracker
+   writes `--tc-dwell-progress` as a 0..1 value on the hovered tab; this
+   pseudo-element renders it as a horizontal bar. */
+.task-center-view .bt-tab.drag-hover::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 2px;
+  width: calc(var(--tc-dwell-progress, 0) * 100%);
+  background: var(--interactive-accent);
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  /* No transition — the bar still updates per rAF tick, but we drop any
+     incidental easing on width changes. */
+  .task-center-view .bt-tab.drag-hover::after {
+    transition: none;
+  }
+}
+.task-center-view .bt-tab-count {
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-semibold);
+  color: var(--text-on-accent);
+  background: var(--interactive-accent);
+  padding: 1px 6px;
+  border-radius: var(--radius-s);
+}
+.task-center-view .bt-tab:not(.active) .bt-tab-count {
+  color: var(--text-muted);
+  background: var(--background-modifier-border);
+}
+/* The per-tab task-count badge next to each tab name added noise without being
+   actionable — hide it. The "更多 N" chip (.bt-tab-more) keeps its count since N
+   tells the user how many tabs are collapsed. Hiding (not un-rendering) keeps the
+   DOM stable for e2e/width-measure and just makes tabs narrower. */
+.task-center-view .bt-tab:not(.bt-tab-more) .bt-tab-count {
+  display: none;
+}
+.task-center-view .bt-hotkey {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-faint);
+  padding: 1px 4px;
+  background: var(--background-secondary);
+  border-radius: var(--radius-s);
+}
+
+/* Overflow "More" tab button (VAL-GUI-005) */
+.task-center-view .bt-tab-more {
+  font-style: italic;
+  opacity: 0.8;
+}
+.task-center-view .bt-tab-more:hover {
+  opacity: 1;
+  font-style: normal;
+}
+/* US-109q: desktop "更多" opens an in-place dropdown anchored under the button
+ * (not a bottom sheet). Mirrors the bt-area-filter-popover anchored-popover form. */
+.task-center-view .bt-tab-more-anchor {
+  position: relative;
+}
+.task-center-view .bt-overflow-tabs-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 30;
+  min-width: 220px;
+  max-width: 320px;
+  max-height: 360px;
+  overflow-y: auto;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  box-shadow: var(--shadow-s);
+  font-style: normal;
+  cursor: default;
+}
+/* Row chrome inside the dropdown mirrors the sheet rows. */
+.task-center-view .bt-overflow-tabs-menu .bt-overflow-tab-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: var(--radius-m);
+  cursor: pointer;
+}
+.task-center-view .bt-overflow-tabs-menu .bt-overflow-tab-row:hover,
+.task-center-view .bt-overflow-tabs-menu .bt-overflow-tab-row-active {
+  background: var(--background-modifier-hover);
+}
+.task-center-view .bt-overflow-tabs-menu .bt-overflow-tab-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.task-center-view .bt-overflow-tabs-menu .bt-overflow-tab-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: var(--font-semibold);
+  color: var(--text-normal);
+}
+.task-center-view .bt-overflow-tabs-menu .bt-overflow-tab-count {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--background-modifier-hover);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+.task-center-view .bt-overflow-tabs-menu .bt-overflow-tab-badge {
+  flex: 0 0 auto;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--background-secondary);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+.task-center-view .bt-overflow-tabs-menu .bt-overflow-tab-kebab {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.task-center-view .bt-overflow-tabs-menu .bt-overflow-tab-kebab:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+

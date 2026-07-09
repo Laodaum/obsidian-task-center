@@ -1,0 +1,1251 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   Mobile layout (UX-mobile.md §2 / §13).
+   Decision is by viewport WIDTH, not platform — a 600px split pane on a
+   desktop should still get the desktop layout. The 600px breakpoint is
+   the orientation/size split, not a mobile/desktop probe (§13 #1, #8).
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* US-511a: the page is edge-to-edge. The view itself has no side padding;
+   chrome (tab bar / toolbar / status) re-adds its own small gutter, while the
+   accordion bodies and their cards span the full viewport width. */
+.task-center-view[data-mobile-layout="true"] {
+  padding: 0;
+}
+
+.task-center-view .bt-mobile-status {
+  display: none;
+}
+  .task-center-view[data-mobile-layout="true"] .bt-mobile-status {
+    display: block;
+    padding: 4px 8px 6px 8px;
+    font-size: 12px;
+    color: var(--text-muted);
+    border-bottom: 1px solid var(--background-modifier-border);
+  }
+
+  /* US-512: the unscheduled tray is now an accordion section, and abandon is a
+     swipe / action sheet — so the desktop drop area and pool trash carry no
+     mobile affordance and are hidden. */
+  .task-center-view[data-mobile-layout="true"] .bt-area-drop,
+  .task-center-view[data-mobile-layout="true"] .bt-trash {
+    display: none;
+  }
+
+  /* US-512: new-task entry is the toolbar `+` (opens Quick Add); it is the only
+     mobile creation path (US-169). Make it a thumb-reachable accent button. */
+  .task-center-view[data-mobile-layout="true"] .bt-toolbar .bt-add-btn {
+    flex: 0 0 auto;
+    min-height: 44px;
+    padding: 0 16px;
+    border-radius: 8px;
+    font-weight: 600;
+  }
+
+  .task-center-view[data-mobile-layout="true"] .bt-toolbar {
+    padding: 4px 8px;
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-toolbar-row {
+    flex-wrap: nowrap;
+    overflow-x: clip;
+    max-width: 100%;
+    min-width: 0;
+  }
+  /* US-511: the date nav moved to the week / month area head, so the mobile
+     toolbar carries only the 编辑视图 entry (left) + 新建 「+」 (right). */
+  .task-center-view[data-mobile-layout="true"] .bt-toolbar-main {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .task-center-view[data-mobile-layout="true"] .bt-toolbar .bt-search {
+    display: none;
+  }
+
+  .task-center-view[data-mobile-layout="true"] .bt-toolbar > .bt-saved-views {
+    display: none;
+  }
+
+  .task-center-view[data-mobile-layout="true"] .bt-toolbar .bt-mobile-filter-btn {
+    flex: 0 0 auto;
+    min-width: 0;
+    max-width: 112px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-height: 44px;
+  }
+
+  .task-center-view[data-mobile-layout="true"] .bt-toolbar-utility {
+    margin-left: 0;
+    min-width: 0;
+  }
+
+  .task-center-view[data-mobile-layout="true"] .bt-gear {
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    padding: 0;
+  }
+
+  .task-center-view[data-mobile-layout="true"] .bt-nav {
+    display: grid;
+    grid-template-columns: 36px minmax(56px, auto) 36px minmax(0, 1fr);
+    align-items: center;
+    min-width: 0;
+    gap: 4px;
+  }
+
+  .task-center-view[data-mobile-layout="true"] .bt-nav button {
+    min-width: 36px;
+    min-height: 44px;
+    padding: 0 8px;
+    border-radius: 999px;
+    font-size: 13px;
+  }
+
+  .task-center-view[data-mobile-layout="true"] .bt-nav-label {
+    min-width: 0;
+    margin-left: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px;
+    color: var(--text-normal);
+  }
+
+  .task-center-view[data-mobile-layout="true"] .bt-body {
+    width: 100%;
+    min-width: 0;
+    /* US-512: no bottom action bar to clear anymore — just a small safe-area
+       cushion (Obsidian Mobile's own toolbar is handled below). */
+    padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  }
+
+.task-center-view[data-obsidian-mobile="true"] {
+  /* Clearance for Obsidian Mobile's bottom toolbar (US-117c). The bar floats as a
+     rounded pill on newer builds and ran taller than the old 72px guess, clipping
+     the last card — bumped to a conservative 88px so the list always clears it. */
+  --tc-obsidian-mobile-toolbar-height: 88px;
+}
+
+/* US-512: no bottom action bar / footer on mobile. The body only needs to clear
+   Obsidian Mobile's own bottom toolbar (US-117c). */
+.task-center-view[data-mobile-layout="true"][data-obsidian-mobile="true"] .bt-body {
+  padding-bottom: calc(
+    var(--tc-obsidian-mobile-toolbar-height) +
+    env(safe-area-inset-bottom, 0px) +
+    16px
+  );
+}
+
+  .task-center-view[data-mobile-layout="true"] .bt-card {
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    padding: 8px 9px;
+    border-radius: 7px;
+    cursor: pointer;
+  }
+
+  /* Selection = neutral soft fill, NOT an accent-blue ring. The old accent border +
+     inset ring clashed with the accent-blue `+新建` button and read as "two blue
+     things". Use Obsidian's native active-item fill (neutral, non-blue), matching the
+     "soft fill" form the area accordion's open state uses (US-168c). */
+  .task-center-view[data-mobile-layout="true"] .bt-card.selected {
+    outline: none;
+    box-shadow: none;
+    background: var(--background-modifier-active-hover);
+  }
+
+  .task-center-view[data-mobile-layout="true"] .bt-card-title-row {
+    gap: 8px;
+  }
+
+  .task-center-view[data-mobile-layout="true"] .bt-card-title {
+    font-size: 13px;
+    line-height: 1.45;
+  }
+
+  .task-center-view[data-mobile-layout="true"] .bt-card-tags,
+  .task-center-view[data-mobile-layout="true"] .bt-card-meta,
+  .task-center-view[data-mobile-layout="true"] .bt-card-children {
+    /* Was 34px — the deep indent left a wide empty gutter that read as "too much
+       padding". 24px still clears the check circle while tightening the card. */
+    margin-left: 24px;
+  }
+
+  /* The note path (Daily/xxx.md) is pure noise on a phone — the detail sheet already
+     shows `path:Lnn` on tap. Hide it on mobile; desktop keeps it. */
+  .task-center-view[data-mobile-layout="true"] .bt-meta-path {
+    display: none;
+  }
+
+  .task-center-view[data-mobile-layout="true"] .bt-task-tag {
+    font-size: 10.5px;
+    line-height: 1.45;
+  }
+
+  /* Tab bar: mobile pans horizontally across query tabs. The tail buttons
+     (manage + settings) are sticky to the right with a fade so they never
+     scroll off screen — tabs scroll underneath. */
+  .task-center-view[data-mobile-layout="true"] .bt-tabbar {
+    overflow-x: auto;
+    overflow-y: hidden;
+    flex-wrap: nowrap;
+    height: 44px;
+    max-height: 44px;
+    gap: 6px;
+    align-items: stretch;
+    padding: 0 2px;
+    border-bottom-color: color-mix(in srgb, var(--background-modifier-border) 70%, transparent);
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: contain;
+    touch-action: pan-x;
+    scrollbar-width: none;
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-tabbar::-webkit-scrollbar {
+    display: none;
+  }
+  /* Tail always visible at right edge; fade hides the last scrolled tab */
+  .task-center-view[data-mobile-layout="true"] .bt-tabbar-tail {
+    position: sticky;
+    right: 0;
+    flex-shrink: 0;
+    background: linear-gradient(to right, transparent, var(--background-primary) 28%);
+    padding-left: 14px;
+    z-index: 1;
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-tab {
+    flex: 0 0 auto;
+    justify-content: center;
+    min-width: 0;
+    max-width: none;
+    min-height: 38px;
+    padding: 7px 9px;
+    gap: 6px;
+    border-radius: 8px 8px 0 0;
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-tab.active {
+    background: color-mix(in srgb, var(--interactive-accent) 14%, var(--background-primary));
+    border-color: color-mix(in srgb, var(--interactive-accent) 42%, var(--background-modifier-border));
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-tab-label,
+  .task-center-view[data-mobile-layout="true"] .bt-tab-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-tab-name {
+    font-size: 13px;
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-tab-count {
+    flex: 0 0 auto;
+    min-width: 20px;
+    padding: 1px 6px;
+    text-align: center;
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-hotkey {
+    display: none;
+  }
+  /* Filter button: icon-only on mobile, no text */
+  .task-center-view[data-mobile-layout="true"] .bt-toolbar .bt-mobile-filter-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    min-width: 44px;
+    max-width: 44px;
+    height: 44px;
+    min-height: 44px;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: var(--background-secondary);
+    color: var(--text-muted);
+    overflow: visible;
+    white-space: normal;
+  }
+
+  /* ───── Card: visual parity with desktop (US-505) ─────
+     The entry card looks identical to desktop — same type scale, spacing, tag
+     row, meta row, badges and completed-state colors. Mobile only branches on
+     interaction (tap → detail sheet, swipe, no drag) and narrow-screen subtree
+     folding (+N → sheet). So there are NO mobile card visual overrides here:
+     the path footnote and meta row inherit the desktop card styles and simply
+     wrap / ellipsis when the width runs out. */
+
+  /* Bigger touch target for the checkbox toggle. The visible circle stays
+     32px (US-505 compact card) but the HIT area extends to ≥44px via an
+     invisible overlay — UX-mobile §0.3 requires 44px targets and the check
+     is the single most-tapped control on the board.
+     US-505 alignment note: the row is `align-items: flex-start`, so any top
+     margin shifts the check off the first title line; keep only the `-4px`
+     horizontal nudge that aligns the check's optical left with the card
+     padding. */
+  .task-center-view[data-mobile-layout="true"] .bt-check,
+  .task-center-view[data-mobile-layout="true"] .bt-sub-check {
+    min-width: 32px;
+    min-height: 32px;
+    margin: 0 0 0 -4px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-check::before,
+  .task-center-view[data-mobile-layout="true"] .bt-sub-check::before {
+    content: "";
+    position: absolute;
+    inset: -6px;
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-card-title,
+  .task-center-view[data-mobile-layout="true"] .bt-subcard-title {
+    padding-top: 7px;
+  }
+
+  /* `+N` chip on subcards with deeper subtrees (US-505). Tap → bottom
+     sheet with full tree. Visual: small pill at the right of the subcard. */
+  .task-center-view[data-mobile-layout="true"] .bt-subcard-more {
+    flex: 0 0 auto;
+    margin-left: auto;
+    margin-right: 2px;
+    padding: 4px 10px;
+    border-radius: 10px;
+    background: var(--background-modifier-border);
+    color: var(--text-muted);
+    font-size: 11px;
+    cursor: pointer;
+    user-select: none;
+    /* The visible pill stays small; the tap target extends to ~44px via the
+       invisible overlay (UX-mobile §0.3). */
+    position: relative;
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-subcard-more::before {
+    content: "";
+    position: absolute;
+    inset: -10px;
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-subcard-more:active {
+    background: var(--background-modifier-hover);
+  }
+
+  /* Swipe confirm feedback (US-508): below 50% the card stays visually
+     quiet. Once the user crosses half the card width, JS marks the card
+     ready and we show a clear action label. Moving back under 50% removes
+     the marker and cancels if released. */
+  .task-center-view[data-mobile-layout="true"] .bt-card[data-swipe-ready="true"] {
+    position: relative;
+    overflow: hidden;
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-card[data-swipe-ready="true"]::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 50%;
+    pointer-events: none;
+    opacity: 0.35;
+    animation: tc-swipe-confirm 120ms ease-out;
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-card[data-swipe-ready="true"]::before {
+    content: attr(data-swipe-label);
+    position: absolute;
+    top: 50%;
+    z-index: 1;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: var(--background-primary);
+    color: var(--text-normal);
+    font-size: 12px;
+    font-weight: 700;
+    transform: translateY(-50%);
+    pointer-events: none;
+    box-shadow: var(--shadow-s);
+    animation: tc-swipe-confirm 120ms ease-out;
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-card[data-swipe-direction="left"]::after {
+    left: auto;
+    right: 0;
+    background: var(--color-green);
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-card[data-swipe-direction="left"]::before {
+    right: 12px;
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-card[data-swipe-direction="right"]::after {
+    left: 0;
+    background: var(--color-red);
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-card[data-swipe-direction="right"]::before {
+    left: 12px;
+  }
+  @keyframes tc-swipe-confirm {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  /* ───── Area accordion (US-511 / US-511a) ─────
+     A view's content areas are a single-open accordion. Each area's head is the
+     toggle; a collapsed area hides everything but its head. Row containers
+     degrade to columns so areas stack vertically. */
+  .task-center-view[data-mobile-layout="true"] .bt-stack-row {
+    flex-direction: column;
+  }
+  /* Once rows are columns, the headerless-sibling top-offset hack is moot. */
+  .task-center-view[data-mobile-layout="true"] .bt-stack-row.bt-row-has-head > .bt-area:not(.bt-has-head) {
+    margin-top: 0;
+  }
+  /* 手风琴 area 必须按内容定高（head + 可选 body）。否则 row 子项的 `flex: 1 1 0`
+     会在受限高度的列里把折叠的 area 压成 height:0，让 38px 的 head 叠到下一个上面
+     （四象限在窄屏会四个标题糊成一坨）。 */
+  .task-center-view[data-mobile-layout="true"] .bt-area.bt-area-accordion {
+    flex: 0 0 auto;
+  }
+  /* US-511: the accordion head is the single tap target that toggles a view's
+     area open/closed, so it must read as an obviously tappable bar — a visible
+     background, rounded corners, a comfortable touch height and a press state. */
+  /* US-511a 视觉修订：折叠条做成「标签页质感」——圆角、贴底色的可点条，去掉旧版
+     的灰描边下划线与直角。折叠（未选中）态克制：背景透明、标题 muted、caret faint，
+     hover/按压才浮出 --background-modifier-hover。当前展开（选中）那条清晰高亮：
+     抬升底 + 左侧 3px --interactive-accent 色条 + 标题转正文色 + caret 着 accent，
+     「当前打开哪个 area」一望可知。选中高亮刻意不用蓝色实心边框/四周环（避免与卡片
+     选中态、「+新建」按钮撞色）——它是「一条左色条」而非「一环」。全走主题变量。 */
+  .task-center-view[data-mobile-layout="true"] .bt-area-accordion > .bt-area-head {
+    cursor: pointer;
+    user-select: none;
+    position: relative;
+    padding: 7px 10px;
+    /* 44px: the head is the accordion's single toggle — full touch-target
+       height (UX-mobile §0.3), not the previous 38px. */
+    min-height: 44px;
+    margin: 0 0 4px;
+    background: transparent;
+    border-radius: 8px;
+    box-shadow: none;
+    transition:
+      background-color 0.12s ease,
+      box-shadow 0.12s ease;
+  }
+  /* 折叠（未选中）态：hover/按压才浮出，平时贴底色。 */
+  .task-center-view[data-mobile-layout="true"] .bt-area-accordion.bt-area-collapsed > .bt-area-head:hover,
+  .task-center-view[data-mobile-layout="true"] .bt-area-accordion.bt-area-collapsed > .bt-area-head:active {
+    background: var(--background-modifier-hover);
+  }
+  /* 展开（选中）态：用主题变量的软 accent 背景高亮——**不加左侧 accent 竖条**
+     (左 spine 被 local.no-inset-left-border 明令禁止，cards.css 也早有「No coloured
+     left spine」定论)。"当前打开哪个 area"由内容展开 + 软背景 + caret/标题着色表达。 */
+  .task-center-view[data-mobile-layout="true"] .bt-area-accordion:not(.bt-area-collapsed) > .bt-area-head {
+    background: color-mix(in srgb, var(--interactive-accent) 8%, var(--background-modifier-hover));
+  }
+  /* 标题分态着色：折叠 muted、展开正文色。 */
+  .task-center-view[data-mobile-layout="true"] .bt-area-accordion > .bt-area-head .bt-area-head-title {
+    font-size: 12px;
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-area-collapsed > .bt-area-head .bt-area-head-title {
+    color: var(--text-muted);
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-area-accordion:not(.bt-area-collapsed) > .bt-area-head .bt-area-head-title {
+    color: var(--text-normal);
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-area-collapsed > :not(.bt-area-head) {
+    display: none;
+  }
+  /* US-511a 修订：展开 area 的内容比 area 内缩一档(不再 edge-to-edge)。entry card /
+     周·月内容靠页面底色的留白槽读作「嵌在 area 里、比 area 小一圈」，强化层级感。
+     针对 body 包裹层(.bt-list-view / .bt-week / 月格容器)，不影响卡片自身内边距。 */
+  .task-center-view[data-mobile-layout="true"] .bt-area-accordion:not(.bt-area-collapsed) > :not(.bt-area-head) {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+  /* caret 分态着色 + 过渡：折叠 faint、展开 accent。 */
+  .task-center-view[data-mobile-layout="true"] .bt-area-caret {
+    flex: 0 0 auto;
+    margin-left: 6px;
+    font-size: 12px;
+    line-height: 1;
+    transition: color 0.12s ease;
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-area-collapsed > .bt-area-head .bt-area-caret {
+    color: var(--text-faint);
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-area-accordion:not(.bt-area-collapsed) > .bt-area-head .bt-area-caret {
+    color: var(--interactive-accent);
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-area-accordion.bt-area-collapsed > .bt-area-head:hover .bt-area-caret {
+    color: var(--text-normal);
+  }
+
+  /* ───── Week view: vertical collapsible list (US-503) ───── */
+
+  /* Stack the 7 day rows top-to-bottom instead of side-by-side. */
+  .task-center-view[data-mobile-layout="true"] .bt-week {
+    display: flex;
+    flex-direction: column;
+    grid-template-columns: 1fr;
+    gap: 4px;
+    overflow-x: visible;
+    min-height: 0;
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-week-col {
+    min-height: 0;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 0;
+    overflow: hidden;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 8px;
+    background: var(--background-secondary);
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-week-col.today {
+    background: color-mix(in srgb, var(--interactive-accent) 10%, var(--background-secondary));
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-week-head {
+    min-height: 44px;
+    padding: 0 10px;
+    border-bottom: 0;
+    align-items: center;
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-week-dow {
+    font-size: 15px;
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-week-date {
+    font-size: 12px;
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-week-stats {
+    margin-left: auto;
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-week-list {
+    flex: 0 0 auto;
+    min-height: 0;
+    padding: 0 6px 6px;
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-week-list:empty {
+    display: none;
+  }
+  /* Body collapsed by default; today and explicitly-expanded show it. */
+  .task-center-view[data-mobile-layout="true"] .bt-week-col:not(.today):not(.expanded) .bt-week-list {
+    display: none;
+  }
+  /* Tap target hint on the row head. */
+  .task-center-view[data-mobile-layout="true"] .bt-week-col:not(.today) .bt-week-head {
+    cursor: pointer;
+    user-select: none;
+  }
+  /* Caret indicator (▸ collapsed / ▾ expanded). Today is implicitly open. */
+  .task-center-view[data-mobile-layout="true"] .bt-week-col:not(.today):not(.expanded) .bt-week-head::after {
+    content: "▸";
+    margin-left: 4px;
+    color: var(--text-faint);
+    font-size: 10px;
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-week-col.expanded:not(.today) .bt-week-head::after {
+    content: "▾";
+    margin-left: 4px;
+    color: var(--text-faint);
+    font-size: 10px;
+  }
+
+  /* ───── Month view: dots + numbers (US-504) ───── */
+
+  /* Cells stop showing chip lists; tap opens a bottom sheet instead. */
+  .task-center-view[data-mobile-layout="true"] .bt-month-cell-list,
+  .task-center-view[data-mobile-layout="true"] .bt-mini-card,
+  .task-center-view[data-mobile-layout="true"] .bt-mini-more {
+    display: none;
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-month-cell {
+    cursor: pointer;
+    padding: 2px;
+    /* Whole cell is the tap target that selects the day — 44px minimum. */
+    min-height: 44px;
+  }
+  /* D6: selected day uses the canonical soft-mix + inset accent treatment,
+     matching today / week-col instead of a bespoke outline. */
+  .task-center-view[data-mobile-layout="true"] .bt-month-cell.selected {
+    background: color-mix(in srgb, var(--interactive-accent) 12%, var(--background-secondary));
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-month-cell-head {
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+  }
+  /* Reduce the count badge to a small dot — presence is what matters. */
+  .task-center-view[data-mobile-layout="true"] .bt-month-cell-count {
+    width: 6px;
+    height: 6px;
+    min-width: 6px;
+    padding: 0;
+    border-radius: 50%;
+    font-size: 0;
+    line-height: 0;
+    overflow: hidden;
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-month-day-panel {
+    margin-top: 10px;
+    padding: 10px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 8px;
+    background: var(--background-secondary);
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-month-day-panel-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--background-modifier-border);
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-month-day-panel-title {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 14px;
+    font-weight: 700;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-month-day-panel-count {
+    flex: 0 0 auto;
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-month-day-panel-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding-top: 8px;
+  }
+  .task-center-view[data-mobile-layout="true"] .bt-month-day-empty {
+    padding: 10px 2px 2px;
+    color: var(--text-faint);
+    font-size: 13px;
+  }
+
+
+/* ───── Bottom sheet primitive (used by US-504 day list, M-3 long-press) ───── */
+/* The bottom-sheet BOX sizing (anchor at bottom, flex column, capped height,
+   rounded top, content fills + scrolls) applies ONLY on mobile. On desktop the
+   Query editor / pickers must stay PLAIN centered Obsidian modals — auto height,
+   default max-height + scroll. Forcing `display:flex` + `flex:1 1 0` content on a
+   desktop modal (which has no definite height) collapses the content to the
+   title only, clipping the buttons ("编辑当前视图" bug). Content *element*
+   styling stays unscoped (area-panel.css etc.); only the modal box is gated.
+   (Geometry + content visibility guarded by modal-centered.e2e.ts.) */
+/* The modal box: flex column so title + content never exceed max-height; content
+   scrolls. `flex: 1 1 auto` (NOT 0) is critical — basis 0 collapses the content
+   to the title sliver on a centered desktop modal (no definite height). Capped at
+   80vh so the modal stays a centered dialog with gaps (not edge-to-edge), which
+   also keeps the tag trigger off the viewport bottom so its popover opens
+   downward instead of flipping up over the controls above. */
+.task-center-bottom-sheet.modal {
+  display: flex;
+  flex-direction: column;
+  max-height: min(80vh, calc(100dvh - 24px));
+  overflow: hidden;
+}
+.task-center-bottom-sheet.modal .modal-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: min(560px, 100%);
+  padding: 10px 18px;
+  margin: 0;
+  overflow-y: auto;
+}
+/* Mobile only: bottom-anchored sheet look (taller, rounded top, safe-area). */
+.is-mobile .modal-container.task-center-bottom-sheet {
+  align-items: flex-end;
+}
+.is-mobile .task-center-bottom-sheet.modal {
+  /* Subtract the keyboard offset too: the avoidance transform lifts the whole
+     sheet, so an un-shrunk 70vh sheet would push its top off-screen. dvh does
+     not track the iOS keyboard — only --tc-vv-offset knows about it. */
+  max-height: min(
+    70vh,
+    calc(100dvh - var(--tc-vv-offset, 0px) - env(safe-area-inset-top) - 12px)
+  );
+  border-radius: 14px 14px 0 0;
+  /* UX-mobile §13 #5 + §8.1: BottomSheet publishes --tc-vv-offset from
+     visualViewport (sheet rides above the soft keyboard) and --tc-sheet-drag
+     from the handle's swipe-down gesture (sheet follows the finger before
+     dismissing). */
+  transform: translateY(calc(var(--tc-sheet-drag, 0px) - var(--tc-vv-offset, 0px)));
+}
+/* Grab surfaces (handle + title) own their vertical pans — without this the
+   browser claims the pointer for scrolling and pointermove never fires. */
+.is-mobile .task-center-bottom-sheet .bt-sheet-grab,
+.is-mobile .task-center-bottom-sheet .modal-title {
+  touch-action: none;
+}
+.is-mobile .task-center-bottom-sheet.modal .modal-content {
+  padding: 10px 18px max(18px, env(safe-area-inset-bottom));
+}
+.task-center-bottom-sheet .bt-sheet-handle {
+  width: 36px;
+  height: 4px;
+  background: var(--background-modifier-border);
+  border-radius: 2px;
+  margin: 4px auto 8px;
+  /* The visible bar stays a 36×4 pill; the swipe-down grab area extends well
+     past it so a thumb can catch it without precision (UX-mobile §0.3). */
+  position: relative;
+}
+.task-center-bottom-sheet .bt-sheet-handle::before {
+  content: "";
+  position: absolute;
+  inset: -14px -60px;
+}
+.task-center-bottom-sheet .bt-sheet-empty {
+  padding: 24px 8px;
+  text-align: center;
+  color: var(--text-faint);
+  font-size: 13px;
+}
+.task-center-bottom-sheet .bt-sheet-task {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 8px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  cursor: pointer;
+}
+.task-center-bottom-sheet .bt-sheet-task:active {
+  background: var(--background-modifier-hover);
+}
+.task-center-bottom-sheet .bt-sheet-task-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.task-center-bottom-sheet .bt-sheet-task-meta {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+/* Long-press card action sheet (UX-mobile.md §5.1 / US-506). */
+.task-center-bottom-sheet .bt-sheet-source {
+  font-size: 11px;
+  color: var(--text-faint);
+  text-align: center;
+  margin: 4px 0 12px;
+  font-family: var(--font-monospace);
+}
+.task-center-bottom-sheet .bt-sheet-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.task-center-bottom-sheet .bt-sheet-action {
+  width: 100%;
+  padding: 12px 14px;
+  text-align: left;
+  font-size: 14px;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  color: var(--text-normal);
+  cursor: pointer;
+}
+.task-center-bottom-sheet .bt-sheet-action:active {
+  background: var(--background-modifier-hover);
+}
+.task-center-bottom-sheet .bt-sheet-action-danger {
+  border-color: color-mix(in srgb, var(--color-red) 35%, var(--background-modifier-border));
+  color: var(--color-red);
+}
+.task-center-bottom-sheet .bt-sheet-action-secondary {
+  background: var(--background-primary);
+}
+.task-center-bottom-sheet .bt-sheet-action-disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.task-center-bottom-sheet .bt-mobile-task-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.task-center-bottom-sheet .bt-mobile-task-detail-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.task-center-bottom-sheet .bt-mobile-task-detail-meta span {
+  max-width: 100%;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--background-secondary);
+  color: var(--text-muted);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Legacy flat-list selectors kept for any other usage sites */
+.task-center-bottom-sheet .bt-mobile-task-detail-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+}
+.task-center-bottom-sheet .bt-mobile-task-detail-secondary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+}
+
+/* ── Redesigned task detail modal (primary / reschedule / secondary / danger) ── */
+
+/* Primary: Done button — full-width, visually weighted */
+.task-center-bottom-sheet .bt-mobile-task-detail-primary {
+  display: flex;
+  flex-direction: column;
+}
+.task-center-bottom-sheet .bt-sheet-action-done {
+  font-size: 15px;
+  font-weight: 700;
+  text-align: center;
+  padding: 14px;
+  background: color-mix(in srgb, var(--color-green) 12%, var(--background-secondary));
+  border-color: color-mix(in srgb, var(--color-green) 28%, var(--background-modifier-border));
+  color: var(--color-green);
+}
+.task-center-bottom-sheet .bt-sheet-action-done.bt-sheet-action-done-active {
+  background: var(--background-secondary);
+  border-color: var(--background-modifier-border);
+  color: var(--text-muted);
+}
+
+/* Quick reschedule: 3-column chip row + optional clear link */
+.task-center-bottom-sheet .bt-mobile-task-detail-reschedule {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.task-center-bottom-sheet .bt-mobile-task-detail-quick-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+.task-center-bottom-sheet .bt-sheet-quick-btn {
+  min-height: 44px;
+  padding: 6px 4px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  font-size: 13px;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.task-center-bottom-sheet .bt-sheet-quick-btn:active {
+  background: var(--background-modifier-hover);
+}
+.task-center-bottom-sheet .bt-sheet-quick-btn.active {
+  border-color: var(--interactive-accent);
+  background: color-mix(in srgb, var(--interactive-accent) 14%, transparent);
+  color: var(--interactive-accent);
+  font-weight: 600;
+}
+/* Clear schedule: subtle text link below the chip row */
+.task-center-bottom-sheet .bt-sheet-clear-btn {
+  width: 100%;
+  padding: 4px;
+  background: transparent;
+  border: none;
+  color: var(--text-faint);
+  font-size: 12px;
+  text-align: center;
+  cursor: pointer;
+}
+.task-center-bottom-sheet .bt-sheet-clear-btn:active {
+  color: var(--text-muted);
+}
+
+/* Danger zone: separator + abandon button */
+.task-center-bottom-sheet .bt-mobile-task-detail-danger {
+  padding-top: 6px;
+  border-top: 1px solid var(--background-modifier-border);
+}
+.task-center-bottom-sheet .bt-mobile-date-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.task-center-bottom-sheet .bt-mobile-date-quick {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+.task-center-bottom-sheet .bt-mobile-date-quick-btn {
+  min-height: 44px;
+  padding: 6px 8px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.task-center-bottom-sheet .bt-mobile-date-quick-btn.active,
+.task-center-bottom-sheet .bt-date-calendar-day.active {
+  border-color: var(--interactive-accent);
+  background: color-mix(in srgb, var(--interactive-accent) 18%, transparent);
+}
+.task-center-bottom-sheet .bt-mobile-date-calendar {
+  display: grid;
+  gap: 10px;
+}
+.task-center-bottom-sheet .bt-mobile-date-calendar-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.task-center-bottom-sheet .bt-mobile-date-calendar .bt-date-calendar-weekdays,
+.task-center-bottom-sheet .bt-mobile-date-calendar .bt-date-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+}
+.task-center-bottom-sheet .bt-mobile-date-calendar .bt-date-calendar-weekday {
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  text-align: center;
+}
+.task-center-bottom-sheet .bt-mobile-date-sheet .bt-date-calendar-day {
+  width: 100%;
+  min-width: 0;
+  min-height: 38px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  text-align: center;
+}
+.task-center-bottom-sheet .bt-mobile-date-sheet .bt-date-calendar-day.today {
+  border-color: var(--background-modifier-border);
+}
+.task-center-bottom-sheet .bt-mobile-date-sheet .bt-date-calendar-day.other-month {
+  color: var(--text-faint);
+  background: transparent;
+}
+
+/* Parent picker for mobile nest action (UX-mobile §8.3) */
+.task-center-bottom-sheet .bt-parent-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.task-center-bottom-sheet .bt-parent-picker-subtitle {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+.task-center-bottom-sheet .bt-parent-picker-search {
+  width: 100%;
+  margin-bottom: 8px;
+}
+.task-center-bottom-sheet .bt-parent-picker-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 48vh;
+  overflow-y: auto;
+}
+.task-center-bottom-sheet .bt-parent-picker-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.task-center-bottom-sheet .bt-parent-picker-group-title {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+.task-center-bottom-sheet .bt-parent-candidate {
+  width: 100%;
+  min-height: 52px;
+  padding: 9px 10px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  text-align: left;
+}
+.task-center-bottom-sheet .bt-parent-candidate.is-selected {
+  border-color: var(--interactive-accent);
+  background: color-mix(in srgb, var(--interactive-accent) 14%, var(--background-secondary));
+}
+.task-center-bottom-sheet .bt-parent-candidate.is-disabled {
+  opacity: 0.55;
+}
+.task-center-bottom-sheet .bt-parent-candidate-title {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-height: 1.3;
+  font-size: 14px;
+  font-weight: 600;
+}
+.task-center-bottom-sheet .bt-parent-candidate-meta {
+  margin-top: 4px;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.task-center-bottom-sheet .bt-parent-picker-footer {
+  position: sticky;
+  bottom: calc(-1 * max(16px, env(safe-area-inset-bottom)));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 0 max(16px, env(safe-area-inset-bottom));
+  background: var(--background-primary);
+  border-top: 1px solid var(--background-modifier-border);
+}
+.task-center-bottom-sheet .bt-parent-picker-effect {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+.task-center-bottom-sheet .bt-parent-picker-confirm {
+  min-height: 44px;
+  font-weight: 700;
+  text-align: center;
+}
+
+/* Tag editor for mobile edit-tag action (UX-mobile §8.1 / US-506b) */
+.task-center-bottom-sheet .bt-mobile-tag-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-bottom: 2px;
+}
+.task-center-bottom-sheet .bt-tag-editor-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.task-center-bottom-sheet .bt-tag-editor-label {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.task-center-bottom-sheet .bt-tag-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.task-center-bottom-sheet .bt-tag-editor-chip {
+  min-height: 44px;
+  max-width: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 999px;
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  font-size: 13px;
+}
+.task-center-bottom-sheet .bt-tag-editor-chip-active {
+  border-color: color-mix(in srgb, var(--interactive-accent) 45%, var(--background-modifier-border));
+  background: color-mix(in srgb, var(--interactive-accent) 14%, var(--background-secondary));
+}
+.task-center-bottom-sheet .bt-tag-editor-chip-remove {
+  color: var(--text-muted);
+  font-size: 18px;
+  line-height: 1;
+}
+.task-center-bottom-sheet .bt-tag-editor-empty {
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  color: var(--text-faint);
+  font-size: 12px;
+}
+.task-center-bottom-sheet .bt-tag-editor-input-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+.task-center-bottom-sheet .bt-tag-editor-input {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+}
+.task-center-bottom-sheet .bt-tag-editor-add,
+.task-center-bottom-sheet .bt-tag-editor-cancel,
+.task-center-bottom-sheet .bt-tag-editor-save {
+  min-height: 44px;
+  padding: 8px 14px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background: var(--background-secondary);
+  color: var(--text-normal);
+}
+.task-center-bottom-sheet .bt-tag-editor-footer {
+  position: sticky;
+  bottom: calc(-1 * max(16px, env(safe-area-inset-bottom)));
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+  padding: 10px 0 max(2px, env(safe-area-inset-bottom));
+  background: var(--modal-background);
+}
+.task-center-bottom-sheet .bt-tag-editor-save {
+  border-color: var(--interactive-accent);
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.task-center-bottom-sheet .bt-mobile-filter-sheet .bt-saved-views {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.task-center-bottom-sheet .bt-mobile-filter-sheet .bt-tag-filter {
+  width: 100%;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.task-center-bottom-sheet .bt-mobile-filter-sheet .bt-filter-popover,
+.task-center-bottom-sheet .bt-mobile-filter-sheet .bt-tag-popover {
+  position: static;
+  width: 100%;
+  max-height: 50vh;
+}
+
+.task-center-bottom-sheet .bt-mobile-filter-sheet .bt-saved-view-select,
+.task-center-bottom-sheet .bt-mobile-filter-sheet .bt-saved-view-filter,
+.task-center-bottom-sheet .bt-mobile-filter-sheet .bt-tag-filter-trigger,
+.task-center-bottom-sheet .bt-mobile-filter-sheet .bt-saved-view-save {
+  width: 100%;
+  min-height: 36px;
+}
+
+.task-center-bottom-sheet .bt-mobile-filter-sheet .bt-filter-popover-wrap {
+  width: 100%;
+}
+.task-center-bottom-sheet .bt-query-controls-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.task-center-bottom-sheet .bt-query-editor-help {
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.task-center-bottom-sheet .bt-query-editor-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.task-center-bottom-sheet .bt-query-editor-section-title {
+  color: var(--text-faint);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+.task-center-bottom-sheet .bt-query-editor-section-note {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.task-center-bottom-sheet .bt-query-controls-sheet .bt-saved-view-filters,
+.task-center-bottom-sheet .bt-query-controls-sheet .bt-saved-view-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.task-center-bottom-sheet .bt-query-controls-sheet .bt-filter-popover-wrap,
+.task-center-bottom-sheet .bt-query-controls-sheet .bt-tag-filter {
+  min-width: 0;
+}
+.task-center-bottom-sheet .bt-query-controls-sheet .bt-saved-view-save,
+.task-center-bottom-sheet .bt-query-controls-sheet .bt-saved-view-filter,
+.task-center-bottom-sheet .bt-query-controls-sheet .bt-tag-filter-trigger {
+  min-height: 34px;
+}
+.task-center-bottom-sheet .bt-manage-tabs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* ───── Mobile platform touch-target + input-zoom guards ─────
+   Scoped by body.is-mobile (the actual phone/tablet app), NOT
+   data-mobile-layout: bottom sheets are Obsidian modals attached to <body>,
+   outside the view container, so the view's data attribute can't reach them —
+   and iOS焦点缩放 / 指尖命中都只是真机问题,桌面窄窗口不需要。 */
+
+/* UX-mobile §0.3: interactive rows / buttons inside sheets are ≥44px. */
+.is-mobile .task-center-bottom-sheet .bt-mobile-filter-sheet .bt-saved-view-select,
+.is-mobile .task-center-bottom-sheet .bt-mobile-filter-sheet .bt-saved-view-filter,
+.is-mobile .task-center-bottom-sheet .bt-mobile-filter-sheet .bt-tag-filter-trigger,
+.is-mobile .task-center-bottom-sheet .bt-mobile-filter-sheet .bt-saved-view-save,
+.is-mobile .task-center-bottom-sheet .bt-query-controls-sheet .bt-saved-view-save,
+.is-mobile .task-center-bottom-sheet .bt-query-controls-sheet .bt-saved-view-filter,
+.is-mobile .task-center-bottom-sheet .bt-query-controls-sheet .bt-tag-filter-trigger {
+  min-height: 44px;
+}
+.is-mobile .task-center-bottom-sheet .bt-area-tag-row {
+  min-height: 44px;
+  align-items: center;
+}
+
+/* iOS Safari/WebView auto-zooms the whole page when a focused text input's
+   font-size is under 16px. Every text input reachable on the phone gets a
+   16px floor (visual density is preserved elsewhere; zoom-jump is worse). */
+.is-mobile .task-center-view input[type="text"],
+.is-mobile .task-center-view input[type="search"],
+.is-mobile .task-center-view input[type="date"],
+.is-mobile .task-center-view input:not([type]),
+.is-mobile .task-center-view textarea,
+.is-mobile .task-center-bottom-sheet input[type="text"],
+.is-mobile .task-center-bottom-sheet input[type="search"],
+.is-mobile .task-center-bottom-sheet input[type="date"],
+.is-mobile .task-center-bottom-sheet input:not([type]),
+.is-mobile .task-center-bottom-sheet textarea,
+.is-mobile .task-center-source-edit-textarea,
+.is-mobile textarea[data-query-dsl-input] {
+  font-size: 16px;
+}
+
+/* UX-mobile §13: reduced motion — animations drop to ≤50ms but state changes
+   stay. Covers card transitions, swipe confirm flash, and sheet content. */
+@media (prefers-reduced-motion: reduce) {
+  .task-center-view .bt-card,
+  .task-center-view .bt-subcard,
+  .task-center-view .bt-check,
+  .task-center-view .bt-sub-check,
+  .task-center-view .bt-area-accordion > .bt-area-head,
+  .task-center-view .bt-area-caret {
+    transition-duration: 50ms;
+  }
+  .task-center-view .bt-card[data-swipe-ready="true"]::before,
+  .task-center-view .bt-card[data-swipe-ready="true"]::after {
+    animation-duration: 50ms;
+  }
+}

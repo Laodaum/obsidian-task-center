@@ -12,7 +12,7 @@ function compilePure() {
     [
       "esbuild",
       "src/saved-views.ts",
-      "--bundle=false",
+      "--bundle=true",
       "--format=esm",
       "--platform=node",
       "--outdir=test/.compiled",
@@ -30,15 +30,28 @@ const {
   normalizeQueryPreset,
   validateQueryPreset,
   isLegacySavedTaskView,
-  toQueryPreset,
-  fromQueryPreset,
   parseQueryDsl,
   stringifyQueryPreset,
   createBuiltinQueryPresets,
-  ensureBuiltinSavedViews,
-  normalizeSavedTaskView,
-  createSavedView,
 } = await import("../test/.compiled/saved-views.js");
+
+// ── tag match mode (AND default / OR object) ──
+
+test("US-109d4: every tag-filter shape migrates to a single { expr } form", () => {
+  const dsl = JSON.stringify({
+    name: "T",
+    view: { layout: { dir: "col", children: [
+      { type: "list", when: { tags: { values: ["#a", "#b"], mode: "or" } } },
+      { type: "list", when: { tags: { values: ["#a", "#b"], mode: "and" } } },
+      { type: "list", when: { tags: ["#c"] } },
+    ] } },
+  });
+  const preset = parseQueryDsl(dsl);
+  const areas = preset.view.layout.children;
+  assert.deepEqual(areas[0].when.tags, { expr: "#a or #b" }, "OR → expression");
+  assert.deepEqual(areas[1].when.tags, { expr: "#a and #b" }, "AND → expression");
+  assert.deepEqual(areas[2].when.tags, { expr: "#c" }, "bare array → expression");
+});
 
 // ── VAL-CORE-005: normalizeQueryPreset ──
 
@@ -54,6 +67,7 @@ test("VAL-CORE-005: normalizeQueryPreset fills defaults and trims strings", () =
       status: ["todo", "done"],
       time: { scheduled: "  today  ", deadline: "overdue" },
     },
+    // Legacy view shape with preset — preset is dropped during migration.
     view: { type: "week", preset: "  today  " },
     summary: [
       { type: "count" },
@@ -65,38 +79,148 @@ test("VAL-CORE-005: normalizeQueryPreset fills defaults and trims strings", () =
   assert.equal(normalized.name, "My Query");
   assert.equal(normalized.builtin, false);
   assert.equal(normalized.hidden, false);
-  assert.equal(normalized.filters.search, "focus");
-  assert.deepEqual(normalized.filters.tags, ["#alpha", "#beta"]);
-  assert.deepEqual(normalized.filters.status, ["todo", "done"]);
-  assert.deepEqual(normalized.filters.time, { scheduled: "today", deadline: "overdue" });
-  assert.deepEqual(normalized.view, { type: "week", preset: "today" });
-  assert.equal(normalized.summary[0].type, "count");
-  assert.equal(normalized.summary[1].field, "actual");
-  assert.equal(normalized.summary[1].format, "duration");
+  // US-109z2: tab-level filters are dropped (filtering is per-area `when`).
+  assert.equal(normalized.filters, undefined);
+  // Legacy {type:"week", preset} migrates to a week area layout; preset dropped.
+  assert.deepEqual(normalized.view, { layout: { type: "week" } });
 });
 
 test("VAL-CORE-005: normalizeQueryPreset defaults missing fields", () => {
   const normalized = normalizeQueryPreset({ id: "q2", name: "Minimal", builtin: false, hidden: false, filters: {}, view: { type: "list" }, summary: [] });
 
   assert.equal(normalized.id, "q2");
-  assert.deepEqual(normalized.filters.status, "all");
-  // When no tags/time/search are provided, normalize omits the keys
-  assert.equal(normalized.filters.search, undefined);
-  assert.equal(normalized.filters.tags, undefined);
-  assert.equal(normalized.filters.time, undefined);
-  assert.deepEqual(normalized.view, { type: "list" });
-  assert.deepEqual(normalized.summary, []);
+  // US-109z2: no tab-level filters on the normalized preset.
+  assert.equal(normalized.filters, undefined);
+  assert.deepEqual(normalized.view, { layout: { type: "list" } });
 });
 
-test("VAL-CORE-005: normalizeQueryPreset deduplicates tags case-insensitively", () => {
+test("VAL-CORE-005: normalizeQueryPreset drops legacy list sections", () => {
   const normalized = normalizeQueryPreset({
-    id: "q3", name: "Dedup", builtin: false, hidden: false,
-    filters: { tags: ["#Alpha", "#alpha", "#BETA", "#Beta"] },
-    view: { type: "list" },
+    id: "q-sections",
+    name: "Sections",
+    builtin: false,
+    hidden: false,
+    filters: {},
+    view: {
+      type: "list",
+      sections: [
+        { id: "a", title: "A", when: { status: ["todo"] } },
+        { id: "b", title: "B", when: {} },
+      ],
+    },
     summary: [],
   });
 
-  assert.deepEqual(normalized.filters.tags, ["#Alpha", "#BETA"]);
+  // list no longer groups internally. Feeding a legacy `{type:list, sections}`
+  // must migrate cleanly to a plain list area — the deepEqual proves nothing
+  // extra (no sections) survived, without naming the dead field. Multi-segment
+  // views (Today) use col[ list×N ] instead.
+  assert.deepEqual(normalized.view.layout, { type: "list" });
+});
+
+test("VAL-CORE-005: normalizeQueryPreset migrates legacy week tray into a stack layout", () => {
+  const normalized = normalizeQueryPreset({
+    id: "q-tray",
+    name: "Tray",
+    builtin: false,
+    hidden: false,
+    filters: {},
+    view: {
+      type: "week",
+      tray: {
+        enabled: true,
+        title: "Backlog",
+        filters: { status: ["todo"] },
+        orderBy: ["scheduled"],
+      },
+    },
+    summary: [],
+  });
+
+  const layout = normalized.view.layout;
+  assert.equal(layout.dir, "col");
+  assert.equal(layout.children.length, 2);
+  assert.deepEqual(layout.children[0], { type: "week" });
+  const tray = layout.children[1];
+  assert.equal(tray.type, "list");
+  assert.equal(tray.title, "Backlog");
+  assert.deepEqual(tray.when, { status: ["todo"] });
+  assert.deepEqual(tray.orderBy, ["scheduled"]);
+  assert.deepEqual(tray.onDrop, { clearScheduled: true });
+});
+
+test("normalizeQueryPreset: unsupported area type → unknown area preserving raw JSON", () => {
+  // matrix was removed; any unsupported `type` (including old "matrix") becomes
+  // an `unknown` area that keeps the original JSON so the view can render
+  // "未知类型 + JSON" instead of silently dropping it.
+  const normalized = normalizeQueryPreset({
+    id: "q-unknown",
+    name: "U",
+    builtin: false,
+    hidden: false,
+    filters: {},
+    view: {
+      layout: {
+        type: "matrix",
+        title: "Old Matrix",
+        x: { id: "urgency" },
+        y: { id: "importance" },
+      },
+    },
+    summary: [],
+  });
+
+  const layout = normalized.view.layout;
+  assert.equal(layout.type, "unknown");
+  assert.equal(layout.rawType, "matrix");
+  assert.equal(layout.title, "Old Matrix");
+  assert.ok(layout.raw && typeof layout.raw === "object", "raw JSON preserved");
+  assert.equal(layout.raw.x.id, "urgency");
+});
+
+test("VAL-CORE-005: normalizeQueryPreset deduplicates tags case-insensitively", () => {
+  // US-109z2: tag dedup now applies to an area's `when` (no tab-level filter).
+  const normalized = normalizeQueryPreset({
+    id: "q3", name: "Dedup", builtin: false, hidden: false,
+    view: { layout: { type: "list", when: { tags: ["#Alpha", "#alpha", "#BETA", "#Beta"] } } },
+  });
+
+  // US-109d4: migrated to an expression; tags lowercased + deduped.
+  assert.deepEqual(normalized.view.layout.when.tags, { expr: "#alpha and #beta" });
+});
+
+// ── US-109d3: tag exclude group normalization ──
+
+test("US-109d4: legacy include+exclude migrates to an expression", () => {
+  const normalized = normalizeQueryPreset({
+    id: "q-excl", name: "Excl", builtin: false, hidden: false,
+    view: { layout: { type: "list", when: { tags: { values: ["#work"], mode: "and", exclude: ["#someday"] } } } },
+  });
+  assert.deepEqual(normalized.view.layout.when.tags, { expr: "#work and not #someday" });
+});
+
+test("US-109d4: legacy exclude-only (empty include) migrates to an expression", () => {
+  const normalized = normalizeQueryPreset({
+    id: "q-excl2", name: "ExclOnly", builtin: false, hidden: false,
+    view: { layout: { type: "list", when: { tags: { values: [], mode: "and", exclude: ["#done"] } } } },
+  });
+  assert.deepEqual(normalized.view.layout.when.tags, { expr: "not #done" });
+});
+
+test("US-109d4: a tag in both include and exclude stays in include during migration", () => {
+  const normalized = normalizeQueryPreset({
+    id: "q-excl3", name: "Mutual", builtin: false, hidden: false,
+    view: { layout: { type: "list", when: { tags: { values: ["#work"], mode: "or", exclude: ["#work", "#someday"] } } } },
+  });
+  assert.deepEqual(normalized.view.layout.when.tags, { expr: "#work and not #someday" });
+});
+
+test("US-109d4: plain AND include migrates to an and-joined expression", () => {
+  const normalized = normalizeQueryPreset({
+    id: "q-excl4", name: "Bare", builtin: false, hidden: false,
+    view: { layout: { type: "list", when: { tags: { values: ["#work"], mode: "and", exclude: [] } } } },
+  });
+  assert.deepEqual(normalized.view.layout.when.tags, { expr: "#work" });
 });
 
 // ── VAL-CORE-006: validateQueryPreset — section-specific errors ──
@@ -107,6 +231,18 @@ test("VAL-CORE-006: validateQueryPreset — valid preset returns no errors", () 
     filters: { search: "focus", tags: ["#work"], status: ["todo"], time: { scheduled: "today" } },
     view: { type: "week" },
     summary: [{ type: "count" }],
+  });
+
+  assert.equal(result.valid, true);
+  assert.deepEqual(result.errors, []);
+});
+
+test("VAL-CORE-006: validateQueryPreset — valid layout view returns no errors", () => {
+  const result = validateQueryPreset({
+    name: "ValidLayout",
+    filters: {},
+    view: { layout: { dir: "col", children: [{ type: "week" }, { type: "list" }] } },
+    summary: [],
   });
 
   assert.equal(result.valid, true);
@@ -144,8 +280,8 @@ test("VAL-CORE-006: validateQueryPreset — invalid filters.status points to fil
   });
 
   assert.equal(result.valid, false);
-  // normalizeSavedViewStatus doesn't throw, it just returns "all" for invalid input,
-  // so no error here. Let's test the actual validation path:
+  const statusErr = result.errors.find((e) => e.section === "filters" && e.code === "invalid_status");
+  assert.ok(statusErr, "Expected invalid_status error in filters section");
 });
 
 test("VAL-CORE-006: validateQueryPreset — invalid filters.tags points to filters", () => {
@@ -174,7 +310,7 @@ test("VAL-CORE-006: validateQueryPreset — invalid filters.time points to filte
   assert.ok(timeErr, "Expected invalid_time error in filters section");
 });
 
-test("VAL-CORE-006: validateQueryPreset — unknown view.type points to view", () => {
+test("VAL-CORE-006: validateQueryPreset — unknown legacy view.type points to view", () => {
   const result = validateQueryPreset({
     name: "BadView",
     filters: {},
@@ -188,17 +324,74 @@ test("VAL-CORE-006: validateQueryPreset — unknown view.type points to view", (
   assert.ok(viewErr.message.includes("gantt"), "Error message should mention the bad type");
 });
 
-test("VAL-CORE-006: validateQueryPreset — invalid view.type (non-string) points to view", () => {
+test("VAL-CORE-006: validateQueryPreset — unsupported area type is accepted (renders as unknown)", () => {
+  // Unsupported area types no longer hard-fail validation; they normalize to an
+  // `unknown` area and render "未知类型 + JSON". Only a non-string `type` errors.
   const result = validateQueryPreset({
-    name: "BadViewType",
+    name: "BadAreaType",
     filters: {},
-    view: { type: 42 },
+    view: { layout: { type: "gantt" } },
+    summary: [],
+  });
+
+  assert.equal(result.valid, true);
+  assert.equal(
+    result.errors.find((e) => e.code === "unknown_area_type" || e.code === "invalid_area_type"),
+    undefined,
+    "unsupported string type should not produce a validation error",
+  );
+});
+
+test("VAL-CORE-006: validateQueryPreset — non-string area type errors", () => {
+  const result = validateQueryPreset({
+    name: "BadAreaType",
+    filters: {},
+    view: { layout: { type: 42 } },
     summary: [],
   });
 
   assert.equal(result.valid, false);
-  const viewErr = result.errors.find((e) => e.section === "view" && e.code === "invalid_view_type");
-  assert.ok(viewErr, "Expected invalid_view_type error in view section");
+  const viewErr = result.errors.find((e) => e.section === "view" && e.code === "invalid_area_type");
+  assert.ok(viewErr, "Expected invalid_area_type error for a non-string type");
+});
+
+test("VAL-CORE-006: validateQueryPreset — drop area without onDrop points to view", () => {
+  const result = validateQueryPreset({
+    name: "BadDrop",
+    filters: {},
+    view: { layout: { type: "drop" } },
+    summary: [],
+  });
+
+  assert.equal(result.valid, false);
+  const viewErr = result.errors.find((e) => e.section === "view" && e.code === "drop_requires_on_drop");
+  assert.ok(viewErr, "Expected drop_requires_on_drop error in view section");
+});
+
+test("VAL-CORE-006: validateQueryPreset — stack with bad dir points to view", () => {
+  const result = validateQueryPreset({
+    name: "BadStackDir",
+    filters: {},
+    view: { layout: { dir: "diagonal", children: [{ type: "list" }] } },
+    summary: [],
+  });
+
+  assert.equal(result.valid, false);
+  const viewErr = result.errors.find((e) => e.section === "view" && e.code === "invalid_stack_dir");
+  assert.ok(viewErr, "Expected invalid_stack_dir error in view section");
+});
+
+test("VAL-CORE-006: validateQueryPreset — stack with empty children points to view", () => {
+  const result = validateQueryPreset({
+    name: "EmptyStack",
+    filters: {},
+    view: { layout: { dir: "col", children: [] } },
+    summary: [],
+  });
+
+  assert.equal(result.valid, false);
+  const viewErr = result.errors.find((e) => e.section === "view" && e.code === "invalid_stack_children");
+  assert.ok(viewErr, "Expected invalid_stack_children error in view section");
 });
 
 test("VAL-CORE-006: validateQueryPreset — non-object view points to view", () => {
@@ -214,46 +407,6 @@ test("VAL-CORE-006: validateQueryPreset — non-object view points to view", () 
   assert.ok(viewErr, "Expected invalid_view error in view section");
 });
 
-test("VAL-CORE-006: validateQueryPreset — invalid summary type points to summary", () => {
-  const result = validateQueryPreset({
-    name: "BadSummary",
-    filters: {},
-    view: { type: "list" },
-    summary: [{ type: "invalid_metric_type" }],
-  });
-
-  assert.equal(result.valid, false);
-  const sumErr = result.errors.find((e) => e.section === "summary" && e.code === "invalid_metric_type");
-  assert.ok(sumErr, "Expected invalid_metric_type error in summary section");
-  assert.ok(sumErr.message.includes("invalid_metric_type"), "Error mentions the bad type");
-});
-
-test("VAL-CORE-006: validateQueryPreset — non-array summary points to summary", () => {
-  const result = validateQueryPreset({
-    name: "BadSummaryArray",
-    filters: {},
-    view: { type: "list" },
-    summary: "not-an-array",
-  });
-
-  assert.equal(result.valid, false);
-  const sumErr = result.errors.find((e) => e.section === "summary" && e.code === "invalid_summary");
-  assert.ok(sumErr, "Expected invalid_summary error in summary section");
-});
-
-test("VAL-CORE-006: validateQueryPreset — non-object summary metric points to summary", () => {
-  const result = validateQueryPreset({
-    name: "BadMetric",
-    filters: {},
-    view: { type: "list" },
-    summary: ["not-an-object"],
-  });
-
-  assert.equal(result.valid, false);
-  const metricErr = result.errors.find((e) => e.section === "summary" && e.code === "invalid_metric");
-  assert.ok(metricErr, "Expected invalid_metric error in summary section");
-});
-
 test("VAL-CORE-006: validateQueryPreset — valid preset stays unchanged after validation", () => {
   const preset = {
     id: "stays-put",
@@ -262,7 +415,6 @@ test("VAL-CORE-006: validateQueryPreset — valid preset stays unchanged after v
     hidden: false,
     filters: { status: ["todo"] },
     view: { type: "list" },
-    summary: [],
   };
 
   const before = JSON.stringify(preset);
@@ -277,14 +429,12 @@ test("VAL-CORE-006: validateQueryPreset — multiple section errors collected to
     name: "MultiError",
     filters: { tags: 42 },
     view: { type: "gantt" },
-    summary: [{ type: "bad" }],
   });
 
   assert.equal(result.valid, false);
   const sections = new Set(result.errors.map((e) => e.section));
   assert.ok(sections.has("filters"), "Has filters error");
   assert.ok(sections.has("view"), "Has view error");
-  assert.ok(sections.has("summary"), "Has summary error");
 });
 
 // ── VAL-CORE-005 / VAL-CROSS-002: isLegacySavedTaskView ──
@@ -331,78 +481,6 @@ test("VAL-CROSS-002: isLegacySavedTaskView detects legacy with only status", () 
   assert.equal(isLegacySavedTaskView({ id: "x", name: "X", status: "todo" }), true);
 });
 
-// ── VAL-CORE-005: toQueryPreset / fromQueryPreset roundtrip ──
-
-test("VAL-CORE-005: toQueryPreset converts SavedTaskView to QueryPreset", () => {
-  const saved = normalizeSavedTaskView({
-    id: "sv-round",
-    name: "Roundtrip",
-    search: "focus",
-    tag: "#alpha,#beta",
-    time: { scheduled: "week", deadline: "overdue" },
-    status: ["todo"],
-    view: { type: "month", preset: "today" },
-    summary: [{ type: "count" }, { type: "sum", field: "actual", format: "duration" }],
-  });
-
-  const preset = toQueryPreset(saved);
-  assert.equal(preset.id, "sv-round");
-  assert.equal(preset.name, "Roundtrip");
-  assert.equal(preset.filters.search, "focus");
-  assert.deepEqual(preset.filters.tags, ["#alpha", "#beta"]);
-  assert.deepEqual(preset.filters.status, ["todo"]);
-  assert.deepEqual(preset.filters.time, { scheduled: "week", deadline: "overdue" });
-  assert.deepEqual(preset.view, { type: "month", preset: "today" });
-  assert.equal(preset.summary.length, 2);
-  assert.equal(preset.summary[0].type, "count");
-  assert.equal(preset.summary[1].field, "actual");
-});
-
-test("VAL-CORE-005: fromQueryPreset converts QueryPreset back to SavedTaskView", () => {
-  const preset = normalizeQueryPreset({
-    id: "preset-round",
-    name: "Reverse",
-    builtin: true,
-    hidden: false,
-    filters: { search: "report", tags: ["#alpha"], status: ["done"], time: { completed: "week" } },
-    view: { type: "list", preset: "completed" },
-    summary: [{ type: "count" }],
-  });
-
-  const saved = fromQueryPreset(preset);
-  assert.equal(saved.id, "preset-round");
-  assert.equal(saved.name, "Reverse");
-  assert.equal(saved.builtin, true);
-  assert.equal(saved.search, "report");
-  assert.equal(saved.tag, "#alpha");
-  assert.deepEqual(saved.status, ["done"]);
-  assert.deepEqual(saved.time, { completed: "week" });
-  assert.deepEqual(saved.view, { type: "list", preset: "completed" });
-  assert.equal(saved.summary.length, 1);
-});
-
-test("VAL-CORE-005: toQueryPreset → fromQueryPreset roundtrip preserves content", () => {
-  const original = normalizeSavedTaskView({
-    id: "sv-rt",
-    name: "RT Test",
-    builtin: false,
-    hidden: false,
-    search: "docs",
-    tag: "#work,#dev",
-    time: { scheduled: "today" },
-    status: ["todo", "done"],
-    view: { type: "week" },
-    summary: [{ type: "sum", field: "actual" }],
-  });
-
-  const preset = toQueryPreset(original);
-  const back = fromQueryPreset(preset);
-
-  // Compare content ignoring id
-  const stripId = (v) => ({ ...v, id: undefined });
-  assert.deepEqual(stripId(normalizeSavedTaskView(original)), stripId(back));
-});
-
 // ── VAL-CORE-005 / VAL-CROSS-002: 7 builtin presets ──
 
 test("VAL-CROSS-002: createBuiltinQueryPresets produces 7 default presets", () => {
@@ -444,21 +522,23 @@ test("VAL-CROSS-002: createBuiltinQueryPresets uses custom labels", () => {
 });
 
 test("VAL-CROSS-002: TODO builtin preset filters todo tasks", () => {
+  // US-109z2: status filter lives on the content area's `when`, not a tab filter.
   const presets = createBuiltinQueryPresets();
   const todoPreset = presets.find((p) => p.id === "preset-todo");
   assert.ok(todoPreset);
-  assert.deepEqual(todoPreset.filters.status, ["todo"]);
-  assert.equal(todoPreset.view.type, "list");
-  assert.equal(todoPreset.view.preset, "todo");
+  assert.equal(todoPreset.filters, undefined);
+  assert.equal(todoPreset.view.layout.type, "list");
+  assert.deepEqual(todoPreset.view.layout.when.status, ["todo"]);
 });
 
 test("VAL-CROSS-002: Dropped builtin preset filters dropped tasks", () => {
   const presets = createBuiltinQueryPresets();
   const droppedPreset = presets.find((p) => p.id === "preset-dropped");
   assert.ok(droppedPreset);
-  // The dropped preset should filter for dropped/abandoned tasks
-  assert.deepEqual(droppedPreset.filters.status, ["dropped"]);
-  assert.equal(droppedPreset.view.preset, "dropped");
+  assert.equal(droppedPreset.filters, undefined);
+  assert.equal(droppedPreset.view.layout.type, "list");
+  // The dropped preset's content area filters for dropped/abandoned tasks.
+  assert.deepEqual(droppedPreset.view.layout.when.status, ["dropped"]);
 });
 
 // ── VAL-CORE-005: stringifyQueryPreset / parseQueryDsl ──
@@ -477,55 +557,59 @@ test("VAL-CORE-005: stringifyQueryPreset emits normalized JSON", () => {
   const text = stringifyQueryPreset(preset);
   const parsed = JSON.parse(text);
 
+  // US-109z2: no tab-level filters; preset is identity + view only.
   assert.deepEqual(parsed, {
     id: "preset-json",
     name: "JSON Test",
     builtin: false,
     hidden: false,
-    filters: {
-      search: "focus",
-      tags: ["#alpha", "#beta"],
-      status: ["todo"],
-      time: { scheduled: "week" },
-    },
-    view: { type: "month", preset: "today" },
-    summary: [{ type: "count" }],
+    // Legacy {type:"month", preset} migrates to a month area layout; preset dropped.
+    view: { layout: { type: "month" } },
   });
 });
 
 test("VAL-CORE-005: parseQueryDsl parses and normalizes JSON DSL", () => {
   const preset = parseQueryDsl(JSON.stringify({
     name: " Deep Work ",
-    filters: {
-      search: " docs ",
-      tags: ["alpha", "#beta", "alpha"],
-      status: ["todo", "done"],
-      time: { scheduled: " week " },
+    view: {
+      layout: {
+        type: "week",
+        when: {
+          search: " docs ",
+          tags: ["alpha", "#beta", "alpha"],
+          status: ["todo", "done"],
+          time: { scheduled: " week " },
+        },
+      },
     },
-    view: { type: "week", preset: " today " },
-    summary: [{ type: "sum", field: " actual ", format: " duration " }],
   }), { id: "preset-existing" });
 
   assert.equal(preset.id, "preset-existing");
   assert.equal(preset.name, "Deep Work");
   assert.equal(preset.builtin, false);
-  assert.equal(preset.filters.search, "docs");
-  assert.deepEqual(preset.filters.tags, ["#alpha", "#beta"]);
-  assert.deepEqual(preset.filters.status, ["todo", "done"]);
-  assert.deepEqual(preset.filters.time, { scheduled: "week" });
-  assert.deepEqual(preset.view, { type: "week", preset: "today" });
-  assert.equal(preset.summary[0].type, "sum");
-  assert.equal(preset.summary[0].field, "actual");
+  // US-109z2: tab-level filters are dropped on parse.
+  assert.equal(preset.filters, undefined);
+  assert.deepEqual(preset.view, {
+    layout: {
+      type: "week",
+      when: {
+        search: "docs",
+        tags: { expr: "#alpha and #beta" },
+        status: ["todo", "done"],
+        time: { scheduled: "week" },
+      },
+    },
+  });
 });
 
 test("VAL-CORE-005: parseQueryDsl missing name throws", () => {
   assert.throws(() => {
-    parseQueryDsl(JSON.stringify({ filters: {}, view: { type: "list" } }));
+    parseQueryDsl(JSON.stringify({ view: { layout: { type: "list" } } }));
   }, /DSL 缺少 name/);
 });
 
 test("VAL-CORE-005: parseQueryDsl generates id when missing", () => {
-  const preset = parseQueryDsl(JSON.stringify({ name: "AutoId", filters: {}, view: { type: "list" } }));
+  const preset = parseQueryDsl(JSON.stringify({ name: "AutoId", view: { layout: { type: "list" } } }));
   assert.ok(preset.id, "Should generate an id");
   assert.ok(preset.id.startsWith("sv-"), "Should use default id prefix");
 });
@@ -551,24 +635,6 @@ test("VAL-CROSS-002: filtering legacy views from mixed array works safely", () =
   assert.equal(clean.length, 4, "4 non-legacy entries remain (modern + null + 42 + string)");
 });
 
-test("VAL-CROSS-002: empty or null savedViews array produces only builtins", () => {
-  // Simulate what happens when loaded data has no savedViews (fresh install)
-  // ensureBuiltinSavedViews with empty array should produce 7 builtins
-  const result = ensureBuiltinSavedViews([], {
-    today: "今日",
-    week: "本周",
-    month: "本月",
-    todo: "TODO",
-    unscheduled: "未排期",
-    completed: "已完成",
-    dropped: "已放弃",
-  });
-
-  assert.equal(result.length, 7, "Fresh install produces 7 builtins");
-  assert.equal(result[0].id, "preset-today");
-  assert.equal(result[6].id, "preset-dropped");
-});
-
 // ── VAL-CORE-006: validation preserves saved state ──
 
 test("VAL-CORE-006: invalid DSL parse error does not produce a mutated preset", () => {
@@ -591,7 +657,7 @@ test("VAL-CROSS-002: parseQueryDsl rejects legacy flat SavedTaskView DSL", () =>
   });
   assert.throws(
     () => { parseQueryDsl(legacyJson); },
-    /旧版 SavedTaskView 扁平格式/,
+    /更新 skill.*view\.layout.*when/,
     "Legacy flat search/tag/time/status DSL must throw",
   );
 });
@@ -604,7 +670,7 @@ test("VAL-CROSS-002: parseQueryDsl rejects legacy with only search", () => {
   });
   assert.throws(
     () => { parseQueryDsl(legacyJson); },
-    /旧版 SavedTaskView 扁平格式/,
+    /更新 skill.*view\.layout.*when/,
   );
 });
 
@@ -616,7 +682,20 @@ test("VAL-CROSS-002: parseQueryDsl rejects legacy with only status", () => {
   });
   assert.throws(
     () => { parseQueryDsl(legacyJson); },
-    /旧版 SavedTaskView 扁平格式/,
+    /更新 skill.*view\.layout.*when/,
+  );
+});
+
+test("US-217a: parseQueryDsl rejects pre-1.0 nested filters / summary DSL and points to skill update", () => {
+  const legacyJson = JSON.stringify({
+    name: "Old Skill Query",
+    filters: { status: ["todo"], tags: ["#work"] },
+    view: { type: "week" },
+    summary: [{ type: "count" }],
+  });
+  assert.throws(
+    () => { parseQueryDsl(legacyJson); },
+    /npx skills add CorrectRoadH\/obsidian-task-center.*view\.layout.*when/,
   );
 });
 
@@ -631,37 +710,35 @@ test("VAL-CROSS-002: parseQueryDsl rejects legacy wrapped in query key", () => {
   });
   assert.throws(
     () => { parseQueryDsl(wrappedLegacy); },
-    /旧版 SavedTaskView 扁平格式/,
+    /更新 skill.*view\.layout.*when/,
     'Legacy shape inside {"query": {...}} wrapper must also be rejected',
   );
 });
 
-test("VAL-CROSS-002: parseQueryDsl accepts valid QueryPreset with nested filters", () => {
+test("VAL-CROSS-002: parseQueryDsl accepts valid 1.0 QueryPreset with area when", () => {
   const validJson = JSON.stringify({
     name: "Modern Query",
-    filters: { search: "docs", tags: ["#work"], status: ["todo"] },
-    view: { type: "week" },
-    summary: [{ type: "count" }],
+    view: { layout: { type: "week", when: { search: "docs", tags: ["#work"], status: ["todo"] } } },
   });
   const preset = parseQueryDsl(validJson);
   assert.equal(preset.name, "Modern Query");
-  assert.equal(preset.filters.search, "docs");
-  assert.deepEqual(preset.filters.tags, ["#work"]);
-  assert.equal(preset.view.type, "week");
+  // US-109z2: tab-level filters dropped on parse.
+  assert.equal(preset.filters, undefined);
+  assert.equal(preset.view.layout.type, "week");
+  assert.deepEqual(preset.view.layout.when, { search: "docs", tags: { expr: "#work" }, status: ["todo"] });
 });
 
 test("VAL-CROSS-002: parseQueryDsl accepts valid QueryPreset in query wrapper", () => {
   const wrappedJson = JSON.stringify({
     query: {
       name: "Wrapped Query",
-      filters: { status: ["done"] },
-      view: { type: "list" },
-      summary: [],
+      view: { layout: { type: "list", when: { status: ["done"] } } },
     },
   });
   const preset = parseQueryDsl(wrappedJson);
   assert.equal(preset.name, "Wrapped Query");
-  assert.deepEqual(preset.filters.status, ["done"]);
+  assert.equal(preset.filters, undefined);
+  assert.deepEqual(preset.view.layout.when, { status: ["done"] });
 });
 
 // ── VAL-CORE-006: parseQueryDsl validates after normalize ──
@@ -669,45 +746,27 @@ test("VAL-CROSS-002: parseQueryDsl accepts valid QueryPreset in query wrapper", 
 test("VAL-CORE-006: parseQueryDsl rejects invalid view type after parse", () => {
   const badJson = JSON.stringify({
     name: "Bad View",
-    filters: {},
-    view: { type: "gantt" },
-    summary: [],
+    view: { layout: { type: 42 } },
   });
   assert.throws(
     () => { parseQueryDsl(badJson); },
-    /view.*unknown_view_type/,
+    /view.*invalid_area_type/,
     "parseQueryDsl must call validateQueryPreset and surface view errors",
-  );
-});
-
-test("VAL-CORE-006: parseQueryDsl rejects invalid summary type after parse", () => {
-  const badJson = JSON.stringify({
-    name: "Bad Summary",
-    filters: {},
-    view: { type: "list" },
-    summary: [{ type: "bad_metric" }],
-  });
-  assert.throws(
-    () => { parseQueryDsl(badJson); },
-    /\[summary\].*invalid_metric_type/,
-    "parseQueryDsl must call validateQueryPreset and surface summary errors",
   );
 });
 
 test("VAL-CORE-006: parseQueryDsl collects multiple section errors in message", () => {
   const badJson = JSON.stringify({
     name: "Multi Bad",
-    filters: { tags: 42 },
-    view: { type: "gantt" },
-    summary: [{ type: "bad" }],
+    view: { layout: { dir: "diagonal", children: [] } },
   });
   assert.throws(
     () => { parseQueryDsl(badJson); },
     (err) => {
       const msg = err.message;
-      return /\[filters\]/.test(msg) && /\[view\]/.test(msg) && /\[summary\]/.test(msg);
+      return /\[view\]/.test(msg) && /invalid_stack_dir/.test(msg) && /invalid_stack_children/.test(msg);
     },
-    "All three sections should appear in error message",
+    "Multiple view errors should appear in error message",
   );
 });
 

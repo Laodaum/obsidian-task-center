@@ -34,6 +34,29 @@ export interface UndoEntry {
   ops: UndoOp[];
 }
 
+/**
+ * Build the UndoOp list for a completed write. Accepts either a single-line
+ * writer result or a cascade result carrying per-line `results` (done / drop
+ * cascades) — one op per line that actually changed, forward order. Pure so
+ * the mapping is unit-testable without Obsidian.
+ */
+export function buildLineUndoOps(
+  fallback: { path: string; line: number },
+  r: {
+    before: string;
+    after: string;
+    unchanged: boolean;
+    results?: Array<{ path: string; line: number; before: string; after: string; unchanged?: boolean }>;
+  },
+): UndoOp[] {
+  const lineResults = r.results && r.results.length > 0
+    ? r.results
+    : [{ path: fallback.path, line: fallback.line, before: r.before, after: r.after }];
+  return lineResults
+    .filter((d) => d.before !== d.after)
+    .map((d) => ({ path: d.path, line: d.line, before: [d.before], after: [d.after] }));
+}
+
 export interface UndoStackOptions {
   /**
    * Called after a successful undo so the view can refresh. Failures notify

@@ -1,0 +1,13 @@
+.git
+._*
+.crabbox
+.harness
+.obsidian-cache
+node_modules
+main.js
+main.js.map
+data.json
+*.log
+test/.compiled
+test/e2e/vaults/*/.obsidian/workspace*
+test/e2e/vaults/*/.obsidian/cache

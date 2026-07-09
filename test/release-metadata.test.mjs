@@ -34,9 +34,24 @@ test("release metadata is ready for Obsidian community plugin submission", async
   assert.equal(manifest.isDesktopOnly, false);
 });
 
-test("local plugin settings are not published as release defaults", async () => {
+test("local plugin settings are not published as release defaults", async (t) => {
   const gitignore = await readFile(".gitignore", "utf8");
   assert.match(gitignore, /^data\.json$/m);
+
+  // The tracking invariant can only be evaluated where a real repository (with
+  // history) exists — every dev checkout and GitHub Actions CI. The remote test
+  // box (crabbox external) is a synced working tree without .git, so skip the
+  // git probe there rather than asserting against a non-existent repo.
+  let inGitRepo = true;
+  try {
+    execFileSync("git", ["rev-parse", "--is-inside-work-tree"], { stdio: "pipe" });
+  } catch {
+    inGitRepo = false;
+  }
+  if (!inGitRepo) {
+    t.skip("no git work tree in this environment (e.g. crabbox synced box)");
+    return;
+  }
 
   assert.throws(
     () => execFileSync("git", ["ls-files", "--error-unmatch", "data.json"], { stdio: "pipe" }),

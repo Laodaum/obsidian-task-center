@@ -1,10 +1,17 @@
 profile: task-center-check
-provider: blacksmith-testbox
+provider: external
+target: linux
 
-blacksmith:
-  # If your Blacksmith account requires an explicit org selection,
-  # set CRABBOX_BLACKSMITH_ORG in your shell before warming a box.
-  workflow: .github/workflows/blacksmith-testbox.yml
-  job: hydrate
-  ref: main
-  idleTimeout: 90m
+# Formal remote gate runs on private BYOI infrastructure.
+# The box lifecycle is declared here (declarative external provider) so that
+# `crabbox run` carries no per-invocation lifecycle flags. Only the public
+# wiring lives in git:
+#   - command: a neutral, machine-local adapter path (the file itself is
+#     gitignored; it owns host/namespace/image and reads them from env).
+#   - workRoot / idempotentLeaseId: public lease semantics, no internal address.
+# Genuinely-internal values (SSH host, k3s namespace, image) stay out of git,
+# injected into the adapter via .crabbox/remote-test.env.
+external:
+  command: .crabbox/external-lease-provider.mjs
+  idempotentLeaseId: true
+  workRoot: /workspace/crabbox

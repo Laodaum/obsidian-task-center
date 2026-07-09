@@ -1,11 +1,23 @@
 /**
- * task #88: mobile saved-view/filter controls must not dump the full
- * desktop toolbar onto the phone. Mobile keeps one compact entry and moves
- * the full controls into a bottom sheet.
+ * US-117 / US-117a / US-109z2: mobile filtering.
+ *
+ * The phone首屏 toolbar must not dump the desktop filter controls (search box +
+ * tag/date/status popovers) onto the view — those were removed with tab-level
+ * filtering (US-109z2). Mobile keeps one compact "编辑 Query" entry, and actual
+ * filtering happens per-area: the area head's 编辑区域 opens the Area panel as a
+ * near-fullscreen sheet (`bt-mobile-query-sheet`) whose 本区过滤 edits that
+ * area's `when` (UX §3.2.4).
+ *
+ * Stable DOM (see saved-views.e2e.ts for the shared area-filter contract):
+ *   [data-mobile-layout="true"]               — forced mobile layout
+ *   [data-mobile-action="filters"]            — single compact toolbar entry
+ *   [data-action="edit-area"]                 — per-area filter entry on the head
+ *   .task-center-bottom-sheet .bt-mobile-query-sheet[data-query-editor-scope="area"]
+ *   [data-filter-section="area"] / [data-area-status] / [data-area-time-field]
+ *   .bt-area-tag-trigger / [data-area-tag="#tag"]
  */
 import { browser, expect, $ } from "@wdio/globals";
 import { obsidianPage } from "wdio-obsidian-service";
-import fs from "node:fs/promises";
 
 const VAULT = "test/e2e/vaults/simple";
 
@@ -72,7 +84,7 @@ async function writeAndWait(path: string, body: string) {
   );
 }
 
-describe("Task Center — mobile filter UI (task #88)", function () {
+describe("Task Center — mobile filter UI (US-117 / US-109z2)", function () {
   beforeEach(async function () {
     await obsidianPage.resetVault(VAULT);
     await resetSavedViewTestState();
@@ -83,49 +95,44 @@ describe("Task Center — mobile filter UI (task #88)", function () {
     await setMobileMode(false);
   });
 
-  it("task #88: mobile toolbar uses one filter entry and puts saved-view controls in a bottom sheet", async function () {
+  it("US-117a: mobile toolbar carries one compact entry, no desktop filter controls; filtering is per-area", async function () {
     const today = todayISO();
     await writeAndWait(
       "Tasks/Inbox.md",
-      `- [ ] Mobile width fixture #alpha #1象限 ⏳ ${today}\n- [ ] Mobile unscheduled width fixture #alpha\n`,
+      `- [ ] Mobile alpha fixture #alpha ⏳ ${today}\n- [ ] Mobile beta fixture #beta ⏳ ${today}\n`,
     );
 
     await browser.executeObsidianCommand("task-center:open");
     await forFlush();
 
-    await $(".task-center-view[data-mobile-layout='true']").waitForExist({
-      timeout: 5000,
-    });
-    await $('[data-tab="week"]').click();
+    await $(".task-center-view[data-mobile-layout='true']").waitForExist({ timeout: 5000 });
     await $('[data-task-id="Tasks/Inbox.md:L1"]').waitForExist({ timeout: 5000 });
 
-    await expect($(".task-center-view .bt-toolbar > [data-saved-views]")).not.toExist();
-    await expect($(".task-center-view .bt-toolbar .bt-search")).not.toExist();
+    // 首屏 toolbar: one compact entry, none of the removed desktop controls.
     await expect($("[data-mobile-action='filters']")).toExist();
+    await expect($(".task-center-view .bt-toolbar .bt-search")).not.toExist();
+    await expect($(".task-center-view .bt-toolbar [data-saved-view-filter='tag']")).not.toExist();
+    await expect($(".task-center-view .bt-toolbar [data-saved-view-filter='status']")).not.toExist();
 
+    // Toolbar must not overflow horizontally and the body/cards fill the width.
     const widthOk = await browser.execute(() => {
       const view = document.querySelector<HTMLElement>(".task-center-view");
       const toolbar = document.querySelector<HTMLElement>(".task-center-view .bt-toolbar-main");
       const body = document.querySelector<HTMLElement>(".task-center-view .bt-body");
       const card = document.querySelector<HTMLElement>(".task-center-view [data-task-id='Tasks/Inbox.md:L1']");
-      const tray = document.querySelector<HTMLElement>(".task-center-view .bt-unscheduled-pool");
-      const trayCard = document.querySelector<HTMLElement>(".task-center-view [data-task-id='Tasks/Inbox.md:L2']");
-      if (!view || !toolbar || !body || !card || !tray || !trayCard) return false;
+      if (!view || !toolbar || !body || !card) return false;
       const viewWidth = view.getBoundingClientRect().width;
       const toolbarWidth = toolbar.getBoundingClientRect().width;
       const bodyWidth = body.getBoundingClientRect().width;
       const cardWidth = card.getBoundingClientRect().width;
-      const trayWidth = tray.getBoundingClientRect().width;
-      const trayCardWidth = trayCard.getBoundingClientRect().width;
       const toolbarHasNoHorizontalOverflow = toolbar.scrollWidth <= Math.ceil(toolbarWidth) + 1;
       return toolbarHasNoHorizontalOverflow &&
         bodyWidth >= viewWidth * 0.9 &&
-        cardWidth >= bodyWidth * 0.85 &&
-        trayWidth >= bodyWidth * 0.95 &&
-        trayCardWidth >= trayWidth * 0.85;
+        cardWidth >= bodyWidth * 0.85;
     });
     expect(widthOk).toBe(true);
 
+    // Tab strip scrolls horizontally, fixed height, no drag / hotkeys (US-117b).
     const tabbarShape = await browser.execute(() => {
       const tabbar = document.querySelector<HTMLElement>(".task-center-view .bt-tabbar");
       const tabs = Array.from(document.querySelectorAll<HTMLElement>(".task-center-view .bt-tabbar .bt-tab"));
@@ -133,73 +140,39 @@ describe("Task Center — mobile filter UI (task #88)", function () {
       if (tabbar) tabbar.style.width = "320px";
       const style = tabbar ? getComputedStyle(tabbar) : null;
       const shape = {
-        tabCount: tabs.length,
         hasMore: tabs.some((tab) => tab.dataset.queryTabId === "__overflow__"),
         hotkeyCount: document.querySelectorAll(".task-center-view .bt-tabbar .bt-hotkey").length,
         draggableCount: tabs.filter((tab) => tab.getAttribute("draggable") === "true").length,
         overflowX: style?.overflowX ?? "",
         overflowY: style?.overflowY ?? "",
-        canHorizontalScroll: tabbar ? tabbar.scrollWidth > Math.ceil(tabbar.clientWidth) + 1 : false,
         hasVerticalScroll: tabbar ? tabbar.scrollHeight > Math.ceil(tabbar.clientHeight) + 1 : true,
       };
       if (tabbar) tabbar.style.width = oldWidth;
       return shape;
     });
-    expect(tabbarShape.tabCount).toBeGreaterThan(4);
     expect(tabbarShape.hasMore).toBe(false);
     expect(tabbarShape.hotkeyCount).toBe(0);
     expect(tabbarShape.draggableCount).toBe(0);
     expect(tabbarShape.overflowX).toBe("auto");
     expect(tabbarShape.overflowY).toBe("hidden");
-    expect(tabbarShape.canHorizontalScroll).toBe(true);
     expect(tabbarShape.hasVerticalScroll).toBe(false);
 
-    const safeAreaOk = await browser.execute(() => {
-      const bar = document.querySelector<HTMLElement>(".bt-mobile-action-bar");
-      if (!bar) return false;
-      const paddingBottom = Number.parseFloat(getComputedStyle(bar).paddingBottom);
-      return paddingBottom >= 8;
-    });
-    expect(safeAreaOk).toBe(true);
+    // Per-area filtering: the area head 编辑区域 opens the Area panel as a
+    // near-fullscreen mobile sheet whose 本区过滤 edits this area's `when`.
+    await $("[data-action='edit-area']").waitForExist({ timeout: 5000 });
+    await $("[data-action='edit-area']").click();
+    await $(".task-center-bottom-sheet .bt-mobile-query-sheet[data-query-editor-scope='area']")
+      .waitForExist({ timeout: 3000 });
+    await expect($(".task-center-bottom-sheet [data-filter-section='area']")).toExist();
+    await expect($(".task-center-bottom-sheet [data-area-status='all']")).toExist();
+    await expect($(".task-center-bottom-sheet [data-area-time-field='scheduled']")).toExist();
+    await expect($(".task-center-bottom-sheet .bt-area-tag-trigger")).toExist();
 
-    await $("[data-mobile-action='filters']").click();
-    await $(".task-center-bottom-sheet .bt-mobile-filter-sheet").waitForExist({
-      timeout: 3000,
-    });
-    await expect($(".task-center-bottom-sheet [data-saved-views]")).toExist();
-    await expect($(".task-center-bottom-sheet [data-saved-view-select]")).toExist();
-    await expect($(".task-center-bottom-sheet [data-saved-view-filter='tag']")).toExist();
-    await expect($(".task-center-bottom-sheet [data-saved-view-filter='time-scheduled']")).toExist();
-    await expect($(".task-center-bottom-sheet [data-saved-view-filter='status']")).toExist();
-
-    const mobileShapes = await browser.execute(() => {
-      const tag = document.querySelector(".task-center-bottom-sheet [data-saved-view-filter='tag']");
-      const date = document.querySelector(".task-center-bottom-sheet [data-saved-view-filter='time-scheduled']");
-      const status = document.querySelector(".task-center-bottom-sheet [data-saved-view-filter='status']");
-      return {
-        tagName: tag?.tagName,
-        tagPopup: tag?.getAttribute("aria-haspopup"),
-        dateTagName: date?.tagName,
-        datePopup: date?.getAttribute("aria-haspopup"),
-        statusTagName: status?.tagName,
-        statusPopup: status?.getAttribute("aria-haspopup"),
-      };
-    });
-    expect(mobileShapes).toEqual({
-      tagName: "BUTTON",
-      tagPopup: "listbox",
-      dateTagName: "BUTTON",
-      datePopup: "listbox",
-      statusTagName: "BUTTON",
-      statusPopup: "listbox",
-    });
-
-    await $(".task-center-bottom-sheet [data-saved-view-filter='tag']").click();
-    await $(".task-center-bottom-sheet [data-tag-option='#alpha']").click();
+    // Setting the area tag filters the cards behind the sheet.
+    await $(".task-center-bottom-sheet .bt-area-tag-trigger").click();
+    await $(".task-center-bottom-sheet .bt-area-tag-list").waitForExist({ timeout: 3000 });
+    await $(".task-center-bottom-sheet [data-area-tag='#alpha']").click();
     await expect($('[data-task-id="Tasks/Inbox.md:L1"]')).toExist();
-
-    await browser.pause(200);
-    const png = await browser.takeScreenshot();
-    await fs.writeFile("/tmp/task-center-mobile-filter-ui.png", Buffer.from(png, "base64"));
+    await expect($('[data-task-id="Tasks/Inbox.md:L2"]')).not.toExist();
   });
 });

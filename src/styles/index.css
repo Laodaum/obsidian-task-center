@@ -1,0 +1,18 @@
+/* AUTO: assembled by esbuild into the plugin-root styles.css. Order is cascade-significant — do not reorder. */
+@import "./base.css";
+@import "./header.css";
+@import "./tabs.css";
+@import "./view-toolbar.css";
+@import "./empty-states.css";
+@import "./area-layout.css";
+@import "./filter-chips.css";
+@import "./upgrade-gate.css";
+@import "./board-grid.css";
+@import "./cards.css";
+@import "./drop-zones.css";
+@import "./quick-add-modal.css";
+@import "./mobile.css";
+@import "./tab-strip.css";
+@import "./quick-add.css";
+@import "./query-editor.css";
+@import "./area-panel.css";

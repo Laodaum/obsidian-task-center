@@ -22,6 +22,10 @@ export class TaskCenterSettingTab extends PluginSettingTab {
     // writes only to Obsidian Daily Notes; tags are ordinary markdown data
     // surfaced through filters and saved views.
 
+    // Grouped into clear sections (Query tabs / General / Task writing / Mobile
+    // / CLI) so the page reads as related clusters instead of one flat list.
+    new Setting(containerEl).setName(tr("settings.groupTabs")).setHeading();
+
     new Setting(containerEl)
       .setName(tr("settings.defaultSavedView.name"))
       .setDesc(tr("settings.defaultSavedView.desc"))
@@ -55,6 +59,8 @@ export class TaskCenterSettingTab extends PluginSettingTab {
               unscheduled: tr("tab.unscheduled"),
               horizon: tr("tab.horizon"),
             });
+            // US-109l: 恢复预设 Tabs 清空墓碑，把所有被永久删除的内建一次找回。
+            this.plugin.settings.deletedBuiltinIds = [];
             const visible = visibleQueryPresets(this.plugin.settings.queryPresets);
             if (
               this.plugin.settings.defaultSavedViewId
@@ -86,6 +92,8 @@ export class TaskCenterSettingTab extends PluginSettingTab {
           }),
       );
 
+    new Setting(containerEl).setName(tr("settings.groupGeneral")).setHeading();
+
     new Setting(containerEl)
       .setName(tr("settings.weekStart.name"))
       .setDesc(tr("settings.weekStart.desc"))
@@ -114,6 +122,8 @@ export class TaskCenterSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings();
         }),
       );
+
+    new Setting(containerEl).setName(tr("settings.groupWriting")).setHeading();
 
     new Setting(containerEl)
       .setName(tr("settings.stampCreated.name"))
@@ -185,8 +195,8 @@ export class TaskCenterSettingTab extends PluginSettingTab {
         "obsidian task-center:query-list format=json",
         "obsidian task-center:query-show id=preset-week",
         "obsidian task-center:query-run id=preset-today view=week anchor=2026-05-04",
-        "obsidian task-center:query-save dsl='{\"name\":\"工作\",\"filters\":{\"tags\":[\"#work\"]},\"view\":{\"type\":\"list\"}}'",
-        "obsidian task-center:query-update id=sv-alpha dsl='{\"name\":\"工作周\",\"view\":{\"type\":\"week\"}}'",
+        "obsidian task-center:query-save dsl='{\"name\":\"工作\",\"view\":{\"layout\":{\"type\":\"list\",\"when\":{\"tags\":[\"#work\"]}}}}'",
+        "obsidian task-center:query-update id=sv-alpha dsl='{\"name\":\"工作周\",\"view\":{\"layout\":{\"type\":\"week\",\"when\":{\"status\":[\"todo\"]}}}}'",
         "obsidian task-center:schedule ref=Tasks/Inbox.md:L42 date=2026-04-25",
         "obsidian task-center:done ref=Tasks/Inbox.md:L42 at=2026-04-23",
         "obsidian task-center:add text=\"处理示例任务\" tag=\"#tag\" scheduled=2026-04-26",

@@ -1,17 +1,20 @@
 {
   "name": "obsidian-task-center",
-  "version": "0.8.27",
+  "version": "1.4.1",
   "description": "AI-ready task board with day/week/month views, natural-language Quick Add, task trees, mobile gestures, and CLI commands over plain markdown.",
   "main": "main.js",
   "packageManager": "pnpm@10.32.1",
   "scripts": {
     "dev": "node esbuild.config.mjs",
     "build": "node esbuild.config.mjs production",
+    "prepare": "git config core.hooksPath .githooks || true",
     "typecheck": "tsc -noEmit",
     "test": "pnpm run test:unit",
-    "test:unit": "node --test test/parser.test.mjs test/writer.test.mjs test/cli.test.mjs test/quickadd.test.mjs test/cache.test.mjs test/task-tree.test.mjs test/i18n.test.mjs test/dep-health.test.mjs test/wdio-versions.test.mjs test/wdio-local-guard.test.mjs test/release-metadata.test.mjs test/task32-daily-folder.test.mjs test/source-dialog-api.test.mjs test/source-open-state.test.mjs test/tags.test.mjs test/saved-views.test.mjs test/date-filter.test.mjs test/time-filter.test.mjs test/layout.test.mjs test/filter-popover.test.mjs test/main-lifecycle.test.mjs test/github-workflows.test.mjs test/source-health.test.mjs",
+    "test:unit": "node --test test/parser.test.mjs test/writer.test.mjs test/cli.test.mjs test/quickadd.test.mjs test/cache.test.mjs test/task-tree.test.mjs test/i18n.test.mjs test/dep-health.test.mjs test/wdio-versions.test.mjs test/wdio-local-guard.test.mjs test/release-metadata.test.mjs test/task32-daily-folder.test.mjs test/source-dialog-api.test.mjs test/source-open-state.test.mjs test/tags.test.mjs test/saved-views.test.mjs test/date-filter.test.mjs test/time-filter.test.mjs test/layout.test.mjs test/layout-ops.test.mjs test/filter-popover.test.mjs test/main-lifecycle.test.mjs test/github-workflows.test.mjs test/source-health.test.mjs test/query-filter.test.mjs test/query-projection.test.mjs test/query-dsl.test.mjs test/taskcenterview-delete-undo.test.mjs test/calendar-grid.test.mjs test/tag-expr.test.mjs test/area-accordion.test.mjs test/undo-ops.test.mjs",
+    "test:remote": "sh -lc 'set -a; . .crabbox/remote-test.env; set +a; test -n \"${CRABBOX_TEST_PREPARE:-}\" && eval \"$CRABBOX_TEST_PREPARE\"; eval \"$CRABBOX_TEST_GATE\"'",
     "test:e2e": "pnpm run build && wdio run ./wdio.conf.mts",
-    "test:e2e:ci": "pnpm run build && wdio run ./wdio.conf.mts --spec test/e2e/specs/board-basics.e2e.ts --spec test/e2e/specs/source-edit-dialog.e2e.ts --spec test/e2e/specs/dataview-format.e2e.ts",
+    "e2e:prefetch": "tsx wdio-prefetch.mts",
+    "test:e2e:ci": "pnpm run build && (pnpm run e2e:prefetch || pnpm run e2e:prefetch || pnpm run e2e:prefetch) && wdio run ./wdio.conf.mts",
     "e2e": "pnpm run test:e2e",
     "lint": "eslint src",
     "version": "node version-bump.mjs && git add manifest.json versions.json"
@@ -26,6 +29,7 @@
   "author": "CorrectRoadH",
   "license": "MIT",
   "devDependencies": {
+    "@eslint-community/eslint-plugin-eslint-comments": "^4.7.2",
     "@types/chai": "^5.2.3",
     "@types/mocha": "^10.0.10",
     "@types/node": "^20.11.0",
@@ -41,22 +45,12 @@
     "globals": "^17.5.0",
     "mocha": "^11.7.5",
     "obsidian": "^1.5.7",
+    "obsidian-launcher": "^3.0.2",
     "tslib": "^2.6.2",
     "tsx": "^4.21.0",
     "typescript": "^5.3.3",
     "typescript-eslint": "^8.59.0",
     "wdio-obsidian-reporter": "^3.0.2",
     "wdio-obsidian-service": "^3.0.2"
-  },
-  "pnpm": {
-    "overrides": {
-      "brace-expansion@5": "^5.0.6",
-      "diff": "^8.0.4",
-      "fast-uri": "^3.1.2",
-      "fast-xml-builder": "^1.2.0",
-      "lodash": "^4.18.1",
-      "serialize-javascript": "^7.0.5",
-      "ws": "^8.21.0"
-    }
   }
 }

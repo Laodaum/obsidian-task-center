@@ -1,25 +1,28 @@
 import type {
+  AreaBase,
+  AreaConfig,
+  DropEffect,
+  GridAreaConfig,
+  LayoutNode,
+  ListAreaConfig,
   QueryPreset,
   QueryPresetFilters,
-  QueryPresetMatrixBucket,
-  QueryPresetMatrixConfig,
-  QueryPresetMatrixAxis,
-  QueryPresetSummaryMetric,
   QueryPresetValidationError,
   QueryPresetValidationResult,
   QueryPresetViewConfig,
-  QuerySection,
   QueryTray,
   QueryViewType,
-  SavedTaskView,
-  SavedViewConfig,
-  SavedViewStatus,
-  SavedViewSummaryMetric,
-  SavedViewTimeFilters,
+  QueryStatus,
+  QueryTimeFilters,
+  StackConfig,
   TaskStatus,
 } from "./types";
-
-const KNOWN_STATUS_VALUES: TaskStatus[] = ["todo", "done", "dropped", "in_progress", "cancelled", "custom"];
+import { BUILTIN_VIEW_DATA } from "./builtin-views/index";
+// US-109z2 / REFACTOR.md D5: status schema lives in the query layer so the pure
+// query pipeline (filter / projection) never imports up into saved-views.
+// Re-exported here for the view layer's existing import sites.
+import { KNOWN_STATUS_VALUES, normalizeQueryStatus, resolveTagFilter, tagsToExpr } from "./query/schema";
+export { normalizeQueryStatus, resolveTagFilter, tagsToExpr };
 const BUILTIN_QUERY_TABS = ["today", "week", "month", "todo", "unscheduled", "completed", "dropped", "horizon"] as const;
 type BuiltinQueryTab = typeof BUILTIN_QUERY_TABS[number];
 
@@ -48,29 +51,13 @@ const DEFAULT_BUILTIN_LABELS: Record<BuiltinQueryTab, string> = {
 export interface SavedViewFilters {
   search: string;
   tag: string;
-  time: SavedViewTimeFilters;
-  status: SavedViewStatus;
-  view?: SavedViewConfig;
-  summary?: SavedViewSummaryMetric[];
+  time: QueryTimeFilters;
+  status: QueryStatus;
+  view?: QueryPresetViewConfig;
 }
 
 export interface AppliedSavedViewFilters extends SavedViewFilters {
   savedViewId: string | null;
-}
-
-export interface QueryPresetDsl {
-  id?: string;
-  name?: string;
-  builtin?: boolean;
-  hidden?: boolean;
-  filters?: {
-    search?: string;
-    tags?: string[] | string;
-    status?: SavedViewStatus;
-    time?: SavedViewTimeFilters;
-  };
-  view?: SavedViewConfig;
-  summary?: SavedViewSummaryMetric[];
 }
 
 export function builtinSavedViewId(tab: BuiltinQueryTab): string {
@@ -90,341 +77,17 @@ export function builtinSavedViewKind(id: string): BuiltinQueryTab | null {
   return BUILTIN_QUERY_TABS.find((tab) => BUILTIN_SAVED_VIEW_IDS[tab] === id) ?? null;
 }
 
-export function ensureBuiltinSavedViews(
-  views: readonly SavedTaskView[],
-  labels: Partial<Record<BuiltinQueryTab, string>> = {},
-): SavedTaskView[] {
-  // Normalize all incoming views, converting QueryPreset shapes to SavedTaskView
-  // if needed (loadSettings may receive QueryPreset-shaped data from data.json).
-  const asSavedViews: SavedTaskView[] = views.map((v) => {
-    if (isRecord(v) && isRecord(v.filters)) {
-      return fromQueryPreset(v as unknown as QueryPreset);
-    }
-    return v;
-  });
-  const existing = new Map(asSavedViews.map((view) => [view.id, normalizeSavedTaskView(view)]));
-  const out: SavedTaskView[] = [];
-  for (const tab of BUILTIN_QUERY_TABS) {
-    const seeded = seededBuiltinSavedView(tab, labels[tab] ?? DEFAULT_BUILTIN_LABELS[tab]);
-    const current = existing.get(seeded.id);
-    out.push(normalizeSavedTaskView(current ? { ...current, builtin: true } : seeded));
-    existing.delete(seeded.id);
-  }
-  for (const view of asSavedViews) {
-    if (isBuiltinSavedViewId(view.id)) continue;
-    out.push(normalizeSavedTaskView(view));
-  }
-  return out;
-}
-
-export function restoreBuiltinSavedViewById(
-  views: readonly SavedTaskView[],
-  id: string,
-  labels: Partial<Record<BuiltinQueryTab, string>> = {},
-): SavedTaskView[] {
-  const kind = builtinSavedViewKind(id);
-  if (!kind) return [...views];
-  const seeded = seededBuiltinSavedView(kind, labels[kind] ?? DEFAULT_BUILTIN_LABELS[kind]);
-  const index = views.findIndex((view) => view.id === id);
-  if (index === -1) {
-    return ensureBuiltinSavedViews([...views, seeded], labels);
-  }
-  return views.map((view, currentIndex) => (currentIndex === index ? seeded : normalizeSavedTaskView(view)));
-}
-
-export function restoreBuiltinSavedViews(
-  views: readonly SavedTaskView[],
-  labels: Partial<Record<BuiltinQueryTab, string>> = {},
-): SavedTaskView[] {
-  const customViews = views.filter((view) => !isBuiltinSavedViewId(view.id));
-  return ensureBuiltinSavedViews(customViews, labels);
-}
-
-export function createSavedView(
-  name: string,
-  filters: SavedViewFilters,
-  makeId: () => string = defaultSavedViewId,
-): SavedTaskView {
-  return normalizeSavedTaskView({
-    id: makeId(),
-    name: name.trim(),
-    search: filters.search.trim(),
-    tag: filters.tag.trim(),
-    time: normalizeTimeFilters(filters.time),
-    status: normalizeSavedViewStatus(filters.status),
-    view: normalizeSavedViewConfig(filters.view),
-    summary: normalizeSavedViewSummary(filters.summary),
-  });
-}
-
-export function upsertSavedView(views: readonly SavedTaskView[], view: SavedTaskView): SavedTaskView[] {
-  const normalized = normalizeSavedTaskView(view);
-  const existingIndex = views.findIndex((existing) => existing.id === normalized.id);
-  if (existingIndex === -1) return [...views, normalized];
-  return views.map((existing) => (existing.id === normalized.id ? normalized : existing));
-}
-
-export function updateSavedViewById(views: readonly SavedTaskView[], view: SavedTaskView): SavedTaskView[] {
-  const normalized = normalizeSavedTaskView(view);
-  return views.map((existing) => (existing.id === normalized.id ? normalized : existing));
-}
-
-export function applySavedViewFilters(view: SavedTaskView): AppliedSavedViewFilters {
-  const normalized = normalizeSavedTaskView(view);
-  return {
-    savedViewId: normalized.id,
-    search: normalized.search,
-    tag: normalized.tag,
-    time: normalizeTimeFilters(normalized.time),
-    status: normalizeSavedViewStatus(normalized.status),
-    view: normalizeSavedViewConfig(normalized.view),
-    summary: normalizeSavedViewSummary(normalized.summary),
-  };
-}
-
-export function clearSavedViewFilters(): AppliedSavedViewFilters {
-  return {
-    savedViewId: null,
-    search: "",
-    tag: "",
-    time: {},
-    status: "all",
-    view: { type: "list" },
-    summary: [],
-  };
-}
-
-export function hasSavedViewFilters(filters: SavedViewFilters): boolean {
-  return !!(
-    filters.search.trim()
-    || filters.tag.trim()
-    || Object.values(normalizeTimeFilters(filters.time)).some(Boolean)
-    || normalizeSavedViewStatus(filters.status) !== "all"
-  );
-}
-
-export function suggestSavedViewName(filters: Pick<SavedViewFilters, "tag" | "status">, fallback: string): string {
-  if (filters.tag.trim()) return filters.tag.trim().replace(/^#/, "");
-  const status = normalizeSavedViewStatus(filters.status);
-  if (status !== "all") return status.join(",");
-  return fallback;
-}
-
-export function normalizeSavedViewStatus(status: unknown): "all" | TaskStatus[] {
-  if (!status || status === "all") return "all";
-  const raw: unknown[] = Array.isArray(status) ? status : [status];
-  const seen = new Set<TaskStatus>();
-  const out: TaskStatus[] = [];
-  for (const value of raw) {
-    if (!isKnownTaskStatus(value) || seen.has(value)) continue;
-    seen.add(value);
-    out.push(value);
-  }
-  return out.length > 0 ? out : "all";
-}
-
-export function normalizeSavedTaskView(view: SavedTaskView): SavedTaskView {
-  return {
-    ...view,
-    builtin: !!view.builtin,
-    hidden: !!view.hidden,
-    name: view.name.trim(),
-    search: view.search.trim(),
-    tag: view.tag.trim(),
-    time: normalizeTimeFilters(view.time),
-    status: normalizeSavedViewStatus(view.status),
-    view: normalizeSavedViewConfig(view.view),
-    summary: normalizeSavedViewSummary(view.summary),
-  };
-}
-
-export function savedViewToDsl(view: SavedTaskView): QueryPresetDsl {
-  const normalized = normalizeSavedTaskView(view);
-  const tags = parseSavedViewTags(normalized.tag);
-  return {
-    id: normalized.id,
-    name: normalized.name,
-    ...(normalized.builtin ? { builtin: true } : {}),
-    ...(normalized.hidden ? { hidden: true } : {}),
-    filters: {
-      ...(normalized.search ? { search: normalized.search } : {}),
-      ...(tags.length > 0 ? { tags } : {}),
-      status: normalized.status,
-      ...(Object.keys(normalized.time).length > 0 ? { time: normalized.time } : {}),
-    },
-    view: normalized.view,
-    summary: normalized.summary ?? [],
-  };
-}
-
-export function stringifySavedViewDsl(view: SavedTaskView): string {
-  return JSON.stringify(savedViewToDsl(view), null, 2);
-}
-
-export function parseSavedViewDsl(
-  text: string,
-  existing: Partial<Pick<SavedTaskView, "id" | "name" | "builtin" | "hidden">> = {},
-): SavedTaskView {
-  const raw = parseDslRoot(text);
-  const base = "query" in raw && isRecord(raw.query) ? raw.query : raw;
-  const name = stringOrFallback(base.name, existing.name ?? "");
-  if (!name.trim()) {
-    throw new Error("DSL 缺少 name。");
-  }
-  const filters = isRecord(base.filters) ? base.filters : {};
-  const status = normalizeSavedViewStatus(filters.status);
-  const time = normalizeTimeFilters(filters.time);
-  const tags = normalizeDslTags(filters.tags);
-  const view = normalizeSavedViewConfig(base.view);
-  const summary = normalizeSavedViewSummary(Array.isArray(base.summary) ? (base.summary as SavedViewSummaryMetric[]) : []);
-  const id = stringOrFallback(base.id, existing.id ?? defaultSavedViewId());
-  return normalizeSavedTaskView({
-    id,
-    name,
-    builtin: booleanOrFallback(base.builtin, existing.builtin ?? false),
-    hidden: booleanOrFallback(base.hidden, existing.hidden ?? false),
-    search: stringOrFallback(filters.search, ""),
-    tag: tags.join(","),
-    time,
-    status,
-    view,
-    summary,
-  });
-}
-
-export function sameSavedViewContent(a: SavedTaskView, b: SavedTaskView): boolean {
-  const left = normalizeSavedTaskView(a);
-  const right = normalizeSavedTaskView(b);
-  return JSON.stringify({
-    builtin: left.builtin,
-    hidden: left.hidden,
-    search: left.search,
-    tag: left.tag,
-    time: left.time,
-    status: left.status,
-    view: left.view,
-    summary: left.summary,
-  }) === JSON.stringify({
-    builtin: right.builtin,
-    hidden: right.hidden,
-    search: right.search,
-    tag: right.tag,
-    time: right.time,
-    status: right.status,
-    view: right.view,
-    summary: right.summary,
-  });
-}
-
-export function renameSavedViewById(
-  views: readonly SavedTaskView[],
-  id: string,
-  name: string,
-): SavedTaskView[] {
-  const trimmed = name.trim();
-  if (!trimmed) throw new Error("Query Tab 名称不能为空。");
-  return views.map((view) => (view.id === id ? normalizeSavedTaskView({ ...view, name: trimmed }) : view));
-}
-
-export function deleteSavedViewById(views: readonly SavedTaskView[], id: string): SavedTaskView[] {
-  return views.filter((view) => view.id !== id);
-}
-
-export function setSavedViewHiddenById(
-  views: readonly SavedTaskView[],
-  id: string,
-  hidden: boolean,
-): SavedTaskView[] {
-  return views.map((view) => (view.id === id ? normalizeSavedTaskView({ ...view, hidden }) : view));
-}
-
-export function duplicateSavedView(
-  views: readonly SavedTaskView[],
-  sourceId: string,
-  name: string,
-  makeId: () => string = defaultSavedViewId,
-): SavedTaskView {
-  const source = views.find((view) => view.id === sourceId);
-  if (!source) throw new Error(`Query Tab 不存在：${sourceId}`);
-  const normalized = normalizeSavedTaskView(source);
-  return normalizeSavedTaskView({
-    ...normalized,
-    id: makeId(),
-    name: name.trim(),
-    builtin: false,
-    hidden: false,
-  });
-}
-
-export function visibleSavedViews(views: readonly SavedTaskView[]): SavedTaskView[] {
-  return views.map((view) => normalizeSavedTaskView(view)).filter((view) => !view.hidden);
-}
-
-export function moveSavedViewById(
-  views: readonly SavedTaskView[],
-  id: string,
-  direction: -1 | 1,
-): SavedTaskView[] {
-  const index = views.findIndex((view) => view.id === id);
-  if (index === -1) return [...views];
-  const target = index + direction;
-  if (target < 0 || target >= views.length) return [...views];
-  const out = [...views];
-  const [item] = out.splice(index, 1);
-  out.splice(target, 0, item);
-  return out;
-}
-
 export function createSavedViewId(): string {
   return defaultSavedViewId();
-}
-
-function normalizeSavedViewConfig(view: unknown): SavedViewConfig {
-  const raw = isRecord(view) ? view : {};
-  const type = normalizeQueryViewType(typeof raw.type === "string" ? raw.type : undefined);
-  const preset = typeof raw.preset === "string" ? raw.preset.trim() : undefined;
-  const orderBy = Array.isArray(raw.orderBy)
-    ? raw.orderBy.map((value) => (typeof value === "string" ? value.trim() : "")).filter(Boolean)
-    : undefined;
-  const matrix = isRecord(raw.matrix) ? normalizeMatrixConfig(raw.matrix) : undefined;
-  const sections = Array.isArray(raw.sections)
-    ? raw.sections.map(normalizeQuerySection).filter((s): s is QuerySection => s !== null)
-    : undefined;
-  const tray = isRecord(raw.tray) ? normalizeQueryTray(raw.tray) : undefined;
-  return {
-    type,
-    ...(preset ? { preset } : {}),
-    ...(orderBy && orderBy.length > 0 ? { orderBy } : {}),
-    ...(sections && sections.length > 0 ? { sections } : {}),
-    ...(tray ? { tray } : {}),
-    ...(matrix ? { matrix } : {}),
-  };
-}
-
-function normalizeSavedViewSummary(summary: SavedViewSummaryMetric[] | null | undefined): SavedViewSummaryMetric[] {
-  if (!Array.isArray(summary)) return [];
-  const out: SavedViewSummaryMetric[] = [];
-  for (const metric of summary) {
-    if (!metric || typeof metric.type !== "string") continue;
-    const normalized: SavedViewSummaryMetric = { type: metric.type };
-    if (metric.field?.trim()) normalized.field = metric.field.trim();
-    if (metric.numerator?.trim()) normalized.numerator = metric.numerator.trim();
-    if (metric.denominator?.trim()) normalized.denominator = metric.denominator.trim();
-    if (metric.by?.trim()) normalized.by = metric.by.trim();
-    if (typeof metric.limit === "number" && Number.isFinite(metric.limit)) normalized.limit = metric.limit;
-    if (metric.format?.trim()) normalized.format = metric.format.trim();
-    out.push(normalized);
-  }
-  return out;
 }
 
 function normalizeQueryViewType(type: string | null | undefined): QueryViewType {
   return type === "week" || type === "month" || type === "matrix" || type === "horizon" ? type : "list";
 }
 
-function normalizeTimeFilters(time: unknown): SavedViewTimeFilters {
+function normalizeTimeFilters(time: unknown): QueryTimeFilters {
   const raw = isRecord(time) ? time : {};
-  const out: SavedViewTimeFilters = {};
+  const out: QueryTimeFilters = {};
   for (const key of ["scheduled", "deadline", "completed", "created"] as const) {
     const value = raw[key];
     const trimmed = typeof value === "string" ? value.trim() : "";
@@ -433,159 +96,16 @@ function normalizeTimeFilters(time: unknown): SavedViewTimeFilters {
   return out;
 }
 
-function isKnownTaskStatus(value: unknown): value is TaskStatus {
-  return typeof value === "string" && (KNOWN_STATUS_VALUES as readonly string[]).includes(value);
-}
 
 function defaultSavedViewId(): string {
   return `sv-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 }
 
-function seededBuiltinSavedView(tab: BuiltinQueryTab, name: string): SavedTaskView {
-  switch (tab) {
-    case "today":
-      return normalizeSavedTaskView({
-        id: BUILTIN_SAVED_VIEW_IDS.today,
-        name,
-        builtin: true,
-        hidden: false,
-        search: "",
-        tag: "",
-        time: {},
-        status: ["todo"],
-        view: { type: "list", preset: "today" },
-        summary: [],
-      });
-    case "week":
-      return normalizeSavedTaskView({
-        id: BUILTIN_SAVED_VIEW_IDS.week,
-        name,
-        builtin: true,
-        hidden: false,
-        search: "",
-        tag: "",
-        time: {},
-        status: ["todo"],
-        view: { type: "week" },
-        summary: [],
-      });
-    case "month":
-      return normalizeSavedTaskView({
-        id: BUILTIN_SAVED_VIEW_IDS.month,
-        name,
-        builtin: true,
-        hidden: false,
-        search: "",
-        tag: "",
-        time: {},
-        status: ["todo"],
-        view: { type: "month" },
-        summary: [],
-      });
-    case "todo":
-      return normalizeSavedTaskView({
-        id: BUILTIN_SAVED_VIEW_IDS.todo,
-        name,
-        builtin: true,
-        hidden: false,
-        search: "",
-        tag: "",
-        time: {},
-        status: ["todo"],
-        view: { type: "list", preset: "todo" },
-        summary: [{ type: "count" }],
-      });
-    case "completed":
-      return normalizeSavedTaskView({
-        id: BUILTIN_SAVED_VIEW_IDS.completed,
-        name,
-        builtin: true,
-        hidden: false,
-        search: "",
-        tag: "",
-        time: {},
-        status: ["done"],
-        view: { type: "list", preset: "completed", orderBy: ["completed_desc"] },
-        summary: [
-          { type: "count" },
-          { type: "sum", field: "actual", format: "duration" },
-          { type: "ratio", numerator: "actual", denominator: "estimate", format: "percent" },
-        ],
-      });
-    case "dropped":
-      return normalizeSavedTaskView({
-        id: BUILTIN_SAVED_VIEW_IDS.dropped,
-        name,
-        builtin: true,
-        hidden: false,
-        search: "",
-        tag: "",
-        time: {},
-        status: ["dropped"],
-        view: { type: "list", preset: "dropped" },
-        summary: [{ type: "count" }],
-      });
-    case "horizon":
-      return normalizeSavedTaskView({
-        id: BUILTIN_SAVED_VIEW_IDS.horizon,
-        name,
-        builtin: true,
-        hidden: false,
-        search: "",
-        tag: "",
-        time: {},
-        status: ["todo"],
-        view: { type: "horizon" },
-        summary: [{ type: "count" }],
-      });
-    case "unscheduled":
-    default:
-      return normalizeSavedTaskView({
-        id: BUILTIN_SAVED_VIEW_IDS.unscheduled,
-        name,
-        builtin: true,
-        hidden: false,
-        search: "",
-        tag: "",
-        time: {},
-        status: ["todo"],
-        view: { type: "list", preset: "unscheduled", orderBy: ["deadline_risk", "created_desc"] },
-        summary: [{ type: "count" }],
-      });
-  }
-}
-
-function parseSavedViewTags(value: string): string[] {
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const raw of value.split(",")) {
-    const tag = raw.trim();
-    if (!tag || seen.has(tag)) continue;
-    seen.add(tag);
-    out.push(tag);
-  }
-  return out;
-}
-
-function normalizeDslTags(value: unknown): string[] {
-  const raw = Array.isArray(value)
-    ? value
-    : typeof value === "string"
-      ? value.split(",")
-      : [];
-  const out: string[] = [];
-  const seen = new Set<string>();
-  for (const item of raw) {
-    if (typeof item !== "string") continue;
-    const trimmed = item.trim();
-    if (!trimmed) continue;
-    const tag = trimmed.startsWith("#") ? trimmed : `#${trimmed}`;
-    const normalized = tag.toLowerCase();
-    if (seen.has(normalized)) continue;
-    seen.add(normalized);
-    out.push(tag);
-  }
-  return out;
+function seededBuiltinQueryPreset(tab: BuiltinQueryTab, name: string): QueryPreset {
+  const data = BUILTIN_VIEW_DATA[tab] ?? BUILTIN_VIEW_DATA.unscheduled;
+  // JSON imports infer wide literal types; normalizeQueryPreset validates the
+  // shape at runtime, so cast through unknown.
+  return normalizeQueryPreset({ ...data, name } as unknown as QueryPreset);
 }
 
 function parseDslRoot(text: string): Record<string, unknown> {
@@ -614,78 +134,231 @@ function booleanOrFallback(value: unknown, fallback: boolean): boolean {
   return typeof value === "boolean" ? value : fallback;
 }
 
+const LEGACY_QUERY_DSL_ERROR =
+  "无效 Query DSL：检测到 Task Center 1.0 前的旧 DSL。1.0 已移除 tab 级 filters / summary / view.type；请更新 skill：npx skills add CorrectRoadH/obsidian-task-center，并改用 view.layout + 每个 area 自己的 when。";
+
 // ── QueryPreset DSL — canonical model (VAL-CORE-005, VAL-CORE-006, VAL-CROSS-002) ──
 
 /**
  * Normalize a QueryPreset: ensure required fields, trim strings,
- * normalize status/tags/time, coerce view type, deduplicate summary.
+ * normalize status/tags/time, coerce view type.
  */
 export function normalizeQueryPreset(raw: QueryPreset): QueryPreset {
-  const filters = normalizeQueryPresetFilters(raw.filters);
   const view = normalizeQueryPresetView(raw.view);
-  const summary = normalizeQueryPresetSummary(raw.summary);
   return {
     id: (typeof raw.id === "string" ? raw.id.trim() : "") || defaultSavedViewId(),
     name: (typeof raw.name === "string" ? raw.name.trim() : "") || "Query",
     builtin: !!raw.builtin,
     hidden: !!raw.hidden,
-    filters,
     view,
-    summary,
   };
 }
 
 function normalizeQueryPresetFilters(raw: unknown): QueryPresetFilters {
   const filters = isRecord(raw) ? raw : {};
   const search = typeof filters.search === "string" ? filters.search.trim() : "";
-  const tags = normalizeDslTags(filters.tags);
-  const status = normalizeSavedViewStatus(filters.status);
+  // US-109d4: tags 统一迁移成单一 { expr } 形态——任何旧形态（裸数组 / 逗号串 /
+  // 三态 { values, mode, exclude }）在归一化时一次性转成等价表达式字符串，求值层
+  // 只认 { expr }。这是旧 data.json 的迁移点：加载即升级，落库即 canonical。
+  const tagExpr = tagsToExpr(filters.tags).trim();
+  const status = normalizeQueryStatus(filters.status);
   const time = normalizeTimeFilters(filters.time);
   const out: QueryPresetFilters = {};
   if (search) out.search = search;
-  if (tags.length > 0) out.tags = tags;
+  if (tagExpr) out.tags = { expr: tagExpr };
   out.status = status;
   if (Object.keys(time).length > 0) out.time = time;
   return out;
 }
 
+function queryFiltersHaveActiveConditions(filters: QueryPresetFilters): boolean {
+  return !!(
+    filters.search
+    // US-109d4: tag 活跃 = 迁移后的表达式非空（裸数组 / 三态 / { expr } 都覆盖）。
+    || tagsToExpr(filters.tags).trim()
+    || (filters.status !== undefined && filters.status !== "all")
+    || (filters.time && Object.keys(filters.time).length > 0)
+  );
+}
+
+function mergeQueryFilters(base: QueryPresetFilters, local: QueryPresetFilters | undefined): QueryPresetFilters {
+  const normalizedBase = normalizeQueryPresetFilters(base);
+  const normalizedLocal = normalizeQueryPresetFilters(local);
+  if (!queryFiltersHaveActiveConditions(normalizedBase)) return normalizedLocal;
+  if (!queryFiltersHaveActiveConditions(normalizedLocal)) return normalizedBase;
+
+  const out: QueryPresetFilters = { ...normalizedLocal };
+  if (normalizedBase.search && !normalizedLocal.search) out.search = normalizedBase.search;
+
+  // US-109d4: 合并 base + local 的标签过滤——各自转表达式，用 AND 连接（都非空时
+  // 各加括号保优先级），收敛进同一个 { expr }。
+  const baseExpr = tagsToExpr(normalizedBase.tags).trim();
+  const localExpr = tagsToExpr(normalizedLocal.tags).trim();
+  if (baseExpr && localExpr) {
+    out.tags = { expr: `(${baseExpr}) and (${localExpr})` };
+  } else if (baseExpr || localExpr) {
+    out.tags = { expr: baseExpr || localExpr };
+  }
+
+  if (normalizedBase.status !== "all" && normalizedLocal.status === "all") {
+    out.status = normalizedBase.status;
+  }
+  if (normalizedBase.time || normalizedLocal.time) {
+    out.time = { ...(normalizedBase.time ?? {}), ...(normalizedLocal.time ?? {}) };
+  }
+  return normalizeQueryPresetFilters(out);
+}
+
+function applyBaseFiltersToLayout(layout: LayoutNode, filters: QueryPresetFilters): LayoutNode {
+  if (!queryFiltersHaveActiveConditions(filters)) return layout;
+  if (isStackLayout(layout)) {  // fix-forward：本地类型守卫（原提交误用了未导入的 isStackNode）
+    const out: StackConfig = {
+      ...layout,
+      children: layout.children.map((child) => applyBaseFiltersToLayout(child, filters)),
+    };
+    return out;
+  }
+  switch (layout.type) {
+    case "list":
+    case "grid":
+    case "week":
+    case "month":
+      return { ...layout, when: mergeQueryFilters(filters, layout.when) };
+    case "drop":
+    case "unknown":
+      return layout;
+  }
+}
+
+// View 现在是一棵 area 布局树。normalize 同时接受新形状（{layout}）和
+// 旧形状（{type, preset, sections, tray, matrix, orderBy}），旧形状一次性
+// 迁移成 { layout }。preset 字段被丢弃。
 function normalizeQueryPresetView(raw: unknown): QueryPresetViewConfig {
   const cfg = isRecord(raw) ? raw : {};
-  const type = normalizeQueryViewType(typeof cfg.type === "string" ? cfg.type : undefined);
-  const preset = typeof cfg.preset === "string" ? cfg.preset.trim() : undefined;
+  if ("layout" in cfg) {
+    return { layout: normalizeLayoutNode(cfg.layout) };
+  }
+  return { layout: migrateLegacyViewToLayout(cfg) };
+}
+
+function normalizeLayoutNode(raw: unknown): LayoutNode {
+  if (isRecord(raw) && typeof raw.dir === "string" && Array.isArray(raw.children)) {
+    const dir = raw.dir === "row" ? "row" : "col";
+    const children = raw.children
+      .map((c) => normalizeLayoutNode(c))
+      .filter((c): c is LayoutNode => c !== null);
+    const out: StackConfig = { dir, children: children.length > 0 ? children : [{ type: "list" }] };
+    const weight = typeof raw.weight === "number" && raw.weight > 0 ? raw.weight : undefined;
+    if (weight !== undefined) out.weight = weight;
+    return out;
+  }
+  return normalizeArea(raw);
+}
+
+function normalizeDropEffect(raw: unknown): DropEffect | undefined {
+  if (!isRecord(raw)) return undefined;
+  const out: DropEffect = {};
+  if (raw.setStatus === "dropped") out.setStatus = "dropped";
+  if (typeof raw.setScheduled === "string" && raw.setScheduled.trim()) out.setScheduled = raw.setScheduled.trim();
+  if (raw.clearScheduled === true) out.clearScheduled = true;
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+function normalizeArea(raw: unknown): AreaConfig {
+  const cfg = isRecord(raw) ? raw : {};
+  const type = typeof cfg.type === "string" ? cfg.type : "list";
+  const id = typeof cfg.id === "string" && cfg.id.trim() ? cfg.id.trim() : undefined;
+  const title = typeof cfg.title === "string" && cfg.title.trim() ? cfg.title.trim() : undefined;
+  const weight = typeof cfg.weight === "number" && cfg.weight > 0 ? cfg.weight : undefined;
+  const onDrop = normalizeDropEffect(cfg.onDrop);
+  const base: AreaBase = {};
+  if (id) base.id = id;
+  if (title) base.title = title;
+  if (weight !== undefined) base.weight = weight;
+  if (onDrop) base.onDrop = onDrop;
+
   const orderBy = Array.isArray(cfg.orderBy)
     ? cfg.orderBy.map((v) => (typeof v === "string" ? v.trim() : "")).filter(Boolean)
     : undefined;
-  const matrix = isRecord(cfg.matrix) ? normalizeMatrixConfig(cfg.matrix) : undefined;
-  const sections = Array.isArray(cfg.sections)
-    ? cfg.sections.map(normalizeQuerySection).filter((s): s is QuerySection => s !== null)
-    : undefined;
-  const tray = isRecord(cfg.tray) ? normalizeQueryTray(cfg.tray) : undefined;
-  const out: QueryPresetViewConfig = { type };
-  if (preset) out.preset = preset;
-  if (orderBy && orderBy.length > 0) out.orderBy = orderBy;
-  if (sections && sections.length > 0) out.sections = sections;
-  if (tray) out.tray = tray;
-  if (matrix) out.matrix = matrix;
-  return out;
+
+  // US-109z2: date areas carry their own `when` too (no tab-level filter).
+  const dateWhen = isRecord(cfg.when) ? normalizeQueryPresetFilters(cfg.when) : undefined;
+  switch (type) {
+    case "week":
+      return {
+        ...base,
+        type: "week",
+        ...(dateWhen && Object.keys(dateWhen).length > 0 ? { when: dateWhen } : {}),
+        ...(cfg.firstDayOfWeek === "monday" || cfg.firstDayOfWeek === "sunday" ? { firstDayOfWeek: cfg.firstDayOfWeek } : {}),
+      };
+    case "month":
+      return {
+        ...base,
+        type: "month",
+        ...(dateWhen && Object.keys(dateWhen).length > 0 ? { when: dateWhen } : {}),
+        ...(cfg.firstDayOfWeek === "monday" || cfg.firstDayOfWeek === "sunday" ? { firstDayOfWeek: cfg.firstDayOfWeek } : {}),
+        ...(cfg.density === "compact" || cfg.density === "cards" ? { density: cfg.density } : {}),
+      };
+    case "drop":
+      return { ...base, type: "drop", onDrop: onDrop ?? { setStatus: "dropped" } };
+    case "horizon":
+      return {
+        ...base,
+        type: "horizon",
+        ...(dateWhen && Object.keys(dateWhen).length > 0 ? { when: dateWhen } : {}),
+      };
+    case "grid":
+    case "list": {
+      const when = isRecord(cfg.when) ? normalizeQueryPresetFilters(cfg.when) : undefined;
+      const limit = typeof cfg.limit === "number" && cfg.limit > 0 ? cfg.limit : undefined;
+      const emptyText = typeof cfg.emptyText === "string" && cfg.emptyText.trim() ? cfg.emptyText.trim() : undefined;
+      const out: ListAreaConfig | GridAreaConfig = { ...base, type: type === "grid" ? "grid" : "list" };
+      if (when && Object.keys(when).length > 0) out.when = when;
+      if (orderBy && orderBy.length > 0) out.orderBy = orderBy;
+      if (limit !== undefined) out.limit = limit;
+      if (emptyText) out.emptyText = emptyText;
+      return out;
+    }
+    default:
+      // 不认识的 area.type（含已删除的 matrix）→ unknown area，保留原始 JSON
+      // 供视图层渲染「未知类型 + JSON」，而不是静默退化成 list。
+      return { ...base, type: "unknown", rawType: type, raw };
+  }
 }
 
-function normalizeQuerySection(raw: unknown): QuerySection | null {
-  const cfg = isRecord(raw) ? raw : {};
-  const id = typeof cfg.id === "string" ? cfg.id.trim() : "";
-  if (!id) return null;
-  const title = typeof cfg.title === "string" ? cfg.title.trim() : id;
-  const when: QueryPresetFilters = isRecord(cfg.when) ? normalizeQueryPresetFilters(cfg.when) : {};
-  const orderBy: string[] | undefined = Array.isArray(cfg.orderBy)
+// 旧形状 {type, preset, sections, tray, matrix, orderBy} → 布局树。
+function migrateLegacyViewToLayout(cfg: Record<string, unknown>): LayoutNode {
+  const type = normalizeQueryViewType(typeof cfg.type === "string" ? cfg.type : undefined);
+  const orderBy = Array.isArray(cfg.orderBy)
     ? cfg.orderBy.map((v) => (typeof v === "string" ? v.trim() : "")).filter(Boolean)
     : undefined;
-  const limit = typeof cfg.limit === "number" && cfg.limit > 0 ? cfg.limit : undefined;
-  const emptyText = typeof cfg.emptyText === "string" ? cfg.emptyText.trim() : undefined;
-  const out: QuerySection = { id, title, when };
-  if (orderBy && orderBy.length > 0) out.orderBy = orderBy;
-  if (limit !== undefined) out.limit = limit;
-  if (emptyText) out.emptyText = emptyText;
-  return out;
+  const tray = isRecord(cfg.tray) ? normalizeQueryTray(cfg.tray) : undefined;
+
+  let base: AreaConfig;
+  if (type === "week") base = { type: "week" };
+  else if (type === "month") base = { type: "month" };
+  else if (type === "horizon") base = { type: "horizon" };
+  else {
+    // Legacy `sections` are intentionally dropped: list no longer groups
+    // internally. The builtin Today layout (col[ list×3 ]) is re-seeded from
+    // src/builtin-views on every load, so it doesn't rely on this migration.
+    const list: ListAreaConfig = { type: "list" };
+    if (orderBy && orderBy.length > 0) list.orderBy = orderBy;
+    base = list;
+  }
+
+  if (tray) {
+    const trayArea: ListAreaConfig = {
+      type: "list",
+      id: "unscheduled-tray",
+      title: tray.title,
+      when: tray.filters,
+      onDrop: { clearScheduled: true },
+    };
+    if (tray.orderBy && tray.orderBy.length > 0) trayArea.orderBy = tray.orderBy;
+    return { dir: "col", children: [base, trayArea] };
+  }
+  return base;
 }
 
 function normalizeQueryTray(raw: unknown): QueryTray | undefined {
@@ -702,56 +375,68 @@ function normalizeQueryTray(raw: unknown): QueryTray | undefined {
   return out;
 }
 
-function normalizeMatrixConfig(raw: Record<string, unknown>): QueryPresetMatrixConfig | undefined {
-  const x = isRecord(raw.x) ? normalizeMatrixAxis(raw.x) : undefined;
-  const y = isRecord(raw.y) ? normalizeMatrixAxis(raw.y) : undefined;
-  if (!x || !y) return undefined;
-  const unmatched = raw.unmatched === "hide" ? "hide" : "show";
-  const multiMatch = raw.multiMatch === "duplicate" ? "duplicate" : "first";
-  const showEmptyBuckets = typeof raw.showEmptyBuckets === "boolean" ? raw.showEmptyBuckets : true;
-  return { x, y, unmatched, multiMatch, showEmptyBuckets };
-}
+// ── 布局树校验与遍历 ──
+// 受支持的 area 类型：list / grid / week / month / drop。其它字符串 type 不
+// 报错，归一化成 unknown area 后由视图层渲染「未知类型 + JSON」。
 
-function normalizeMatrixAxis(raw: Record<string, unknown>): QueryPresetMatrixAxis | undefined {
-  const id = typeof raw.id === "string" ? raw.id.trim() : "";
-  const title = typeof raw.title === "string" ? raw.title.trim() : "";
-  if (!id) return undefined;
-  const buckets: QueryPresetMatrixBucket[] = Array.isArray(raw.buckets)
-    ? raw.buckets.map((b: unknown) => normalizeMatrixBucket(isRecord(b) ? b : {})).filter((b): b is QueryPresetMatrixBucket => b !== null)
-    : [];
-  return { id, title: title || id, buckets };
-}
-
-function normalizeMatrixBucket(raw: Record<string, unknown>): QueryPresetMatrixBucket | null {
-  const id = typeof raw.id === "string" ? raw.id.trim() : "";
-  if (!id) return null;
-  const title = typeof raw.title === "string" ? raw.title.trim() : "";
-  const when: QueryPresetFilters = isRecord(raw.when) ? normalizeQueryPresetFilters(raw.when) : {};
-  return { id, title: title || id, when };
-}
-
-function normalizeQueryPresetSummary(
-  summary: QueryPreset["summary"] | null | undefined,
-): QueryPreset["summary"] {
-  if (!Array.isArray(summary)) return [];
-  const out: QueryPreset["summary"] = [];
-  for (const metric of summary) {
-    if (!metric || typeof metric.type !== "string") continue;
-    const normalized: QueryPreset["summary"][number] = { type: metric.type };
-    if (metric.field?.trim()) normalized.field = metric.field.trim();
-    if (metric.numerator?.trim()) normalized.numerator = metric.numerator.trim();
-    if (metric.denominator?.trim()) normalized.denominator = metric.denominator.trim();
-    if (metric.by?.trim()) normalized.by = metric.by.trim();
-    if (typeof metric.limit === "number" && Number.isFinite(metric.limit)) normalized.limit = metric.limit;
-    if (metric.format?.trim()) normalized.format = metric.format.trim();
-    out.push(normalized);
+function validateLayoutNode(raw: unknown, errors: QueryPresetValidationError[], path: string): void {
+  if (!isRecord(raw)) {
+    errors.push({ section: "view", code: "invalid_layout", message: `${path} 必须是对象。` });
+    return;
   }
-  return out;
+  if ("dir" in raw || Array.isArray(raw.children)) {
+    if (raw.dir !== "row" && raw.dir !== "col") {
+      errors.push({ section: "view", code: "invalid_stack_dir", message: `${path}.dir 必须是 "row" 或 "col"。` });
+    }
+    if (!Array.isArray(raw.children) || raw.children.length === 0) {
+      errors.push({ section: "view", code: "invalid_stack_children", message: `${path}.children 必须是非空数组。` });
+    } else {
+      raw.children.forEach((c, i) => validateLayoutNode(c, errors, `${path}.children[${i}]`));
+    }
+    return;
+  }
+  // area 叶子。type 缺失时归一化成 list；type 是字符串但不被支持时不报错——
+  // 归一化会把它变成 unknown area，视图层渲染「未知类型 + JSON」。
+  const type = raw.type;
+  if (type !== undefined && typeof type !== "string") {
+    errors.push({
+      section: "view",
+      code: "invalid_area_type",
+      message: `${path}.type 必须是字符串。`,
+    });
+    return;
+  }
+  if (type === "drop" && !isRecord(raw.onDrop)) {
+    errors.push({ section: "view", code: "drop_requires_on_drop", message: `${path} 的 drop area 必须有 onDrop。` });
+  }
+}
+
+/** 深度优先收集布局树里所有 area 叶子（顺序 = 渲染顺序）。 */
+export function collectAreas(layout: LayoutNode): AreaConfig[] {
+  if (isStackLayout(layout)) {
+    return layout.children.flatMap((c) => collectAreas(c));
+  }
+  return [layout];
+}
+
+function isStackLayout(node: LayoutNode): node is StackConfig {
+  return (node as StackConfig).dir !== undefined && Array.isArray((node as StackConfig).children);
+}
+
+/** 布局里第一个匹配类型的 area，找不到返回 null。 */
+export function findAreaByType<T extends AreaConfig["type"]>(
+  layout: LayoutNode,
+  type: T,
+): Extract<AreaConfig, { type: T }> | null {
+  for (const area of collectAreas(layout)) {
+    if (area.type === type) return area as Extract<AreaConfig, { type: T }>;
+  }
+  return null;
 }
 
 /**
  * Validate a QueryPreset and return section-specific errors.
- * VAL-CORE-006: Errors point to `filters`, `view`, or `summary`.
+ * VAL-CORE-006: Errors point to `filters` or `view`.
  */
 export function validateQueryPreset(raw: unknown): QueryPresetValidationResult {
   const errors: QueryPresetValidationError[] = [];
@@ -831,81 +516,22 @@ export function validateQueryPreset(raw: unknown): QueryPresetValidationResult {
     }
   }
 
-  // View section
+  // View section — 新形状是一棵 area 布局树（view.layout）；旧形状
+  // （view.type 等）仍可被接受并迁移，校验只对显式提供的字段把关。
   const view = raw.view;
   if (view !== undefined && !isRecord(view)) {
     errors.push({ section: "view", code: "invalid_view", message: "view 必须是对象。" });
   } else if (isRecord(view)) {
-    const viewType = view.type;
-    if (viewType !== undefined && typeof viewType !== "string") {
-      errors.push({
-        section: "view",
-        code: "invalid_view_type",
-        message: 'view.type 必须是 "list" | "week" | "month" | "matrix" | "horizon"。',
-      });
-    } else if (typeof viewType === "string" && !["list", "week", "month", "matrix", "horizon"].includes(viewType)) {
-      errors.push({
-        section: "view",
-        code: "unknown_view_type",
-        message: `未知 view.type "${viewType}"，允许: list, week, month, matrix, horizon。`,
-      });
-    }
-    // Validate orderBy
-    if (view.orderBy !== undefined) {
-      if (!Array.isArray(view.orderBy)) {
+    if ("layout" in view) {
+      validateLayoutNode(view.layout, errors, "view.layout");
+    } else {
+      // 旧形状兜底：仍校验 type 合法，以便给出清晰错误。
+      const viewType = view.type;
+      if (typeof viewType === "string" && !["list", "week", "month", "horizon"].includes(viewType)) {
         errors.push({
           section: "view",
-          code: "invalid_order_by",
-          message: "view.orderBy 必须是字符串数组。",
-        });
-      } else {
-        for (let index = 0; index < view.orderBy.length; index++) {
-          if (typeof view.orderBy[index] !== "string") {
-            errors.push({
-              section: "view",
-              code: "invalid_order_by_item",
-              message: `view.orderBy[${index}] 必须是字符串。`,
-            });
-            break;
-          }
-        }
-      }
-    }
-    // Validate preset
-    if (view.preset !== undefined && typeof view.preset !== "string") {
-      errors.push({
-        section: "view",
-        code: "invalid_preset",
-        message: "view.preset 必须是字符串。",
-      });
-    }
-  }
-
-  // Summary section
-  const summary = raw.summary;
-  if (summary !== undefined && !Array.isArray(summary)) {
-    errors.push({
-      section: "summary",
-      code: "invalid_summary",
-      message: "summary 必须是数组。",
-    });
-  } else if (Array.isArray(summary)) {
-    for (let index = 0; index < summary.length; index++) {
-      const metric: unknown = summary[index];
-      if (!isRecord(metric)) {
-        errors.push({
-          section: "summary",
-          code: "invalid_metric",
-          message: `summary[${index}] 必须是对象。`,
-        });
-        continue;
-      }
-      const metricType = metric.type;
-      if (typeof metricType !== "string" || !["count", "sum", "ratio", "top_n", "group_by"].includes(metricType)) {
-        errors.push({
-          section: "summary",
-          code: "invalid_metric_type",
-          message: `summary[${index}].type 无效 "${String(metricType)}"，允许: count, sum, ratio, top_n, group_by。`,
+          code: "unknown_view_type",
+          message: `未知 view.type "${viewType}"，允许: list, week, month, horizon。`,
         });
       }
     }
@@ -934,49 +560,91 @@ export function isLegacySavedTaskView(obj: unknown): boolean {
 }
 
 /**
- * Convert a legacy SavedTaskView to the canonical QueryPreset.
+ * US-414: detect whether a stored view object is in ANY legacy shape that
+ * needs migrating to the current model. Two cases:
+ *   1. legacy flat SavedTaskView (top-level search/tag/time/status), and
+ *   2. an otherwise-modern QueryPreset (nested `filters`) whose `view` still
+ *      uses the OLD DSL — `{type, preset, sections, tray, matrix}` instead of
+ *      the current `{ layout }` tree.
+ * Used to gate the full-view upgrade screen (US-415). The data transform is
+ * idempotent: re-running detection on a normalized preset returns false.
  */
-export function toQueryPreset(view: SavedTaskView): QueryPreset {
-  const normalized = normalizeSavedTaskView(view);
-  const tags = parseSavedViewTags(normalized.tag);
-  return normalizeQueryPreset({
-    id: normalized.id,
-    name: normalized.name,
-    builtin: normalized.builtin ?? false,
-    hidden: normalized.hidden ?? false,
-    filters: {
-      ...(normalized.search ? { search: normalized.search } : {}),
-      ...(tags.length > 0 ? { tags } : {}),
-      status: normalized.status,
-      ...(Object.keys(normalized.time).length > 0 ? { time: normalized.time } : {}),
-    },
-    view: normalized.view ?? { type: "list" },
-    summary: normalized.summary ?? [],
-  });
+export function isLegacyQueryPresetShape(obj: unknown): boolean {
+  if (!isRecord(obj)) return false;
+  if (isLegacySavedTaskView(obj)) return true;
+  // 只有「带实际条件」的 tab 级 filters 才需要迁移（下推进各 area 的 when）。
+  // 空 filters（{} / {status:"all"}）不算 legacy，避免对新结构数据误弹迁移闸门。
+  if (isRecord(obj.filters) && queryFiltersHaveActiveConditions(normalizeQueryPresetFilters(obj.filters))) return true;
+  const view = obj.view;
+  if (isRecord(view) && !("layout" in view)) {
+    // Old view DSL hallmark keys. An empty `{}` view is not flagged — it
+    // normalizes to a default layout without being "legacy".
+    return (
+      "type" in view
+      || "preset" in view
+      || "sections" in view
+      || "tray" in view
+      || "matrix" in view
+    );
+  }
+  return false;
+}
+
+function isLegacyQueryDslInput(obj: unknown): boolean {
+  if (!isRecord(obj)) return false;
+  if (isLegacySavedTaskView(obj)) return true;
+  if ("filters" in obj || "summary" in obj) return true;
+  const view = obj.view;
+  if (isRecord(view) && !("layout" in view)) {
+    return (
+      "type" in view
+      || "preset" in view
+      || "sections" in view
+      || "tray" in view
+      || "matrix" in view
+    );
+  }
+  return false;
 }
 
 /**
- * Convert a QueryPreset back to the legacy SavedTaskView shape
- * for backward compatibility with existing view/settings code.
+ * US-414: migrate a legacy SavedTaskView (flat `search`/`tag`/`time`/`status`
+ * + legacy `view: {type, preset, sections, tray, matrix}`) into a normalized
+ * QueryPreset. Pure function — never throws on bad fields; everything degrades
+ * to defaults via `normalizeQueryPreset`. Legacy tab-level filters are pushed
+ * down into each task-rendering area's `when`; the legacy `view` shape is
+ * handed to `normalizeQueryPresetView`, whose `migrateLegacyViewToLayout`
+ * already turns `{type, preset, sections, tray, matrix}` into a `layout` tree.
  */
-export function fromQueryPreset(preset: QueryPreset): SavedTaskView {
-  const normalized = normalizeQueryPreset(preset);
-  const tags = Array.isArray(normalized.filters.tags)
-    ? normalized.filters.tags.join(",")
-    : typeof normalized.filters.tags === "string"
-      ? normalized.filters.tags
-      : "";
-  return normalizeSavedTaskView({
-    id: normalized.id,
-    name: normalized.name,
-    builtin: normalized.builtin,
-    hidden: normalized.hidden,
-    search: normalized.filters.search ?? "",
-    tag: tags,
-    time: normalized.filters.time ?? {},
-    status: normalized.filters.status ?? "all",
-    view: normalized.view,
-    summary: normalized.summary,
+export function migrateLegacySavedTaskView(raw: unknown): QueryPreset {
+  return migrateLegacyQueryPreset(raw);
+}
+
+export function migrateLegacyQueryPreset(raw: unknown): QueryPreset {
+  const obj = isRecord(raw) ? raw : {};
+  const filters: Record<string, unknown> = {};
+  if (isRecord(obj.filters)) {
+    Object.assign(filters, obj.filters);
+  } else {
+    if (typeof obj.search === "string") filters.search = obj.search;
+    // Legacy `tag` is a comma-separated string; normalizeDslTags accepts it.
+    if (typeof obj.tag === "string" || Array.isArray(obj.tag)) filters.tags = obj.tag;
+    if ("status" in obj) filters.status = obj.status;
+    if (isRecord(obj.time)) filters.time = obj.time;
+  }
+  const baseFilters = normalizeQueryPresetFilters(filters);
+  const normalized = normalizeQueryPreset({
+    id: typeof obj.id === "string" ? obj.id : defaultSavedViewId(),
+    name: typeof obj.name === "string" ? obj.name : "",
+    builtin: !!obj.builtin,
+    hidden: !!obj.hidden,
+    // Old `view` is the legacy {type, preset, sections, tray, matrix} shape;
+    // normalizeQueryPresetView migrates it to a layout tree.
+    view: isRecord(obj.view) ? obj.view : {},
+  } as unknown as QueryPreset);
+  return normalizeQueryPreset({
+    ...normalized,
+    view: { layout: applyBaseFiltersToLayout(normalized.view.layout, baseFilters) },
   });
 }
 
@@ -997,12 +665,12 @@ export function parseQueryDsl(
   const raw = parseDslRoot(text);
   const base = "query" in raw && isRecord(raw.query) ? raw.query : raw;
 
-  // VAL-CORE-005 / VAL-CROSS-002: reject legacy SavedTaskView flat DSL
-  // (top-level search/tag/time/status without nested filters).
-  if (isLegacySavedTaskView(base)) {
-    throw new Error(
-      "无效 Query DSL：检测到旧版 SavedTaskView 扁平格式（顶层 search/tag/time/status）。请改用嵌套 filters 对象。",
-    );
+  // US-217a: CLI / GUI DSL input must not accept pre-1.0 DSL emitted by old
+  // agent skills. Stored data.json still migrates elsewhere; direct input is
+  // rejected so old `filters` / `summary` / `view.type` fields are not silently
+  // dropped into an accidental full-vault query.
+  if (isLegacyQueryDslInput(base)) {
+    throw new Error(LEGACY_QUERY_DSL_ERROR);
   }
 
   const name = stringOrFallback(base.name, existing.name ?? "");
@@ -1026,9 +694,7 @@ export function parseQueryDsl(
     name,
     builtin: booleanOrFallback(base.builtin, existing.builtin ?? false),
     hidden: booleanOrFallback(base.hidden, existing.hidden ?? false),
-    filters: isRecord(base.filters) ? base.filters : {},
-    view: isRecord(base.view) ? base.view : { type: "list" },
-    summary: Array.isArray(base.summary) ? base.summary : [],
+    view: isRecord(base.view) ? base.view : { layout: { type: "list" } },
   } as unknown as QueryPreset);
 }
 
@@ -1039,10 +705,9 @@ export function parseQueryDsl(
 export function createBuiltinQueryPresets(
   labels: Partial<Record<BuiltinQueryTab, string>> = {},
 ): QueryPreset[] {
-  return BUILTIN_QUERY_TABS.map((tab) => {
-    const flat = seededBuiltinSavedView(tab, labels[tab] ?? DEFAULT_BUILTIN_LABELS[tab]);
-    return toQueryPreset(flat);
-  });
+  return BUILTIN_QUERY_TABS.map((tab) =>
+    seededBuiltinQueryPreset(tab, labels[tab] ?? DEFAULT_BUILTIN_LABELS[tab])
+  );
 }
 
 // ── QueryPreset-native runtime helpers (VAL-CORE-005: no fromQueryPreset bridge) ──
@@ -1056,14 +721,38 @@ export function createBuiltinQueryPresets(
 export function ensureBuiltinQueryPresets(
   presets: readonly QueryPreset[],
   labels: Partial<Record<BuiltinQueryTab, string>> = {},
+  deletedBuiltinIds: readonly string[] = [],
 ): QueryPreset[] {
-  const existing = new Map(presets.map((p) => [p.id, normalizeQueryPreset(p)]));
+  // 内置 view 的布局是出厂规范（含本地化所需的稳定 id），不作为用户就地
+  // 编辑面（自定义路径是「复制后修改」）。因此 builtin 的 view 始终用最新
+  // 出厂布局刷新，保证升级后布局结构、area id、本地化保持一致；用户对
+  // 名称 / 隐藏 / 排序 / filters 的改动仍然保留。
+  const tombstoned = new Set(deletedBuiltinIds);
+  const existingRaw = new Map(presets.map((p) => [p.id, p]));
   const out: QueryPreset[] = [];
   for (const tab of BUILTIN_QUERY_TABS) {
-    const seeded = toQueryPreset(seededBuiltinSavedView(tab, labels[tab] ?? DEFAULT_BUILTIN_LABELS[tab]));
-    const current = existing.get(seeded.id);
-    out.push(normalizeQueryPreset(current ? { ...current, builtin: true } : seeded));
-    existing.delete(seeded.id);
+    const seeded = seededBuiltinQueryPreset(tab, labels[tab] ?? DEFAULT_BUILTIN_LABELS[tab]);
+    const current = existingRaw.get(seeded.id);
+    existingRaw.delete(seeded.id);
+    if (current) {
+      const currentRecord = current as unknown as Record<string, unknown>;
+      const legacyFilters = isRecord(currentRecord.filters)
+        ? normalizeQueryPresetFilters(currentRecord.filters)
+        : {};
+      const seededView = queryFiltersHaveActiveConditions(legacyFilters)
+        ? { layout: applyBaseFiltersToLayout(seeded.view.layout, legacyFilters) }
+        : seeded.view;
+      out.push(normalizeQueryPreset({
+        ...current,
+        builtin: true,
+        view: seededView,
+      }));
+    } else if (tombstoned.has(seeded.id)) {
+      // US-109l: the user permanently deleted this preset — don't re-seed it.
+      continue;
+    } else {
+      out.push(normalizeQueryPreset(seeded));
+    }
   }
   for (const preset of presets) {
     if (isBuiltinSavedViewId(preset.id)) continue;
@@ -1076,13 +765,17 @@ export function restoreBuiltinQueryPresetById(
   presets: readonly QueryPreset[],
   id: string,
   labels: Partial<Record<BuiltinQueryTab, string>> = {},
+  deletedBuiltinIds: readonly string[] = [],
 ): QueryPreset[] {
   const kind = builtinSavedViewKind(id);
   if (!kind) return [...presets];
-  const seeded = toQueryPreset(seededBuiltinSavedView(kind, labels[kind] ?? DEFAULT_BUILTIN_LABELS[kind]));
+  const seeded = seededBuiltinQueryPreset(kind, labels[kind] ?? DEFAULT_BUILTIN_LABELS[kind]);
   const index = presets.findIndex((p) => p.id === id);
   if (index === -1) {
-    return ensureBuiltinQueryPresets([...presets, seeded], labels);
+    // US-109l: re-seed only this preset — keep any OTHER deleted presets gone by
+    // passing the tombstone minus the id being restored.
+    const remaining = deletedBuiltinIds.filter((x) => x !== id);
+    return ensureBuiltinQueryPresets([...presets, seeded], labels, remaining);
   }
   return presets.map((p, i) => (i === index ? seeded : normalizeQueryPreset(p)));
 }
@@ -1095,15 +788,17 @@ export function restoreBuiltinQueryPresets(
   return ensureBuiltinQueryPresets(customPresets, labels);
 }
 
+// US-109z2: a preset is identity + view only (no tab-level filters). Filter
+// fields in `opts` are accepted for back-compat but ignored — filtering lives on
+// each area's `when`.
 export function createQueryPreset(
   name: string,
-  filters: {
+  opts: {
     search?: string;
     tags?: string[];
-    time?: SavedViewTimeFilters;
-    status?: SavedViewStatus;
+    time?: QueryTimeFilters;
+    status?: QueryStatus;
     view?: QueryPresetViewConfig;
-    summary?: QueryPresetSummaryMetric[];
   },
   makeId: () => string = defaultSavedViewId,
 ): QueryPreset {
@@ -1112,14 +807,7 @@ export function createQueryPreset(
     name: name.trim(),
     builtin: false,
     hidden: false,
-    filters: {
-      ...(filters.search?.trim() ? { search: filters.search.trim() } : {}),
-      ...(filters.tags && filters.tags.length > 0 ? { tags: filters.tags } : {}),
-      status: filters.status ?? "all",
-      ...(filters.time && Object.keys(filters.time).length > 0 ? { time: normalizeTimeFilters(filters.time) } : {}),
-    },
-    view: filters.view ?? { type: "list" },
-    summary: filters.summary ?? [],
+    view: opts.view ?? { layout: { type: "list" } },
   });
 }
 
@@ -1135,22 +823,18 @@ export function updateQueryPresetById(presets: readonly QueryPreset[], preset: Q
   return presets.map((p) => (p.id === normalized.id ? normalized : p));
 }
 
-/** Extract flat filter state from a QueryPreset for the view state. */
+// US-109z2: presets have no tab-level filter, so the global filter state is
+// always empty. This returns just the preset identity + view; the global filter
+// fields stay empty (filtering is per-area `when`).
 export function applyQueryPresetFilters(preset: QueryPreset): AppliedSavedViewFilters {
   const normalized = normalizeQueryPreset(preset);
-  const tags = Array.isArray(normalized.filters.tags)
-    ? normalized.filters.tags.join(",")
-    : typeof normalized.filters.tags === "string"
-      ? normalized.filters.tags
-      : "";
   return {
     savedViewId: normalized.id,
-    search: normalized.filters.search ?? "",
-    tag: tags,
-    time: normalized.filters.time ?? {},
-    status: normalized.filters.status ?? "all",
+    search: "",
+    tag: "",
+    time: {},
+    status: "all",
     view: normalized.view,
-    summary: normalized.summary,
   };
 }
 
@@ -1161,24 +845,17 @@ export function clearQueryPresetFilters(): AppliedSavedViewFilters {
     tag: "",
     time: {},
     status: "all",
-    view: { type: "list" },
-    summary: [],
+    view: { layout: { type: "list" } },
   };
 }
 
-export function hasQueryPresetFilters(preset: QueryPreset): boolean {
-  const normalized = normalizeQueryPreset(preset);
-  return !!(
-    (normalized.filters.search?.trim())
-    || (Array.isArray(normalized.filters.tags) && normalized.filters.tags.length > 0)
-    || (typeof normalized.filters.tags === "string" && normalized.filters.tags.trim())
-    || Object.values(normalized.filters.time ?? {}).some(Boolean)
-    || normalizeSavedViewStatus(normalized.filters.status) !== "all"
-  );
+// US-109z2: presets never carry a tab-level filter anymore.
+export function hasQueryPresetFilters(_preset: QueryPreset): boolean {
+  return false;
 }
 
 export function suggestQueryPresetName(
-  filters: { tags?: string[] | string; status?: SavedViewStatus },
+  filters: { tags?: string[] | string; status?: QueryStatus },
   fallback: string,
 ): string {
   if (Array.isArray(filters.tags) && filters.tags.length > 0) {
@@ -1187,7 +864,7 @@ export function suggestQueryPresetName(
   if (typeof filters.tags === "string" && filters.tags.trim()) {
     return filters.tags.trim().replace(/^#/, "");
   }
-  const status = normalizeSavedViewStatus(filters.status);
+  const status = normalizeQueryStatus(filters.status);
   if (status !== "all") return status.join(",");
   return fallback;
 }
@@ -1278,35 +955,22 @@ export function sameQueryPresetContent(a: QueryPreset, b: QueryPreset): boolean 
   return JSON.stringify({
     builtin: left.builtin,
     hidden: left.hidden,
-    filters: left.filters,
     view: left.view,
-    summary: left.summary,
   }) === JSON.stringify({
     builtin: right.builtin,
     hidden: right.hidden,
-    filters: right.filters,
     view: right.view,
-    summary: right.summary,
   });
 }
 
-/**
- * Helper: get comma-separated tag string from QueryPreset filters.
- */
-export function queryPresetTagString(preset: QueryPreset): string {
-  const tags = normalizeQueryPreset(preset).filters.tags;
-  if (Array.isArray(tags)) return tags.join(",");
-  if (typeof tags === "string") return tags;
+// US-109z2: presets carry no tab-level tags anymore (filtering is per-area
+// `when`). Kept as no-op stubs so call sites that seeded tag suggestions from
+// the tab don't break; per-area tag candidates come from the visible tasks.
+export function queryPresetTagString(_preset: QueryPreset): string {
   return "";
 }
 
-/**
- * Helper: get normalized tags array from QueryPreset filters.
- */
-export function queryPresetTagsArray(preset: QueryPreset): string[] {
-  const tags = normalizeQueryPreset(preset).filters.tags;
-  if (Array.isArray(tags)) return tags;
-  if (typeof tags === "string") return parseSavedViewTags(tags);
+export function queryPresetTagsArray(_preset: QueryPreset): string[] {
   return [];
 }
 
@@ -1569,41 +1233,28 @@ export interface ComputeQueryPresetSnapshotParams {
   /** Current tag filter string (comma-separated). */
   filterTags: string;
   /** Current time filters. */
-  filterTime: SavedViewTimeFilters;
+  filterTime: QueryTimeFilters;
   /** Current status filter. */
-  filterStatus: SavedViewStatus;
+  filterStatus: QueryStatus;
   /** Fallback view config when neither draft nor saved provides one. */
   fallbackView: () => QueryPresetViewConfig;
-  /** Fallback summary when neither draft nor saved provides one. */
-  fallbackSummary: () => QueryPresetSummaryMetric[];
   /** Optional override for the snapshot name. */
   name?: string;
 }
 
 /**
  * Pure computation of a QueryPreset snapshot that merges tabDrafts
- * view/summary into the saved preset identity.  This is the testable
+ * view into the saved preset identity.  This is the testable
  * counterpart of `TaskCenterView.currentQuerySnapshot`.
  *
- * Draft view/summary win over saved view/summary.  Explicit empty draft
- * arrays ([]) win over saved arrays — they are not falsy.  All other
- * fields come from the explicit state parameters plus the saved preset
- * identity (id, name, builtin, hidden).
+ * Draft view wins over saved view.  All other fields come from the
+ * explicit state parameters plus the saved preset identity
+ * (id, name, builtin, hidden).
  */
 export function computeQueryPresetSnapshot(params: ComputeQueryPresetSnapshotParams): QueryPreset {
-  const {
-    existing,
-    tabDrafts,
-    filterSearch,
-    filterTags,
-    filterTime,
-    filterStatus,
-    fallbackView,
-    fallbackSummary,
-    name,
-  } = params;
-
-  const tagArray = filterTags ? filterTags.split(",").filter(Boolean) : undefined;
+  const { existing, tabDrafts, fallbackView, name } = params;
+  // US-109z2: a preset is identity + view only; the filter* params are accepted
+  // for back-compat but no longer contribute (filtering is per-area `when`).
   const tabDraft = existing ? tabDrafts.get(existing.id) : undefined;
 
   return normalizeQueryPreset({
@@ -1611,126 +1262,8 @@ export function computeQueryPresetSnapshot(params: ComputeQueryPresetSnapshotPar
     name: (name ?? existing?.name ?? "").trim(),
     builtin: existing?.builtin ?? false,
     hidden: existing?.hidden ?? false,
-    filters: {
-      ...(filterSearch ? { search: filterSearch } : {}),
-      ...(tagArray && tagArray.length > 0 ? { tags: tagArray } : {}),
-      time: filterTime,
-      status: filterStatus,
-    },
     view: tabDraft?.view ?? existing?.view ?? fallbackView(),
-    summary: tabDraft?.summary ?? existing?.summary ?? fallbackSummary(),
   });
-}
-
-/**
- * Applies a partial edit to the summary metric at index `i`, returning a
- * new summary array.  Used by the Query Editor visual controls "edit"
- * path (changing field/by/limit etc. on an existing metric).
- */
-export function applySummaryMetricEdit(
-  summary: readonly QueryPresetSummaryMetric[],
-  i: number,
-  patch: Partial<QueryPresetSummaryMetric>,
-): QueryPresetSummaryMetric[] {
-  const next = [...summary];
-  if (i >= 0 && i < next.length) {
-    next[i] = { ...next[i], ...patch };
-  }
-  return next;
-}
-
-/**
- * Removes the summary metric at index `i`, returning a new summary array.
- * Used by the Query Editor "remove" button path.
- */
-export function applySummaryMetricRemove(
-  summary: readonly QueryPresetSummaryMetric[],
-  i: number,
-): QueryPresetSummaryMetric[] {
-  return summary.filter((_, idx) => idx !== i);
-}
-
-/**
- * Appends a new summary metric to the end of the array, returning a new
- * summary array.  Used by the Query Editor "add" button path.
- */
-export function applySummaryMetricAdd(
-  summary: readonly QueryPresetSummaryMetric[],
-  metric: QueryPresetSummaryMetric,
-): QueryPresetSummaryMetric[] {
-  return [...summary, metric];
-}
-
-// ── Query Editor Summary production-path helpers ──
-// These functions encapsulate the handler pattern used by TaskCenterView's
-// Query Editor summary visual controls.  They make the production handlers
-// testable without requiring a full Obsidian DOM environment.
-
-/**
- * Parameters shared by all Query Editor summary draft handlers.
- * Mirrors the closure environment of the rendering code in view.ts.
- */
-export interface QueryEditorSummaryDraftParams {
-  /** The tabDrafts Map — shared mutable draft store. */
-  tabDrafts: Map<string, QueryPreset>;
-  /** The active QueryPreset id (what tab is currently selected). */
-  activePresetId: string;
-  /** The saved (non-draft) preset for the active tab. */
-  savedPreset: QueryPreset | null;
-  /** Returns a snapshot merging saved preset identity with draft content + view state. */
-  getSnapshot: (existing: QueryPreset | null) => QueryPreset;
-}
-
-/**
- * Production-path handler for editing a summary metric in a draft.
- * This is the testable counterpart of the `updateMetricInDraft` closure
- * inside TaskCenterView's Query Editor rendering code.
- *
- * Reads the draft from tabDrafts (via getSnapshot), applies the edit,
- * writes back into tabDrafts, and returns the updated draft.
- */
-export function handleQueryEditorSummaryEdit(
-  params: QueryEditorSummaryDraftParams,
-  metricIndex: number,
-  patch: Partial<QueryPresetSummaryMetric>,
-): QueryPreset {
-  const { tabDrafts, activePresetId, getSnapshot, savedPreset } = params;
-  const draft = getSnapshot(savedPreset);
-  draft.summary = applySummaryMetricEdit(draft.summary ?? [], metricIndex, patch);
-  tabDrafts.set(activePresetId, draft);
-  return draft;
-}
-
-/**
- * Production-path handler for adding a new summary metric to a draft.
- * This is the testable counterpart of the "add" button click handler
- * inside TaskCenterView's Query Editor rendering code.
- */
-export function handleQueryEditorSummaryAdd(
-  params: QueryEditorSummaryDraftParams,
-  newMetric: QueryPresetSummaryMetric,
-): QueryPreset {
-  const { tabDrafts, activePresetId, getSnapshot, savedPreset } = params;
-  const draft = getSnapshot(savedPreset);
-  draft.summary = applySummaryMetricAdd(draft.summary ?? [], newMetric);
-  tabDrafts.set(activePresetId, draft);
-  return draft;
-}
-
-/**
- * Production-path handler for removing a summary metric from a draft.
- * This is the testable counterpart of the "remove" button click handler
- * inside TaskCenterView's Query Editor rendering code.
- */
-export function handleQueryEditorSummaryRemove(
-  params: QueryEditorSummaryDraftParams,
-  metricIndex: number,
-): QueryPreset {
-  const { tabDrafts, activePresetId, getSnapshot, savedPreset } = params;
-  const draft = getSnapshot(savedPreset);
-  draft.summary = applySummaryMetricRemove(draft.summary ?? [], metricIndex);
-  tabDrafts.set(activePresetId, draft);
-  return draft;
 }
 
 /**
@@ -1764,22 +1297,19 @@ export function computeSaveAsFromSnapshot(params: {
  * draft state.  This is the testable counterpart of TaskCenterView's
  * `updateCurrentSavedView` method.
  *
- * Reads view/summary from the draft (via currentQueryPresetViewConfig /
- * currentSavedViewSummary equivalents) and returns the normalized preset
- * that would be saved via updateQueryPresetById.
+ * Reads view from the draft (via currentQueryPresetViewConfig equivalent)
+ * and returns the normalized preset that would be saved via
+ * updateQueryPresetById.
  */
 export function computeUpdateFromDraftComponents(params: {
   /** The saved preset being updated in-place. */
   existing: QueryPreset;
   /** Draft view config (from currentQueryPresetViewConfig). */
   draftView: QueryPresetViewConfig;
-  /** Draft summary (from currentSavedViewSummary). */
-  draftSummary: QueryPresetSummaryMetric[];
 }): QueryPreset {
-  const { existing, draftView, draftSummary } = params;
+  const { existing, draftView } = params;
   return normalizeQueryPreset({
     ...existing,
     view: draftView,
-    summary: draftSummary,
   });
 }

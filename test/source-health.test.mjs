@@ -20,9 +20,24 @@ test("US-602 quality gate rejects deprecated source dependencies", async () => {
   );
 });
 
+// pnpm 10 no longer reads `pnpm.overrides` from package.json; overrides live in
+// pnpm-workspace.yaml. Parse that flat block instead of adding a YAML dep.
+function parseWorkspaceOverrides(text) {
+  const overrides = {};
+  let inOverrides = false;
+  for (const line of text.split(/\r?\n/)) {
+    if (/^overrides:\s*$/.test(line)) { inOverrides = true; continue; }
+    if (!inOverrides) continue;
+    if (/^\S/.test(line)) break; // dedent → left the overrides block
+    const m = line.match(/^\s+(.+?):\s*(.+?)\s*$/);
+    if (m) overrides[m[1].trim()] = m[2].replace(/^['"]|['"]$/g, "");
+  }
+  return overrides;
+}
+
 test("US-602 quality gate pins reviewed dev-tool dependency advisories to patched ranges", async () => {
   const pkg = JSON.parse(await read("package.json"));
-  const overrides = pkg.pnpm?.overrides ?? {};
+  const overrides = parseWorkspaceOverrides(await read("pnpm-workspace.yaml"));
 
   assert.equal(overrides.diff, "^8.0.4");
   assert.equal(overrides["serialize-javascript"], "^7.0.5");
@@ -48,11 +63,15 @@ test("US-602 quality gate rejects duplicate unscheduled CSS selectors", async ()
   const withoutComments = css.replace(/\/\*[\s\S]*?\*\//g, "");
   const count = [...withoutComments.matchAll(/\.task-center-view\s+\.bt-unscheduled-col-head\s*\{/g)].length;
 
-  assert.equal(count, 1, "bt-unscheduled-col-head rules should be merged instead of duplicated");
+  // Selector may be absent (feature removed in the 1.0 area-layout refactor);
+  // the guard is "never duplicated", so 0 or 1 is acceptable.
+  assert.ok(count <= 1, "bt-unscheduled-col-head rules should be merged instead of duplicated");
 });
 
 test("US-102/US-305: month mini cards expose distinct todo/done/dropped states", async () => {
-  const source = await read("src/view.ts");
+  // Month rendering lives in the extracted calendar render module
+  // (ARCHITECTURE §7.14 step9); the mini-card status contract is asserted there.
+  const source = await read("src/view/render/calendar.ts");
   const css = await read("styles.css");
 
   assert.match(

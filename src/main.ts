@@ -28,7 +28,8 @@ import {
   createSavedViewId,
   deleteQueryPresetById,
   duplicateQueryPreset,
-  isLegacySavedTaskView,
+  isLegacyQueryPresetShape,
+  migrateLegacyQueryPreset,
   normalizeQueryPreset,
   parseQueryDsl,
   renameQueryPresetById,
@@ -63,6 +64,17 @@ export default class TaskCenterPlugin extends Plugin {
   cache!: TaskCache;
   private statusBar: StatusBar | null = null;
   private depHealth: DepHealthBanner | null = null;
+  // US-414 / US-415: number of legacy SavedTaskView entries detected and
+  // migrated in-memory during the last `loadSettings`. While > 0 the migration
+  // has NOT been persisted yet — the board must not render; TaskCenterView
+  // shows the full-view upgrade gate instead, and only `completeMigration`
+  // (the gate's confirm action) writes the migrated data back to disk.
+  migratedLegacyCount = 0;
+  // US-415: the resolved name + kind (builtin vs custom) of each legacy view
+  // detected in the last `loadSettings`, so the upgrade gate can LIST exactly
+  // which views are about to migrate instead of only showing a count. Kept in
+  // lockstep with `migratedLegacyCount`; cleared together on confirm.
+  migratedLegacyViews: { name: string; builtin: boolean }[] = [];
 
   async onload() {
     await this.loadSettings();
@@ -234,20 +246,26 @@ export default class TaskCenterPlugin extends Plugin {
     const loaded = (await this.loadData()) as Partial<typeof DEFAULT_SETTINGS> | undefined;
     const merged = { ...DEFAULT_SETTINGS, ...loaded };
 
-    // VAL-CORE-005 / VAL-CROSS-002: detect and reject legacy SavedTaskView
-    // shapes (flat `search`/`tag`/`time`/`status` top-level fields) by
-    // filtering them out before builtin seeding. No migration — old data is
-    // silently replaced with defaults.
+    // US-414: detect any legacy stored view that needs migrating —
+    // (a) flat SavedTaskView (top-level search/tag/time/status), or
+    // (b) an old-DSL QueryPreset whose `view` still uses {type/preset/sections/
+    // tray/matrix} instead of {layout}. Both are migrated into normalized
+    // QueryPresets instead of being discarded. Flat shapes need their flat
+    // fields collapsed into `filters` first; old-DSL views are migrated by
+    // `ensureBuiltinQueryPresets` → `normalizeQueryPreset` downstream. Builtin
+    // entries keep their user edits (name/hidden/order/filters) while
+    // their layout is refreshed to the latest factory JSON.
     const rawViews: unknown[] = merged.queryPresets ?? [];
-    const rejectedCount = rawViews.filter((v) => isLegacySavedTaskView(v)).length;
-    if (rejectedCount > 0) {
-      console.warn(
-        `[task-center] 检测到 ${rejectedCount} 个旧版 SavedTaskView，已替换为默认 QueryPreset。旧 saved-view 配置不会迁移。`,
-      );
-    }
-    const cleanViews = rawViews.filter((v) => !isLegacySavedTaskView(v));
+    const legacyRaw = rawViews.filter((v) => isLegacyQueryPresetShape(v));
+    this.migratedLegacyCount = legacyRaw.length;
+    const migratedViews = rawViews.map((v) =>
+      isLegacyQueryPresetShape(v) ? migrateLegacyQueryPreset(v) : v,
+    );
 
-    const queryPresets = ensureBuiltinQueryPresets(cleanViews as Parameters<typeof ensureBuiltinQueryPresets>[0], {
+    // US-109l: permanently-deleted preset ids are skipped when re-seeding
+    // builtins, so a deleted preset stays gone across restarts.
+    const deletedBuiltinIds = Array.isArray(merged.deletedBuiltinIds) ? merged.deletedBuiltinIds : [];
+    const queryPresets = ensureBuiltinQueryPresets(migratedViews as Parameters<typeof ensureBuiltinQueryPresets>[0], {
       today: tr("tab.today"),
       week: tr("tab.week"),
       month: tr("tab.month"),
@@ -255,6 +273,20 @@ export default class TaskCenterPlugin extends Plugin {
       unscheduled: tr("tab.unscheduled"),
       completed: tr("tab.completed"),
       dropped: tr("tab.dropped"),
+    }, deletedBuiltinIds);
+    // Resolve a friendly name + kind for every legacy view so the gate can list
+    // them. Prefer the post-migration preset (matched by id) so a renamed
+    // builtin shows its current label; fall back to the raw name, then a
+    // placeholder for flat legacy views that carried none.
+    this.migratedLegacyViews = legacyRaw.map((raw) => {
+      const rec = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+      const id = typeof rec.id === "string" ? rec.id : null;
+      const matched = id ? queryPresets.find((p) => p.id === id) : undefined;
+      const rawName = typeof rec.name === "string" ? rec.name.trim() : "";
+      return {
+        name: matched?.name || rawName || tr("migration.untitledView"),
+        builtin: matched ? matched.builtin : !!rec.builtin,
+      };
     });
     const defaultSavedViewId =
       merged.defaultSavedViewId
@@ -283,6 +315,20 @@ export default class TaskCenterPlugin extends Plugin {
 
   async saveSettings() {
     await this.saveData(this.settings);
+  }
+
+  // US-415: confirm action of the full-view upgrade gate. Persists the
+  // already-in-memory-migrated settings, clears the gate flag, and re-renders
+  // every open board so it leaves the gate and shows the new-structure UI.
+  // One-shot: once written back, the next load detects no legacy data, so the
+  // gate never reappears. If the user never confirms, nothing is persisted and
+  // the gate shows again on the next launch.
+  async completeMigration() {
+    if (this.migratedLegacyCount === 0) return;
+    await this.saveSettings();
+    this.migratedLegacyCount = 0;
+    this.migratedLegacyViews = [];
+    await this.refreshOpenViews();
   }
 
   async activateView() {
@@ -1073,13 +1119,12 @@ export default class TaskCenterPlugin extends Plugin {
 
   private async cliQueryDelete(args: CliArgs): Promise<string> {
     const view = this.requireQueryPreset(requireArg(args.id, "id"));
-    // VAL-CLI-006: builtins cannot be permanently deleted via CLI.
-    // GUI already hides the Delete action for builtin tabs; CLI mirrors
-    // that guard.
-    if (view.builtin) {
-      throw new TaskWriterError("invalid_query", `无法删除内置 Query Tab：${view.id}`);
-    }
     this.settings.queryPresets = deleteQueryPresetById(this.settings.queryPresets, view.id);
+    // US-109l: deleting a builtin preset tombstones its id so it is not
+    // re-seeded on the next load. "恢复预设 Tabs" / 行内「恢复预设」 clears it.
+    if (view.builtin && !this.settings.deletedBuiltinIds.includes(view.id)) {
+      this.settings.deletedBuiltinIds = [...this.settings.deletedBuiltinIds, view.id];
+    }
     if (this.settings.defaultSavedViewId === view.id) this.settings.defaultSavedViewId = null;
     if (this.settings.lastSavedViewId === view.id) this.settings.lastSavedViewId = null;
     await this.saveSettings();
@@ -1121,6 +1166,7 @@ function parseQueryViewType(raw: string): "list" | "week" | "month" | "matrix" |
   if (raw === "list" || raw === "week" || raw === "month" || raw === "matrix" || raw === "horizon") return raw;
   throw new TaskWriterError("invalid_query", `view must be list|week|month|matrix|horizon: ${raw}`);
 }
+}
 
 function toQueryRunJson(result: QueryRunResult): unknown {
   return {
@@ -1133,7 +1179,6 @@ function toQueryRunJson(result: QueryRunResult): unknown {
     view: result.view,
     anchor: result.anchorISO,
     total: result.filteredTasks.length,
-    summary: result.summary,
     model: mapViewModel(result.viewModel),
   };
 }
@@ -1142,10 +1187,7 @@ function mapViewModel(model: QueryRunResult["viewModel"]): unknown {
   if (model.type === "list") {
     return {
       type: "list",
-      sections: model.sections.map((section) => ({
-        title: section.title,
-        tasks: section.tasks.map(queryRunTaskJson),
-      })),
+      tasks: model.tasks.map(queryRunTaskJson),
     };
   }
   if (model.type === "week") {
@@ -1155,35 +1197,14 @@ function mapViewModel(model: QueryRunResult["viewModel"]): unknown {
         date: day.date,
         tasks: day.tasks.map(queryRunTaskJson),
       })),
-      tray: model.tray ? {
-        title: model.tray.title,
-        tasks: model.tray.tasks.map(queryRunTaskJson),
-      } : null,
-    };
-  }
-  if (model.type === "month") {
-    return {
-      type: "month",
-      cells: model.cells.map((cell) => ({
-        date: cell.date,
-        tasks: cell.tasks.map(queryRunTaskJson),
-      })),
-      tray: model.tray ? {
-        title: model.tray.title,
-        tasks: model.tray.tasks.map(queryRunTaskJson),
-      } : null,
     };
   }
   return {
-    type: "matrix",
+    type: "month",
     cells: model.cells.map((cell) => ({
-      rowId: cell.rowId,
-      rowTitle: cell.rowTitle,
-      colId: cell.colId,
-      colTitle: cell.colTitle,
+      date: cell.date,
       tasks: cell.tasks.map(queryRunTaskJson),
     })),
-    unmatched: model.unmatched.map(queryRunTaskJson),
   };
 }
 

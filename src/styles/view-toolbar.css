@@ -1,0 +1,113 @@
+/* Filter summary line (VAL-GUI-010) */
+.task-center-view .bt-filter-summary {
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 4px 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.task-center-view .bt-filter-summary-text {
+  line-height: 1.4;
+}
+.task-center-view .bt-filter-summary-empty {
+  font-style: italic;
+  color: var(--text-faint);
+}
+
+/* Delete confirmation dialog (VAL-GUI-004) */
+.bt-delete-confirm-body {
+  color: var(--text-normal);
+  font-size: 14px;
+  margin-bottom: 6px;
+}
+.bt-delete-confirm-detail {
+  color: var(--text-accent);
+  font-weight: 600;
+  font-size: 15px;
+  margin-bottom: 16px;
+}
+.bt-delete-confirm-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+/* Clickable undo action inside delete notice */
+.bt-notice-undo {
+  cursor: pointer;
+  font-weight: 600;
+  text-decoration: underline;
+  margin-left: 4px;
+}
+
+/* Enhanced query editor: View type selector */
+.bt-query-editor-view-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.bt-query-editor-view-label {
+  font-size: 13px;
+  color: var(--text-muted);
+  min-width: 0;
+}
+.bt-query-editor-view-btn {
+  padding: 4px 10px;
+  font-size: 12px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  background: var(--background-secondary);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.bt-query-editor-view-btn.active {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-color: var(--interactive-accent);
+}
+
+/* Enhanced query editor: DSL section */
+.bt-query-editor-dsl-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.bt-query-editor-dsl-docs {
+  flex: 0 0 auto;
+  font-size: 12px;
+  color: var(--text-accent);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.bt-query-editor-dsl-docs:hover {
+  color: var(--text-accent-hover);
+  text-decoration: underline;
+}
+.task-center-bottom-sheet .bt-query-editor-section > textarea[data-query-dsl-input] {
+  width: 100%;
+  min-height: 200px;
+  resize: vertical;
+  font-family: var(--font-monospace);
+  font-size: 12px;
+  line-height: 1.5;
+  border-radius: var(--radius-s);
+}
+.bt-query-editor-dsl-error {
+  color: var(--text-error);
+  font-size: 12px;
+  margin-top: 4px;
+  padding: 6px 8px;
+  background: var(--background-modifier-error);
+  border-radius: 4px;
+}
+.bt-query-editor-dsl-apply {
+  margin-top: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  font-size: 13px;
+}
+

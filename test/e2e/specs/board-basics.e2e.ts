@@ -211,15 +211,100 @@ describe("Task Center — 看板基础 (US-101/107/115)", function () {
 
     const todayCard = await browser.execute(() => {
       const card = document.querySelector('[data-view="today"] [data-task-id="Tasks/Inbox.md:L1"]')!;
-      const title = card.querySelector(".bt-today-card-title")!.getBoundingClientRect();
-      const tags = card.querySelector(".bt-today-card-tags")!.getBoundingClientRect();
+      const title = card.querySelector(".bt-card-title")!.getBoundingClientRect();
+      const tags = card.querySelector(".bt-card-tags")!.getBoundingClientRect();
       return {
-        tags: Array.from(card.querySelectorAll(".bt-today-card-tags .bt-task-tag")).map((e) => e.textContent),
+        tags: Array.from(card.querySelectorAll(".bt-card-tags .bt-task-tag")).map((e) => e.textContent),
         tagsAreBelowTitle: tags.top >= title.bottom,
       };
     });
     expect(todayCard.tags).toEqual(["#alpha", "#1象限"]);
     expect(todayCard.tagsAreBelowTitle).toBe(true);
+  });
+
+  // US-152 / US-153: completing a card in a todo-only view does NOT remove it
+  // immediately — it lingers in its done state (muted, ✔, no line-through,
+  // data-just-completed) until the view is re-entered, then disappears.
+  it("US-153: a just-completed card lingers in place, then disappears on re-enter", async function () {
+    const today = todayISO();
+    // A dedicated file: earlier tests rewrite Tasks/Inbox.md many times, which
+    // accumulates stale path:L1 → hash entries in the cache; resolving this
+    // task's ref for the ✔ write must not collide with a prior occupant's hash.
+    await writeAndWait("Tasks/US153.md", `- [ ] Linger task ⏳ ${today}\n`);
+
+    await browser.executeObsidianCommand("task-center:open");
+    await forFlush();
+
+    // Land on the Today tab (todo-only, filters out done).
+    const todayTab = $('[data-tab="today"]');
+    await todayTab.waitForExist({ timeout: 5000 });
+    await todayTab.click();
+    await $('[data-view="today"]').waitForExist({ timeout: 3000 });
+
+    const cardSel = `[data-view="today"] [data-task-id="Tasks/US153.md:L1"]`;
+    await $(cardSel).waitForExist({ timeout: 5000 });
+
+    // Click the ✔ to complete it.
+    await $(`${cardSel} .bt-check`).click();
+    // US-153: the card is STILL in the list, now in its done state. The click
+    // handler writes the file and waits for TaskCache to reparse before the
+    // re-render, so wait for the DOM contract itself instead of racing the
+    // async handler with a generic plugin flush.
+    await browser.waitUntil(async () => {
+      const state = await browser.execute((sel: string) => {
+        const card = document.querySelector<HTMLElement>(sel);
+        if (!card) return null;
+        const check = card.querySelector<HTMLElement>(".bt-check");
+        return {
+          hasDoneClass: card.classList.contains("done"),
+          justCompleted: card.dataset.justCompleted === "true",
+          checkIcon: check?.textContent ?? "",
+          checkIsDone: check?.classList.contains("bt-check-done") ?? false,
+        };
+      }, cardSel);
+      return !!state?.hasDoneClass
+        && state.justCompleted
+        && state.checkIcon === "✔"
+        && state.checkIsDone;
+    }, {
+      timeout: 5000,
+      timeoutMsg: "US-153 card did not settle into just-completed linger state",
+    });
+
+    const lingering = await browser.execute((sel: string) => {
+      const card = document.querySelector<HTMLElement>(sel);
+      if (!card) return null;
+      const check = card.querySelector<HTMLElement>(".bt-check");
+      const title = card.querySelector<HTMLElement>(".bt-card-title");
+      const titleDecoration = title
+        ? getComputedStyle(title).textDecorationLine
+        : "";
+      return {
+        present: true,
+        hasDoneClass: card.classList.contains("done"),
+        justCompleted: card.dataset.justCompleted === "true",
+        checkIcon: check?.textContent ?? "",
+        checkIsDone: check?.classList.contains("bt-check-done") ?? false,
+        // US-152: no strike-through on the title.
+        titleStruck: titleDecoration.includes("line-through"),
+      };
+    }, cardSel);
+
+    expect(lingering).not.toBeNull();
+    expect(lingering!.hasDoneClass).toBe(true);
+    expect(lingering!.justCompleted).toBe(true);
+    expect(lingering!.checkIcon).toBe("✔");
+    expect(lingering!.checkIsDone).toBe(true);
+    expect(lingering!.titleStruck).toBe(false);
+
+    // Re-enter the view: switch away to Week, then back to Today.
+    await $('[data-tab="week"]').click();
+    await $(".task-center-view .bt-week").waitForExist({ timeout: 5000 });
+    await $('[data-tab="today"]').click();
+    await $('[data-view="today"]').waitForExist({ timeout: 3000 });
+
+    // Now the completed card is gone (normal status filter applies).
+    await $(cardSel).waitForExist({ reverse: true, timeout: 5000 });
   });
 
   // quick-add modal

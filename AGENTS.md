@@ -16,12 +16,65 @@
 4. 所有实现都要能回溯到用户故事，不做“感觉有用”的游离开发。
 5. commit message 使用中文 conventional：`<type>(<scope>): <description>`，其中 `type ∈ feat/fix/chore/upgrade/docs`。
 
+## 多 Agent 并行（重要）
+
+这个仓库经常有多个 agent **同时**在 `main` 上工作。分支历史会在你工作期间被别的 agent 推进（新提交、甚至 rebase/amend），你看到的 HEAD 随时可能已经不是你上次看到的那个。据此：
+
+1. **只在 `main` 上并行**：不开分支、不切分支。每个 agent 直接在 `main` 上提交自己的小步改动；并行靠"各自频繁提交"，不靠分支隔离。
+2. **禁用命令清单（最重要）**：下面这些命令在本仓库**一律禁止**，因为它们会动到共享历史、或一次性冲掉整个工作树里别的 agent **未提交**的在途改动（未提交改动不进 reflog，冲掉就**永久丢失、无法找回**）。即使你只想撤销自己那一处改动，也不准用它们——它们的作用域往往是整棵树或整个文件，会顺手抹掉别人的活：
+   - **改写历史类**：`git reset`（尤其 `--hard`、`git reset HEAD~`）、`git rebase`、`git commit --amend`、`git push --force` / `--force-with-lease`。
+   - **还原 / 清理工作树类**：`git checkout -- <任何路径>`（含 `git checkout .`）、`git restore`（含 `--worktree` / `--staged` / `git restore .`）、`git stash`（`push` 会把工作树改动抽走）、`git clean`（`-f` / `-fd`）、`git switch` / `git checkout <branch>`（切分支）。
+3. **撤销自己的改动只能手动改文件**：要回退你自己写的东西，用编辑器把那几处改回去，再正常提交一个新 commit。**永远不要**用上面任何 git 命令去"还原 / 抹掉"——哪怕你确信只动了自己的文件。
+4. **不碰不是你写的东西**：工作树里出现你没动过的未提交改动（`git status` 里的 `M`/`??`），那是别的 agent 的在途工作——不要 `git add -A` 一把全提交、不要用第 2 条里的命令覆盖。提交时只 `git add` 你自己明确改过的文件。别人改坏了 build 也别替它"还原"，那是它自己会提交修复的在途状态。
+5. **提交前先看清范围**：用 `git status` + `git diff` 确认你只提交了自己的改动；`git add -A` 在多 agent 环境里很危险，会卷入别人的在途文件。
+6. 如果确实需要动历史或清理工作树，先停下来问人，不要自行决定。
+
+> 教训 1：曾经为了撤销自己的一个提交用了 `git reset --hard`，连带把另一个 agent 刚加在其上的提交一起摘掉。正确做法是手动改回自己的文件 + 新提交，永远不动 `main` 历史。
+>
+> 教训 2：曾经为了清掉另一个 agent 越界的烂改动，跑了 `git checkout -- .` / `git restore .`，把同在 `main` 工作树上另一个 agent **还没提交**的 `view.ts` 改动整片冲掉——未提交改动不进 reflog，无法恢复，只能让对方重写。要丢弃某个文件的改动只能手动编辑那个文件，绝不用 checkout/restore/stash/clean 还原工作树。
+
 ## 项目命令
+
+这些命令描述项目本身的检查入口。完成开发后的默认验证不要直接在本地开发机跑，而是通过 Crabbox/provider 在远端测试环境执行。
 
 - 开发：`pnpm dev`
 - 构建：`pnpm build`
 - 单测：`pnpm test`
 - e2e：`pnpm e2e`
+
+## 远端测试
+
+完成开发后，只用 Crabbox/provider 在远端测试环境跑正式 gate；本地开发机只负责编辑代码和发起远端命令。
+
+本仓库的正式远端 gate 是 Bring Your Own Infrastructure 形态：内网 k3s/containerd 宿主作为 devbox 宿主，通过 Crabbox `external` lifecycle 创建/释放独立 Pod lease。每个 gate 拿到唯一 lease id → 新建一个带 SSH 的唯一 Pod，Crabbox 通过 SSH ProxyCommand 同步 checkout、执行命令、回传日志和结果，结束后释放对应 Pod；多个 agent 并行时各自一个 Pod，互不踩踏。不要把它当成 Blacksmith Testbox，也不要退回到单工作目录 Static SSH gate。
+
+box 生命周期（`external.command` 指向本机 adapter、`idempotentLeaseId`、`workRoot`）声明在 committed 的 `.crabbox.yaml` 里，所以 `crabbox run` 不再带任何 per-run lifecycle flag。真正内网的值——宿主主机名、k3s namespace、镜像——不写入 git：由 gitignored 的 `.crabbox/external-lease-provider.mjs` 从 `.crabbox/remote-test.env` 的环境变量读取。需要远端运行时，只从 gitignore 内的本地配置读取 gate 命令并执行。
+
+推荐把私有命令放在 `.crabbox/remote-test.env`，该文件只保存本机可用的最小环境变量：
+
+```bash
+CRABBOX_TEST_PREPARE='...' # 没有前置连接需求时可为空
+CRABBOX_TEST_GATE='crabbox run --shell '\''...gate 命令...'\'''  # provider/target/lifecycle 都来自 .crabbox.yaml
+```
+
+在远端跑正式 gate 只有一条路径：
+
+```bash
+pnpm run test:remote
+```
+
+`CRABBOX_TEST_GATE` 走 Crabbox `external` BYOI 路径，形态为 `crabbox run --shell '...'`——provider / target / external lifecycle 都来自 `.crabbox.yaml`，gate 里不重复这些 flag。`.crabbox.yaml` 声明公开的 provider / target 和指向本机 adapter 的 external lifecycle（中性路径、workRoot、idempotency），不保存内网地址（主机名 / namespace / 镜像留在 gitignored adapter + env）。
+
+正式 gate 至少包含：
+
+- `pnpm install --frozen-lockfile`
+- `pnpm run typecheck`
+- `pnpm run lint`
+- `pnpm run test:unit`
+- `pnpm run build`
+- `CI=true GITHUB_ACTIONS=true OBSIDIAN_VERSIONS=latest/latest WDIO_MAX_INSTANCES=1 pnpm run test:e2e:ci`
+
+`pnpm e2e` 是全量历史 e2e，不等同于正式 gate；其中包含不稳定或暂未纳入 CI 白名单的 specs。判断发布/PR 是否可过时，以 `docs/ci-test-matrix.md` 和上面的正式 gate 为准。
 
 ## 工作流
 

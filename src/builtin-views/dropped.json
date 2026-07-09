@@ -1,0 +1,16 @@
+{
+  "id": "preset-dropped",
+  "name": "Dropped",
+  "builtin": true,
+  "hidden": false,
+  "view": {
+    "layout": {
+      "type": "list",
+      "when": {
+        "status": [
+          "dropped"
+        ]
+      }
+    }
+  }
+}

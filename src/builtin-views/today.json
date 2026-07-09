@@ -1,0 +1,56 @@
+{
+  "id": "preset-today",
+  "name": "Today",
+  "builtin": true,
+  "hidden": false,
+  "view": {
+    "layout": {
+      "dir": "col",
+      "children": [
+        {
+          "type": "list",
+          "id": "overdue",
+          "title": "Overdue",
+          "when": {
+            "status": ["todo"],
+            "time": {
+              "deadline": "overdue"
+            }
+          },
+          "orderBy": [
+            "deadline_asc"
+          ],
+          "limit": 3
+        },
+        {
+          "type": "list",
+          "id": "today",
+          "title": "Today",
+          "when": {
+            "status": ["todo"],
+            "time": {
+              "scheduled": "today"
+            }
+          },
+          "limit": 3
+        },
+        {
+          "type": "list",
+          "id": "unscheduled-rec",
+          "title": "Unscheduled",
+          "when": {
+            "status": ["todo"],
+            "time": {
+              "scheduled": "unscheduled",
+              "deadline": "unscheduled"
+            }
+          },
+          "orderBy": [
+            "created_desc"
+          ],
+          "limit": 3
+        }
+      ]
+    }
+  }
+}

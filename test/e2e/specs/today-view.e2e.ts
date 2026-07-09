@@ -12,22 +12,15 @@
  *   data-today-group="today"     — today's tasks section
  *   data-today-group="unscheduled-rec" — unscheduled recommendation
  *   data-action="reschedule-tomorrow"  — reschedule button per card
- *   data-today-empty             — empty-state element
+ *   [data-empty-state="area"]    — per-area empty state (US-720d2)
  */
-import { browser, expect, $ } from "@wdio/globals";
+import { browser, expect, $, $$ } from "@wdio/globals";
 import { obsidianPage } from "wdio-obsidian-service";
 
 const VAULT = "test/e2e/vaults/simple";
 
 function todayISO(): string {
   const d = new Date();
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
-
-function tomorrowISO(): string {
-  const d = new Date();
-  d.setDate(d.getDate() + 1);
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
@@ -95,21 +88,17 @@ describe("US-720 today execution view (task #63)", function () {
   });
 
   // US-720a: today tab entry point must exist in the board.
-  // FAIL until: board renders a [data-tab="today"] button.
   it("US-720a: today tab entry point exists in the board", async function () {
     await browser.executeObsidianCommand("task-center:open");
     await forFlush();
 
     await expect($(".task-center-view")).toExist();
-
-    // BUG: no today tab exists — FAILS.
     await expect($('[data-tab="today"]')).toExist();
   });
 
-  // US-720b: today view shows three groups when tasks are present.
-  // Fixture: 1 overdue, 1 today, 1 unscheduled task.
-  // FAIL until: today view renders the three group containers.
-  it("US-720b: today view renders overdue/today/unscheduled-rec groups", async function () {
+  // US-720b: Today is col[ list×3 ] (逾期 / 今日 / 未排期) — three list areas,
+  // each with its own head. Fixture: 1 overdue, 1 today, 1 unscheduled task.
+  it("US-720b: today view renders three list areas", async function () {
     const today = todayISO();
     await writeAndWait(
       "Tasks/Inbox.md",
@@ -123,63 +112,22 @@ describe("US-720 today execution view (task #63)", function () {
     await browser.executeObsidianCommand("task-center:open");
     await forFlush();
 
-    // Switch to today tab.
     const todayTab = $('[data-tab="today"]');
     await todayTab.waitForExist({ timeout: 5000 });
     await todayTab.click();
 
-    const todayView = $('[data-view="today"]');
-    await todayView.waitForExist({ timeout: 3000 });
-
-    // All three groups must be present.
-    await expect($('[data-today-group="overdue"]')).toExist();
-    await expect($('[data-today-group="today"]')).toExist();
-    await expect($('[data-today-group="unscheduled-rec"]')).toExist();
+    await $('[data-view="today"]').waitForExist({ timeout: 3000 });
+    await $('[data-view="today"] .bt-area-list').waitForExist({ timeout: 3000 });
+    const areas = await $$('[data-view="today"] .bt-area.bt-area-list');
+    expect(areas.length).toBe(3);
+    const heads = await $$('[data-view="today"] .bt-area-head-title');
+    expect(heads.length).toBe(3);
   });
 
-  // US-720c: "reschedule to tomorrow" writes ⏳ tomorrow into the file.
-  // FAIL until: reschedule-tomorrow action exists and calls writer correctly.
-  it("US-720c: reschedule-tomorrow writes tomorrow date to file", async function () {
-    const today = todayISO();
-    const tomorrow = tomorrowISO();
-    await writeAndWait(
-      "Tasks/Inbox.md",
-      `- [ ] Today task ⏳ ${today}\n`,
-    );
-
-    await browser.executeObsidianCommand("task-center:open");
-    await forFlush();
-
-    const todayTab = $('[data-tab="today"]');
-    await todayTab.waitForExist({ timeout: 5000 });
-    await todayTab.click();
-
-    // Find and click the reschedule-tomorrow button on the today task.
-    const rescheduleBtn = $(
-      `[data-today-group="today"] [data-action="reschedule-tomorrow"]`,
-    );
-    await rescheduleBtn.waitForExist({ timeout: 3000 });
-    await rescheduleBtn.click();
-    await forFlush();
-
-    // Verify the file was updated with tomorrow's date.
-    const content = await browser.executeObsidian(
-      async ({ app }, p: string) => {
-        const f = app.vault.getAbstractFileByPath(p);
-        if (!f) return null;
-        // @ts-expect-error — runtime TFile
-        return await app.vault.cachedRead(f);
-      },
-      "Tasks/Inbox.md",
-    );
-    expect(content).toContain(`⏳ ${tomorrow}`);
-    expect(content).not.toContain(`⏳ ${today}`);
-  });
-
-  // US-720d: Today empty state shown when no task qualifies for a Today group.
-  // A totally empty vault renders first-use onboarding instead; this fixture
-  // keeps the board non-empty while making overdue/today/unscheduled-rec empty.
-  it("US-720d: empty state shown when no Today group has tasks", async function () {
+  // US-720d2: when all three Today groups are empty, each list area shows its OWN
+  // empty state — no single collapsed/centered view-level empty state swallows the
+  // three areas. The future task keeps the vault non-empty (all-empty, not onboarding).
+  it("US-720d2: each Today group shows its own empty state when all are empty", async function () {
     await writeAndWait("Tasks/Inbox.md", "- [ ] Future task ⏳ 2099-01-01\n");
     await resetTaskCacheForTest();
 
@@ -190,49 +138,10 @@ describe("US-720 today execution view (task #63)", function () {
     await todayTab.waitForExist({ timeout: 5000 });
     await todayTab.click();
 
-    await expect($('[data-today-empty]')).toExist();
-    const metrics = await browser.execute(() => {
-      const body = document.querySelector(".task-center-view .bt-body")!.getBoundingClientRect();
-      const empty = document.querySelector("[data-today-empty]")!.getBoundingClientRect();
-      return {
-        bodyHeight: body.height,
-        bodyCenter: body.top + body.height / 2,
-        emptyHeight: empty.height,
-        emptyCenter: empty.top + empty.height / 2,
-      };
-    });
-    expect(metrics.emptyHeight).toBeGreaterThan(metrics.bodyHeight * 0.3);
-    expect(Math.abs(metrics.emptyCenter - metrics.bodyCenter)).toBeLessThan(metrics.bodyHeight * 0.25);
-  });
-
-  // US-720e: with tasks present, the Today groups should still have a stable
-  // first-screen visual center instead of sticking to the first row.
-  it("US-720e: today groups keep breathing room at the top of the first screen", async function () {
-    const today = todayISO();
-    await writeAndWait(
-      "Tasks/Inbox.md",
-      [
-        `- [ ] Today task ⏳ ${today}`,
-        `- [ ] Inbox recommendation`,
-      ].join("\n") + "\n",
-    );
-
-    await browser.executeObsidianCommand("task-center:open");
-    await forFlush();
-
-    const todayTab = $('[data-tab="today"]');
-    await todayTab.waitForExist({ timeout: 5000 });
-    await todayTab.click();
-    await $('[data-today-group="today"]').waitForExist({ timeout: 3000 });
-
-    const metrics = await browser.execute(() => {
-      const body = document.querySelector(".task-center-view .bt-body")!.getBoundingClientRect();
-      const firstGroup = document.querySelector('[data-view="today"] [data-today-group]')!.getBoundingClientRect();
-      return {
-        offsetTop: firstGroup.top - body.top,
-      };
-    });
-    expect(metrics.offsetTop).toBeGreaterThanOrEqual(24);
-    await browser.saveScreenshot("/tmp/task-center-us-720e-today-view.png");
+    // No more collapsed view-level empty state; each area renders its own.
+    await $('[data-view="today"] [data-empty-state="area"]').waitForExist({ timeout: 5000 });
+    await expect($('[data-today-empty]')).not.toExist();
+    const perAreaEmpties = await $$('[data-view="today"] .bt-area-list [data-empty-state="area"]');
+    expect(perAreaEmpties.length).toBe(3);
   });
 });

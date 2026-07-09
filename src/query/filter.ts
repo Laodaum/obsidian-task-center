@@ -13,10 +13,11 @@
 import type { EffectiveTask } from "../task-tree";
 import type {
   QueryPresetFilters,
-  SavedViewTimeField,
-  SavedViewTimeFilters,
+  QueryTimeField,
+  QueryTimeFilters,
 } from "../types";
-import { normalizeSavedViewStatus } from "../saved-views";
+import { normalizeQueryStatus, resolveTagFilter } from "./schema";
+import { type TagExprNode, parseTagExpr, evalTagExpr } from "./tag-expr";
 import { taskMatchesTimeToken, timeTokenAppliesToField } from "../time-filter";
 import { todayISO } from "../dates";
 
@@ -28,7 +29,7 @@ import { todayISO } from "../dates";
  */
 function effectiveTimeValue(
   task: EffectiveTask,
-  field: SavedViewTimeField,
+  field: QueryTimeField,
 ): string | null {
   switch (field) {
     case "scheduled":
@@ -48,27 +49,20 @@ function effectiveTimeValue(
 
 // ── Normalization ──
 
-function normalizeTags(tags: QueryPresetFilters["tags"]): string[] {
-  if (!tags) return [];
-  if (Array.isArray(tags)) return tags;
-  // Comma-separated string
-  return tags
-    .split(",")
-    .map((t) => t.trim())
-    .filter(Boolean);
-}
-
 function normalizeStatusFilter(
   status: QueryPresetFilters["status"],
 ): "all" | string[] {
-  return normalizeSavedViewStatus(status);
+  return normalizeQueryStatus(status);
 }
 
 interface NormalizedQueryFilters {
   searchQ: string;
-  tagList: string[];
+  // US-109d4: tag filtering is unified on a boolean expression. Any legacy
+  // shape (array / three-state object) is converted to an expression and parsed
+  // once here; null = no tag filter (also the fail-open result of a syntax error).
+  tagExpr: TagExprNode | null;
   statusFilter: "all" | string[];
-  time: SavedViewTimeFilters;
+  time: QueryTimeFilters;
   hasTime: boolean;
 }
 
@@ -76,9 +70,15 @@ function normalizeQueryFilters(
   filters: QueryPresetFilters,
 ): NormalizedQueryFilters {
   const time = filters.time ?? {};
+  // US-109d4: tag filtering is unified on the `{ expr }` form. Legacy array /
+  // three-state shapes are migrated to `{ expr }` at normalize time, so the
+  // evaluator only reads `expr` here (no back-compat shape handling). A syntax
+  // error yields a null AST → no tag filtering (fail-open).
+  const exprStr = resolveTagFilter(filters.tags).expr ?? "";
+  const tagExpr = exprStr.trim() ? parseTagExpr(exprStr).ast : null;
   return {
     searchQ: (filters.search ?? "").trim().toLowerCase(),
-    tagList: normalizeTags(filters.tags),
+    tagExpr,
     statusFilter: normalizeStatusFilter(filters.status),
     time,
     hasTime: Object.values(time).some(
@@ -98,18 +98,6 @@ function matchesSearch(task: EffectiveTask, q: string): boolean {
   return false;
 }
 
-function matchesTags(task: EffectiveTask, wanted: string[]): boolean {
-  for (const wantedTag of wanted) {
-    const normalized = wantedTag.startsWith("#")
-      ? wantedTag.toLowerCase()
-      : `#${wantedTag.toLowerCase()}`;
-    const found = task.tags.some(
-      (t) => t.toLowerCase() === normalized,
-    );
-    if (!found) return false;
-  }
-  return true;
-}
 
 function matchesStatus(
   task: EffectiveTask,
@@ -122,7 +110,7 @@ function matchesStatus(
 
 function matchesTime(
   task: EffectiveTask,
-  time: SavedViewTimeFilters,
+  time: QueryTimeFilters,
   weekStartsOn: 0 | 1,
   today: string,
 ): boolean {
@@ -132,7 +120,7 @@ function matchesTime(
     "completed",
     "created",
     "dropped",
-  ] as SavedViewTimeField[]) {
+  ] as QueryTimeField[]) {
     const token = time[field]?.trim();
     if (!token) continue;
 
@@ -170,7 +158,7 @@ function normalizedQueryFilterHasActiveConditions(
 ): boolean {
   return Boolean(
     normalized.searchQ ||
-      normalized.tagList.length > 0 ||
+      normalized.tagExpr !== null ||
       normalized.statusFilter !== "all" ||
       normalized.hasTime,
   );
@@ -181,12 +169,19 @@ function taskMatchesNormalizedQueryFilters(
   normalized: NormalizedQueryFilters,
   weekStartsOn: 0 | 1,
   today: string,
+  exemptStatusIds?: ReadonlySet<string>,
 ): boolean {
   if (normalized.searchQ && !matchesSearch(task, normalized.searchQ))
     return false;
-  if (normalized.tagList.length > 0 && !matchesTags(task, normalized.tagList))
+  if (normalized.tagExpr && !evalTagExpr(normalized.tagExpr, task.tags))
     return false;
-  if (!matchesStatus(task, normalized.statusFilter)) return false;
+  // US-153: a task in `exemptStatusIds` (just completed in this view session)
+  // bypasses the status predicate only — every other filter still applies — so
+  // a freshly-done card lingers in a `status: todo` view until the next
+  // re-entry, instead of being filtered out the instant it is checked off.
+  const statusExempt = exemptStatusIds?.has(task.id) ?? false;
+  if (!statusExempt && !matchesStatus(task, normalized.statusFilter))
+    return false;
   if (
     normalized.hasTime &&
     !matchesTime(task, normalized.time, weekStartsOn, today)
@@ -205,6 +200,9 @@ function taskMatchesNormalizedQueryFilters(
  * @param filters  QueryPresetFilters from a QueryPreset
  * @param weekStartsOn  0=Sunday, 1=Monday
  * @param today  ISO date for "today" token (defaults to actual today)
+ * @param exemptStatusIds  US-153: task ids that bypass the status filter only
+ *   (just-completed cards in the current view session). Optional; GUI-only.
+ *   CLI / summary / badge counts never pass it, so they are unaffected.
  * @returns filtered EffectiveTask[]
  */
 export function applyQueryFilters(
@@ -212,11 +210,12 @@ export function applyQueryFilters(
   filters: QueryPresetFilters,
   weekStartsOn: 0 | 1,
   today: string = todayISO(),
+  exemptStatusIds?: ReadonlySet<string>,
 ): EffectiveTask[] {
   // Quick-pass: no active filters
   const normalized = normalizeQueryFilters(filters);
   if (!normalizedQueryFilterHasActiveConditions(normalized)) return tasks;
   return tasks.filter((task) =>
-    taskMatchesNormalizedQueryFilters(task, normalized, weekStartsOn, today),
+    taskMatchesNormalizedQueryFilters(task, normalized, weekStartsOn, today, exemptStatusIds),
   );
 }

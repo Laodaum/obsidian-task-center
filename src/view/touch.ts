@@ -17,6 +17,56 @@ export interface LongPressOptions {
 }
 
 /**
+ * A long-press fires while the finger is still down, but the browser still
+ * dispatches a `click` on the SAME element when the finger lifts. Without
+ * suppression that click runs the element's tap action too — e.g. long-press
+ * a tab opened its management sheet AND switched to the tab underneath.
+ *
+ * The finger can stay down arbitrarily long after the long-press fires, so a
+ * fixed timeout can't work: stay armed until the pointer lifts, then swallow
+ * at most one click (capture phase) inside a short grace window. pointercancel
+ * produces no click, so it just disarms.
+ */
+function suppressNextClick(graceMs = 400): void {
+  let timer: number | null = null;
+  const swallow = (e: Event) => {
+    // Only the browser's own post-release click is the double-fire we're
+    // guarding against. Synthetic clicks (element.click() from tests or
+    // programmatic UI flows) are not part of this gesture — let them through.
+    if (!e.isTrusted) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    cleanup();
+  };
+  const cleanup = () => {
+    window.removeEventListener("click", swallow, true);
+    window.removeEventListener("pointerup", onRelease, true);
+    window.removeEventListener("pointercancel", onCancel, true);
+    if (timer !== null) window.clearTimeout(timer);
+  };
+  const onRelease = () => {
+    if (timer === null) timer = window.setTimeout(cleanup, graceMs);
+  };
+  const onCancel = () => cleanup();
+  window.addEventListener("click", swallow, true);
+  window.addEventListener("pointerup", onRelease, true);
+  window.addEventListener("pointercancel", onCancel, true);
+}
+
+/**
+ * Tiny tactile confirmation for gesture commits (long-press fired, swipe
+ * crossed its commit threshold). Vibration is a progressive enhancement:
+ * `navigator.vibrate` is absent on iOS WebViews and desktop — silently no-op.
+ */
+function hapticTick(): void {
+  try {
+    (navigator as Navigator & { vibrate?: (ms: number) => boolean }).vibrate?.(10);
+  } catch {
+    // Some webviews throw on vibrate without a user gesture — never fatal.
+  }
+}
+
+/**
  * Attach a long-press detector to `el`. Returns a detach function that
  * unwires every listener — call it on view re-render so stale cards don't
  * keep window-level move/up listeners around.
@@ -62,6 +112,10 @@ export function attachLongPress(
       // Move/up listeners can stay no-op until cleared on real release —
       // simpler to just clear them now that we've fired.
       cancel();
+      // The finger is still down: eat the click that fires on release so the
+      // element's tap action doesn't run on top of the long-press action.
+      suppressNextClick();
+      hapticTick();
       opts.onTrigger();
     }, durationMs);
     window.addEventListener("pointermove", onMove);
@@ -76,110 +130,10 @@ export function attachLongPress(
   };
 }
 
-export interface SwipeOptions {
-  /** Fraction of element width that must be crossed to commit. Default 0.30. */
-  thresholdRatio?: number;
-  /** Fired when the user swipes left past the threshold. */
-  onSwipeLeft?: () => void;
-  /** Fired when the user swipes right past the threshold. */
-  onSwipeRight?: () => void;
-  /**
-   * Optional progress callback (0..1) per pointermove tick. Default writes
-   * `--tc-swipe-progress` and `--tc-swipe-direction` (left|right) on the
-   * element so styles.css can render visual feedback without JS knowing
-   * about colors.
-   */
-  onProgress?: (
-    el: HTMLElement,
-    direction: "left" | "right" | null,
-    progress: number,
-  ) => void;
-}
-
-/**
- * Attach a horizontal-swipe-to-action detector. Vertical movement cancels
- * the gesture (so vertical scroll keeps working). Swipe and long-press
- * coexist on the same element: long-press cancels itself once the user
- * starts moving, so the gestures are mutually exclusive without explicit
- * coordination.
- */
-export function attachSwipe(
-  el: HTMLElement,
-  opts: SwipeOptions,
-): () => void {
-  const ratio = opts.thresholdRatio ?? 0.3;
-  let active = false;
-  let startX = 0;
-  let startY = 0;
-  let elWidth = 0;
-
-  const writeProgress = (
-    direction: "left" | "right" | null,
-    progress: number,
-  ) => {
-    if (opts.onProgress) {
-      opts.onProgress(el, direction, progress);
-      return;
-    }
-    if (direction === null) {
-      el.style.removeProperty("--tc-swipe-progress");
-      el.style.removeProperty("--tc-swipe-direction");
-    } else {
-      el.style.setProperty("--tc-swipe-progress", String(progress));
-      el.style.setProperty("--tc-swipe-direction", direction);
-    }
-  };
-
-  const reset = () => {
-    if (!active) return;
-    active = false;
-    writeProgress(null, 0);
-    window.removeEventListener("pointermove", onMove);
-    window.removeEventListener("pointerup", onUp);
-    window.removeEventListener("pointercancel", reset);
-  };
-
-  const onMove = (e: PointerEvent) => {
-    const dx = e.clientX - startX;
-    const dy = e.clientY - startY;
-    // If the user is mostly moving vertically, this isn't a swipe — cancel
-    // and let the page scroll / outer scroller take over.
-    if (Math.abs(dy) > Math.abs(dx)) {
-      reset();
-      return;
-    }
-    const direction: "left" | "right" = dx < 0 ? "left" : "right";
-    const progress = Math.min(Math.abs(dx) / (elWidth * ratio), 1);
-    writeProgress(direction, progress);
-  };
-
-  const onUp = (e: PointerEvent) => {
-    const dx = e.clientX - startX;
-    const direction: "left" | "right" = dx < 0 ? "left" : "right";
-    const progress = elWidth > 0 ? Math.abs(dx) / (elWidth * ratio) : 0;
-    reset();
-    if (progress < 1) return;
-    if (direction === "left" && opts.onSwipeLeft) opts.onSwipeLeft();
-    else if (direction === "right" && opts.onSwipeRight) opts.onSwipeRight();
-  };
-
-  const onDown = (e: PointerEvent) => {
-    if (e.pointerType === "mouse" && e.button !== 0) return;
-    startX = e.clientX;
-    startY = e.clientY;
-    elWidth = el.getBoundingClientRect().width;
-    active = true;
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
-    window.addEventListener("pointercancel", reset);
-  };
-
-  el.addEventListener("pointerdown", onDown);
-  return () => {
-    el.removeEventListener("pointerdown", onDown);
-    reset();
-  };
-}
+// (The old standalone `attachSwipe` helper was dead code — every swipe
+// consumer goes through `attachCardGestures` below, which arbitrates swipe
+// against long-press and scroll in one state machine. Removed so there are
+// not two divergent copies of the threshold / direction-lock logic.)
 
 // ============================================================================
 // attachCardGestures — unified long-press + swipe state machine.
@@ -236,6 +190,9 @@ export function attachCardGestures(
   let startX = 0;
   let startY = 0;
   let elWidth = 0;
+  // Tracks whether the current swipe already crossed the commit threshold,
+  // so the "you're past the point of commit" haptic fires exactly once.
+  let swipeReadyFired = false;
 
   const writeSwipeProgress = (
     direction: "left" | "right" | null,
@@ -272,6 +229,7 @@ export function attachCardGestures(
     detachWindow();
     if (phase === "swiping") writeSwipeProgress(null, 0);
     phase = "idle";
+    swipeReadyFired = false;
   };
 
   const onMove = (e: PointerEvent) => {
@@ -302,6 +260,12 @@ export function attachCardGestures(
       }
       const direction: "left" | "right" = dx < 0 ? "left" : "right";
       const progress = Math.min(Math.abs(dx) / (elWidth * swipeRatio), 1);
+      if (progress >= 1 && !swipeReadyFired) {
+        swipeReadyFired = true;
+        hapticTick();
+      } else if (progress < 1) {
+        swipeReadyFired = false;
+      }
       writeSwipeProgress(direction, progress);
       return;
     }
@@ -314,6 +278,8 @@ export function attachCardGestures(
       const progress = elWidth > 0 ? Math.abs(dx) / (elWidth * swipeRatio) : 0;
       reset();
       if (progress < 1) return;
+      // No click suppression here: a half-card-width drag is far past the
+      // browser's tap slop, so no click follows a committed swipe.
       if (direction === "left" && opts.onSwipeLeft) opts.onSwipeLeft();
       else if (direction === "right" && opts.onSwipeRight) opts.onSwipeRight();
       return;
@@ -343,6 +309,10 @@ export function attachCardGestures(
           clearTimers();
           detachWindow();
           phase = "idle";
+          // Finger is still down; swallow the click that fires on release so
+          // the card's tap handler doesn't open a second sheet on top.
+          suppressNextClick();
+          hapticTick();
           opts.onLongPress?.();
         }
       }, longPressMs);

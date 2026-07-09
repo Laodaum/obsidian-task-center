@@ -1,0 +1,19 @@
+{
+  "id": "preset-completed",
+  "name": "Completed",
+  "builtin": true,
+  "hidden": false,
+  "view": {
+    "layout": {
+      "type": "list",
+      "orderBy": [
+        "completed_desc"
+      ],
+      "when": {
+        "status": [
+          "done"
+        ]
+      }
+    }
+  }
+}

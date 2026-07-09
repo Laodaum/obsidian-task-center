@@ -41,6 +41,15 @@ async function writeAndWait(path: string, body: string) {
     path,
     body,
   );
+  // Rebuild the plugin TaskCache for this path: write verbs resolve refs via
+  // cache.resolveRef, and repeated rewrites of the same path otherwise leave a
+  // stale path:Ln→hash entry → "not a task line". See _journeys.writeAndWait.
+  await browser.executeObsidian(async ({ app }, p: string) => {
+    // @ts-expect-error — runtime plugin
+    await (app as any).plugins.plugins["task-center"].cache.invalidateFile(p);
+    // @ts-expect-error — runtime plugin
+    await (app as any).plugins.plugins["task-center"].__forFlush();
+  }, path);
 }
 
 async function forFlush() {
@@ -48,6 +57,19 @@ async function forFlush() {
     // @ts-expect-error — runtime plugin
     await (app as any).plugins.plugins["task-center"].__forFlush();
   });
+}
+
+// After an API WRITE (schedule/rename/done) rewrites a line, the path:Ln→hash
+// cache entry goes stale → the next resolveRef reports "not a task line". A bare
+// __forFlush only drains pending events; it does NOT rebuild the path→hash map.
+// Invalidate the file first (same as writeAndWait), then flush.
+async function invalidateAndFlush(path: string) {
+  await browser.executeObsidian(async ({ app }, p: string) => {
+    // @ts-expect-error — runtime plugin
+    await (app as any).plugins.plugins["task-center"].cache.invalidateFile(p);
+    // @ts-expect-error — runtime plugin
+    await (app as any).plugins.plugins["task-center"].__forFlush();
+  }, path);
 }
 
 async function readFile(path: string): Promise<string> {
@@ -164,7 +186,7 @@ describe("Task Center — CLI API (US-201/203/204/208/214)", function () {
     await expect(scheduled.after).toContain("⏳ 2099-12-31");
     await expect(scheduled.unchanged).toBe(false);
 
-    await forFlush();
+    await invalidateAndFlush("Tasks/Inbox.md");
 
     const renamed = await callApi((api) => api.rename("Tasks/Inbox.md:L1", "Renamed diff task")) as {
       before: string; after: string; unchanged: boolean
@@ -172,7 +194,7 @@ describe("Task Center — CLI API (US-201/203/204/208/214)", function () {
     await expect(renamed.before).toContain("Diff task");
     await expect(renamed.after).toContain("Renamed diff task");
 
-    await forFlush();
+    await invalidateAndFlush("Tasks/Inbox.md");
 
     const doneResult = await callApi((api) => api.done("Tasks/Inbox.md:L1")) as {
       before: string; after: string; unchanged: boolean

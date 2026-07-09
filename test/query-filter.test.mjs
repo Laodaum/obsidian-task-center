@@ -141,9 +141,100 @@ test("VAL-CORE-007: tags AND — task must have ALL specified tags", async () =>
     effectiveTask({ id: "test.md:L4", tags: [] }),
   ];
 
-  const result = applyQueryFilters(tasks, { tags: ["#work", "#urgent"] }, 1);
+  const result = applyQueryFilters(tasks, { tags: { expr: "#work and #urgent" } }, 1);
   assert.equal(result.length, 1);
   assert.equal(result[0].id, "test.md:L1");
+});
+
+test("tags OR — expr '#a or #b' matches a task carrying ANY of the tags", async () => {
+  if (compileErr) throw compileErr;
+
+  const { applyQueryFilters } = await import("../test/.compiled/filter.js");
+
+  const tasks = [
+    effectiveTask({ id: "test.md:L1", tags: ["#work", "#urgent"] }),
+    effectiveTask({ id: "test.md:L2", tags: ["#work"] }),
+    effectiveTask({ id: "test.md:L3", tags: ["#urgent"] }),
+    effectiveTask({ id: "test.md:L4", tags: ["#other"] }),
+  ];
+
+  const result = applyQueryFilters(tasks, { tags: { expr: "#work or #urgent" } }, 1);
+  assert.deepEqual(result.map((t) => t.id), ["test.md:L1", "test.md:L2", "test.md:L3"]);
+});
+
+test("tags AND — expr '#a and #b' still requires ALL tags", async () => {
+  if (compileErr) throw compileErr;
+
+  const { applyQueryFilters } = await import("../test/.compiled/filter.js");
+
+  const tasks = [
+    effectiveTask({ id: "test.md:L1", tags: ["#work", "#urgent"] }),
+    effectiveTask({ id: "test.md:L2", tags: ["#work"] }),
+  ];
+
+  const result = applyQueryFilters(tasks, { tags: { expr: "#work and #urgent" } }, 1);
+  assert.equal(result.length, 1);
+  assert.equal(result[0].id, "test.md:L1");
+});
+
+// ── US-109d4: tag exclude / boolean expression ──
+
+test("US-109d4: exclude — 'not #x' filters out tasks carrying #x", async () => {
+  if (compileErr) throw compileErr;
+
+  const { applyQueryFilters } = await import("../test/.compiled/filter.js");
+
+  const tasks = [
+    effectiveTask({ id: "test.md:L1", tags: ["#work"] }),
+    effectiveTask({ id: "test.md:L2", tags: ["#work", "#someday"] }),
+    effectiveTask({ id: "test.md:L3", tags: ["#someday"] }),
+    effectiveTask({ id: "test.md:L4", tags: [] }),
+  ];
+
+  // No include, only exclude: keep everything that does NOT carry #someday.
+  const result = applyQueryFilters(tasks, { tags: { expr: "not #someday" } }, 1);
+  assert.deepEqual(result.map((t) => t.id), ["test.md:L1", "test.md:L4"]);
+});
+
+test("US-109d4: include and not — '#a and not #b'", async () => {
+  if (compileErr) throw compileErr;
+
+  const { applyQueryFilters } = await import("../test/.compiled/filter.js");
+
+  const tasks = [
+    effectiveTask({ id: "test.md:L1", tags: ["#work"] }),
+    effectiveTask({ id: "test.md:L2", tags: ["#work", "#someday"] }),
+    effectiveTask({ id: "test.md:L3", tags: ["#home"] }),
+  ];
+
+  // Has #work, but not #someday.
+  const result = applyQueryFilters(
+    tasks,
+    { tags: { expr: "#work and not #someday" } },
+    1,
+  );
+  assert.deepEqual(result.map((t) => t.id), ["test.md:L1"]);
+});
+
+test("US-109d4: grouped or with not — '(#a or #b) and not #c'", async () => {
+  if (compileErr) throw compileErr;
+
+  const { applyQueryFilters } = await import("../test/.compiled/filter.js");
+
+  const tasks = [
+    effectiveTask({ id: "test.md:L1", tags: ["#work"] }),
+    effectiveTask({ id: "test.md:L2", tags: ["#urgent", "#someday"] }),
+    effectiveTask({ id: "test.md:L3", tags: ["#urgent"] }),
+    effectiveTask({ id: "test.md:L4", tags: ["#other"] }),
+  ];
+
+  // (#work OR #urgent) AND NOT #someday → L1, L3 (L2 has #someday, L4 has neither include).
+  const result = applyQueryFilters(
+    tasks,
+    { tags: { expr: "(#work or #urgent) and not #someday" } },
+    1,
+  );
+  assert.deepEqual(result.map((t) => t.id), ["test.md:L1", "test.md:L3"]);
 });
 
 test("VAL-CORE-007: tags match is case-insensitive", async () => {
@@ -156,7 +247,7 @@ test("VAL-CORE-007: tags match is case-insensitive", async () => {
     effectiveTask({ id: "test.md:L2", tags: ["#work"] }),
   ];
 
-  const result = applyQueryFilters(tasks, { tags: ["#work"] }, 1);
+  const result = applyQueryFilters(tasks, { tags: { expr: "#work" } }, 1);
   assert.equal(result.length, 2, "Both #Work and #work should match #work");
 });
 
@@ -170,7 +261,7 @@ test("VAL-CORE-007: tags from comma-separated string", async () => {
     effectiveTask({ id: "test.md:L2", tags: ["#work"] }),
   ];
 
-  const result = applyQueryFilters(tasks, { tags: "#work,#urgent" }, 1);
+  const result = applyQueryFilters(tasks, { tags: { expr: "#work and #urgent" } }, 1);
   assert.equal(result.length, 1);
   assert.equal(result[0].id, "test.md:L1");
 });
@@ -235,6 +326,57 @@ test("VAL-CORE-007: status filter — \"all\" returns all tasks", async () => {
 
   const result = applyQueryFilters(tasks, { status: "all" }, 1);
   assert.equal(result.length, 2);
+});
+
+// ── US-153: just-completed status-filter exemption ──
+
+test("US-153: exemptStatusIds keeps a done task in a todo-status filter", async () => {
+  if (compileErr) throw compileErr;
+
+  const { applyQueryFilters } = await import("../test/.compiled/filter.js");
+
+  const tasks = [
+    effectiveTask({ id: "test.md:L1", status: "todo", effectiveStatus: "todo" }),
+    // Just completed in this session — would normally be filtered out by status: todo.
+    effectiveTask({ id: "test.md:L2", status: "done", effectiveStatus: "done" }),
+    effectiveTask({ id: "test.md:L3", status: "done", effectiveStatus: "done" }),
+  ];
+
+  const exempt = new Set(["test.md:L2"]);
+  const result = applyQueryFilters(tasks, { status: ["todo"] }, 1, undefined, exempt);
+  // L1 (todo) stays, L2 (exempt done) stays, L3 (non-exempt done) is filtered out.
+  assert.deepEqual(result.map((t) => t.id), ["test.md:L1", "test.md:L2"]);
+});
+
+test("US-153: exemptStatusIds only bypasses status, not other filters", async () => {
+  if (compileErr) throw compileErr;
+
+  const { applyQueryFilters } = await import("../test/.compiled/filter.js");
+
+  const tasks = [
+    effectiveTask({ id: "test.md:L1", title: "alpha", status: "done", effectiveStatus: "done" }),
+    effectiveTask({ id: "test.md:L2", title: "beta", status: "done", effectiveStatus: "done" }),
+  ];
+
+  // Both exempt from status, but a search filter must still apply.
+  const exempt = new Set(["test.md:L1", "test.md:L2"]);
+  const result = applyQueryFilters(tasks, { status: ["todo"], search: "alpha" }, 1, undefined, exempt);
+  assert.deepEqual(result.map((t) => t.id), ["test.md:L1"]);
+});
+
+test("US-153: omitting exemptStatusIds preserves original status filtering", async () => {
+  if (compileErr) throw compileErr;
+
+  const { applyQueryFilters } = await import("../test/.compiled/filter.js");
+
+  const tasks = [
+    effectiveTask({ id: "test.md:L1", status: "todo", effectiveStatus: "todo" }),
+    effectiveTask({ id: "test.md:L2", status: "done", effectiveStatus: "done" }),
+  ];
+
+  // No exempt set → done task is filtered out exactly as before.
+  const result = applyQueryFilters(tasks, { status: ["todo"] }, 1);
+  assert.deepEqual(result.map((t) => t.id), ["test.md:L1"]);
 });
 
 // ── VAL-CORE-007: Time filters — scheduled ──
@@ -481,7 +623,7 @@ test("VAL-CORE-007: search + tags + status + time are AND-ed", async () => {
     tasks,
     {
       search: "docs",
-      tags: ["#work", "#docs"],
+      tags: { expr: "#work and #docs" },
       status: ["todo"],
       time: { scheduled: "today" },
     },

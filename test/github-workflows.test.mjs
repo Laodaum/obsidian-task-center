@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readFile, access } from "node:fs/promises";
 
 async function readWorkflow(name) {
   return readFile(`.github/workflows/${name}`, "utf8");
@@ -39,18 +39,34 @@ test("release workflow runs Obsidian e2e under Xvfb on ubuntu", async () => {
   assertLinuxObsidianE2eGate(workflow, "release.yml");
 });
 
-test("US-602: CI e2e script covers source-edit regressions, not only board-basics", async () => {
+test("CI e2e gate runs the FULL spec suite, not a --spec whitelist", async () => {
+  // Policy (2026-06-25): the gate runs every spec via the wdio.conf `specs`
+  // glob. Flaky specs are FIXED, not quarantined out of the gate with a
+  // hand-picked `--spec` subset — a whitelist silently hides regressions in the
+  // excluded specs (the original "tests too few" gap). Keeping the gate ≡ full
+  // suite forces the long tail to stay green.
   const pkg = JSON.parse(await readFile("package.json", "utf8"));
   const script = pkg.scripts["test:e2e:ci"];
   assert.match(script, /wdio run \.\/wdio\.conf\.mts/);
-  assert.match(script, /--spec test\/e2e\/specs\/board-basics\.e2e\.ts/);
-  assert.match(script, /--spec test\/e2e\/specs\/source-edit-dialog\.e2e\.ts/);
+  assert.doesNotMatch(
+    script,
+    /--spec/,
+    "test:e2e:ci must run the full suite; do not narrow it with --spec — fix flaky specs instead",
+  );
 });
 
-test("US-111: CI e2e script covers Dataview flavor user journeys", async () => {
-  const pkg = JSON.parse(await readFile("package.json", "utf8"));
-  const script = pkg.scripts["test:e2e:ci"];
-  assert.match(script, /--spec test\/e2e\/specs\/dataview-format\.e2e\.ts/);
+test("US-602 / US-111: the protective e2e specs still exist on disk", async () => {
+  // The gate covers these via the glob; assert the specs that motivated US-602
+  // (source-edit regressions) and US-111 (Dataview/flavor journeys) are present
+  // so a rename/delete can't silently drop their coverage.
+  for (const spec of [
+    "board-basics",
+    "source-edit-dialog",
+    "dataview-format",
+    "format-matrix",
+  ]) {
+    await access(`test/e2e/specs/${spec}.e2e.ts`);
+  }
 });
 
 test("release workflow attests Obsidian release assets", async () => {

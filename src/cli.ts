@@ -19,7 +19,6 @@ import {
   type ReviewTask,
   type StatsResult,
 } from "./api";
-import type { SummaryResultItem } from "./query/summary";
 
 export {
   buildAgentBrief,
@@ -95,51 +94,32 @@ export function formatList(tasks: ParsedTask[], header: string, opts: CliFormatO
 export function formatQueryRun(result: QueryRunResult, opts: CliFormatOptions = {}): string {
   const lines: string[] = [];
   lines.push(`Query ${result.preset.id} · ${result.preset.name}`);
-  lines.push(`view ${result.view.type} · ${result.filteredTasks.length} tasks · anchor ${result.anchorISO}`);
-  if (result.summary.length > 0) {
-    lines.push(`summary ${formatSummaryItems(result.summary)}`);
-  }
+  lines.push(`view ${result.viewModel.type} · ${result.filteredTasks.length} tasks · anchor ${result.anchorISO}`);
   lines.push("");
 
   switch (result.viewModel.type) {
     case "list":
-      renderQueryList(lines, result.viewModel.sections, opts);
+      renderQueryList(lines, result.viewModel.tasks, opts);
       break;
     case "week":
-      renderQueryWeek(lines, result.viewModel.days, result.viewModel.tray, opts);
+      renderQueryWeek(lines, result.viewModel.days, opts);
       break;
     case "month":
-      renderQueryMonth(lines, result.viewModel.cells, result.viewModel.tray, opts);
-      break;
-    case "matrix":
-      renderQueryMatrix(lines, result.viewModel.cells, result.viewModel.unmatched, opts);
+      renderQueryMonth(lines, result.viewModel.cells, opts);
       break;
   }
   return lines.join("\n");
 }
 
-function formatSummaryItems(items: SummaryResultItem[]): string {
-  return items.map((item) => {
-    if (item.type === "count") return `count=${item.value}`;
-    if (item.type === "sum") return `sum(${item.field})=${item.formatted ?? `${item.value}m`}`;
-    if (item.type === "ratio") return `ratio(${item.numerator}/${item.denominator})=${item.formatted ?? `${item.value}%`}`;
-    if (item.type === "top_n") return `top_n(${item.by})=${item.items.map((row) => `${row.key}:${row.count}`).join(",") || "—"}`;
-    return `group_by(${item.by})=${item.groups.map((row) => `${row.key}:${row.count}`).join(",") || "—"}`;
-  }).join("  ");
-}
-
-function renderQueryList(lines: string[], sections: Array<{ title: string; tasks: EffectiveTask[] }>, opts: CliFormatOptions): void {
-  for (const section of sections) {
-    lines.push(`${section.title} · ${section.tasks.length} tasks`);
-    renderTaskRows(section.tasks, lines, "    ", opts);
-    if (section.tasks.length === 0) lines.push("    —");
-  }
+function renderQueryList(lines: string[], tasks: EffectiveTask[], opts: CliFormatOptions): void {
+  lines.push(`${tasks.length} tasks`);
+  renderTaskRows(tasks, lines, "    ", opts);
+  if (tasks.length === 0) lines.push("    —");
 }
 
 function renderQueryWeek(
   lines: string[],
   days: Array<{ date: string; tasks: EffectiveTask[] }>,
-  tray: { title: string; tasks: EffectiveTask[] } | undefined,
   opts: CliFormatOptions,
 ): void {
   for (const day of days) {
@@ -147,17 +127,11 @@ function renderQueryWeek(
     renderTaskRows(day.tasks, lines, "    ", opts);
     if (day.tasks.length === 0) lines.push("    —");
   }
-  if (tray) {
-    lines.push("");
-    lines.push(`${tray.title} · ${tray.tasks.length} tasks`);
-    renderTaskRows(tray.tasks, lines, "    ", opts);
-  }
 }
 
 function renderQueryMonth(
   lines: string[],
   cells: Array<{ date: string; tasks: EffectiveTask[] }>,
-  tray: { title: string; tasks: EffectiveTask[] } | undefined,
   opts: CliFormatOptions,
 ): void {
   const nonEmpty = cells.filter((cell) => cell.tasks.length > 0);
@@ -167,29 +141,6 @@ function renderQueryMonth(
     renderTaskRows(cell.tasks, lines, "    ", opts);
   }
   if (nonEmpty.length === 0) lines.push("    —");
-  if (tray) {
-    lines.push("");
-    lines.push(`${tray.title} · ${tray.tasks.length} tasks`);
-    renderTaskRows(tray.tasks, lines, "    ", opts);
-  }
-}
-
-function renderQueryMatrix(
-  lines: string[],
-  cells: Array<{ rowTitle: string; colTitle: string; tasks: EffectiveTask[] }>,
-  unmatched: EffectiveTask[],
-  opts: CliFormatOptions,
-): void {
-  for (const cell of cells) {
-    if (cell.tasks.length === 0) continue;
-    lines.push(`${cell.rowTitle} / ${cell.colTitle} · ${cell.tasks.length} tasks`);
-    renderTaskRows(cell.tasks, lines, "    ", opts);
-  }
-  if (unmatched.length > 0) {
-    lines.push(`Unmatched · ${unmatched.length} tasks`);
-    renderTaskRows(unmatched, lines, "    ", opts);
-  }
-  if (cells.every((cell) => cell.tasks.length === 0) && unmatched.length === 0) lines.push("    —");
 }
 
 function renderTaskRows(tasks: EffectiveTask[], lines: string[], indent: string, opts: CliFormatOptions): void {

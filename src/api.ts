@@ -3,6 +3,7 @@ import {
   ParsedTask,
   TaskStatus,
   type QueryPreset,
+  type QueryPresetFilters,
   type QueryPresetViewConfig,
   type QueryViewType,
   type TaskFormatFlavor,
@@ -27,10 +28,9 @@ import { TaskCache } from "./cache";
 import { todayISO, resolveWhen, isValidISO } from "./dates";
 import { normalizeGroupingTags } from "./grouping";
 import { deriveEffectiveTasks, type EffectiveTask } from "./task-tree";
-import { normalizeQueryPreset } from "./saved-views";
+import { collectAreas, normalizeQueryPreset } from "./saved-views";
 import { applyQueryFilters } from "./query/filter";
-import { applyViewProjection, type ViewModel } from "./query/projection";
-import { computeSummary, type SummaryResultItem } from "./query/summary";
+import { projectArea, type ViewModel } from "./query/projection";
 import { formatMinutes } from "./parser";
 
 // REMINDER: this module must NOT scan vault files directly. All parse work
@@ -89,7 +89,6 @@ export interface QueryRunResult {
   view: QueryPresetViewConfig;
   anchorISO: string;
   filteredTasks: EffectiveTask[];
-  summary: SummaryResultItem[];
   viewModel: ViewModel;
 }
 
@@ -225,15 +224,27 @@ export class TaskCenterApi {
   async runQueryPreset(preset: QueryPreset, opts: QueryRunOpts): Promise<QueryRunResult> {
     const normalized = normalizeQueryPreset(preset);
     const effective = deriveEffectiveTasks(await this.cache.ensureAll());
-    const view = normalizeViewOverride(normalized.view, opts.view);
-    const filtered = applyQueryFilters(effective, normalized.filters, opts.weekStartsOn, opts.anchorISO ?? todayISO());
-    const viewModel = applyViewProjection(filtered, view, opts.weekStartsOn, opts.anchorISO ?? todayISO(), effective);
+    // US-109z2: no tab-level filter — filtering lives on the primary content
+    // area's `when`. Compute it from the original preset, then carry it onto any
+    // overridden view so `view=week|month|list` still narrows.
+    const origAreas = collectAreas(normalized.view.layout);
+    const origPrimary = origAreas.find((a) => a.type !== "drop") ?? origAreas[0];
+    const primaryWhen =
+      origPrimary && origPrimary.type !== "drop" && origPrimary.type !== "unknown"
+        ? (origPrimary as { when?: QueryPresetFilters }).when
+        : undefined;
+    const view = normalizeViewOverride(normalized.view, opts.view, primaryWhen);
+    const areas = collectAreas(view.layout);
+    const primary = areas.find((a) => a.type !== "drop") ?? areas[0];
+    const viewModel = projectArea(primary, effective, opts.weekStartsOn, opts.anchorISO ?? todayISO());
+    const filtered = primaryWhen
+      ? applyQueryFilters(effective, primaryWhen, opts.weekStartsOn, opts.anchorISO ?? todayISO())
+      : effective;
     return {
       preset: normalized,
       view,
       anchorISO: opts.anchorISO ?? todayISO(),
       filteredTasks: filtered,
-      summary: computeSummary(filtered, normalized.summary),
       viewModel,
     };
   }
@@ -288,11 +299,21 @@ export class TaskCenterApi {
     const targets = [task, ...descendants];
     // Bottom-up so line numbers stay stable across each mutation.
     targets.sort((a, b) => b.line - a.line);
-    let lastResult = await markDone(this.app, targets[0], at, this.taskFormatFlavor());
-    for (let i = 1; i < targets.length; i++) {
-      lastResult = await markDone(this.app, targets[i], at, this.taskFormatFlavor());
+    // Mirror `drop`: return one entry per affected line in `results` so undo
+    // callers can restore the parent AND every cascaded child atomically,
+    // with the parent's fields kept at top level for backward compatibility.
+    const results: DropResult[] = [];
+    for (const t of targets) {
+      const r = await markDone(this.app, t, at, this.taskFormatFlavor());
+      results.push({ path: t.path, line: t.line, before: r.before, after: r.after, unchanged: r.unchanged });
     }
-    return lastResult;
+    const parentResult = results.find((r) => r.line === task.line) ?? results[results.length - 1];
+    return {
+      before: parentResult.before,
+      after: parentResult.after,
+      unchanged: parentResult.unchanged,
+      results,
+    };
   }
 
   async undone(id: string) {
@@ -398,9 +419,21 @@ export class TaskCenterApi {
   }
 }
 
-function normalizeViewOverride(view: QueryPresetViewConfig, override?: QueryViewType): QueryPresetViewConfig {
+// CLI `view=` override replaces the layout with a single area of that type
+// (list / week / month). Any other value falls back to the preset's own layout.
+// US-109z2: a view override only changes presentation, not filtering — carry the
+// preset's primary-area `when` onto the overridden area so it still narrows.
+function normalizeViewOverride(
+  view: QueryPresetViewConfig,
+  override?: QueryViewType,
+  when?: QueryPresetFilters,
+): QueryPresetViewConfig {
   if (!override) return view;
-  return { ...view, type: override };
+  const w = when && Object.keys(when).length > 0 ? { when } : {};
+  if (override === "week") return { layout: { type: "week", ...w } };
+  if (override === "month") return { layout: { type: "month", ...w } };
+  if (override === "list") return { layout: { type: "list", ...w } };
+  return view;
 }
 
 function collectDescendants(task: ParsedTask, sameFileTasks: ParsedTask[]): ParsedTask[] {

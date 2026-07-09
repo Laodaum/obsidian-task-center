@@ -239,6 +239,11 @@ describe("Task Center — Quick Add v2 (US-167)", function () {
     await browser.pause(300);
 
     const png = await browser.takeScreenshot();
-    await fs.writeFile("/tmp/m20-chunk-4.png", Buffer.from(png, "base64"));
+    // Local dev evidence only. The CI runner's /tmp is not writable (EACCES),
+    // and this case asserts nothing about the file — so writing it is a
+    // best-effort, dev-only side effect that must never fail the gate.
+    if (!process.env.CI) {
+      await fs.writeFile("/tmp/m20-chunk-4.png", Buffer.from(png, "base64")).catch(() => undefined);
+    }
   });
 });

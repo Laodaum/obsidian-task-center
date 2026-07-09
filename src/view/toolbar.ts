@@ -1,0 +1,73 @@
+// 顶部查询工具条渲染，从 TaskCenterView god class 抽出（ARCHITECTURE §7.14
+// step10 之二）。收 v: TaskCenterView——桌面收成单行（当前 query 动作 + 添加），
+// 移动端两行（日期导航 + 编辑 Query 入口）。当前 query 动作复用壳仍 public 的
+// renderSavedViewsActionControls；范围导航走壳 renderRangeNav。
+
+import { setIcon } from "obsidian";
+import type { TaskCenterView } from "../view";
+import { t as tr } from "../i18n";
+import { openQuickAdd } from "./source-actions";
+
+export function renderToolbar(v: TaskCenterView, parent: HTMLElement): void {
+  const bar = parent.createDiv({ cls: "bt-toolbar" });
+  const mainRow = bar.createDiv({ cls: "bt-toolbar-row bt-toolbar-main" });
+  const mobileLayout = v.contentEl.dataset.mobileLayout === "true";
+  // §3.0: with the date nav lowered into the week / month component, the
+  // desktop toolbar collapses to a single row — search + filter chips live
+  // together in mainRow instead of a separate sub-row.
+  const subRow = mainRow;
+
+  // US-511: the date nav lives in the week / month area head on every platform
+  // (the head is the mobile accordion toggle). The mobile toolbar carries only
+  // the 编辑视图 entry + 新建 「+」.
+
+  // US-109w/US-109z: the global filter (search box + tag/schedule/time/status
+  // chips) is gone from the toolbar — filtering belongs to each list/grid area
+  // (renderAreaFilter). The shared base `preset.filters` is still applied
+  // programmatically and editable via the Query editor, not via a global chip.
+
+  if (mobileLayout) {
+    const mobileFilters = mainRow.createEl("button", { cls: "bt-mobile-filter-btn" });
+    // Distinct icon from the per-area filter button (which keeps `sliders-horizontal`):
+    // this view-level entry opens the whole Query editor, so it reads as "edit view",
+    // not another identical "filter" — avoids two look-alike sliders on screen.
+    setIcon(mobileFilters, "square-pen");
+    mobileFilters.setAttr("aria-label", tr("savedViews.editQuery"));
+    mobileFilters.dataset.mobileAction = "filters";
+    mobileFilters.addEventListener("click", () => v.openQueryControlsSheet());
+  } else {
+    renderSavedViewsToolbar(v, subRow);
+  }
+
+  const utility = mainRow.createDiv({ cls: "bt-toolbar-utility" });
+
+  // US-163: toolbar `+` opens Quick Add, which writes the new line to
+  // today's daily-note tail (the only entry point — see writer.addTask
+  // resolution order). Default scheduled = unset; user adds ⏳ inline
+  // via Quick Add tokens or schedules later via drag.
+  // see USER_STORIES.md
+  const add = utility.createEl("button", { text: tr("toolbar.add") });
+  add.addClass("bt-add-btn");
+  add.addEventListener("click", () => openQuickAdd(v));
+  // Settings moved out of the query toolbar to the Tab Strip gear (DESIGN §5.0).
+}
+
+function renderSavedViewsToolbar(v: TaskCenterView, parent: HTMLElement, rerenderControls?: () => void): void {
+  const wrap = parent.createDiv({ cls: "bt-saved-views" });
+  wrap.dataset.savedViews = "true";
+
+  const actions = wrap.createDiv({ cls: "bt-saved-view-actions" });
+
+  // US-109z: no global filter chips in the toolbar anymore — only current-query
+  // actions. Filter controls live per-area (renderAreaFilter) and in the Query
+  // editor / mobile sheet (which still call renderSavedViewsFilterControls for
+  // the shared base `preset.filters`).
+  // DESIGN §5.0: query toolbar only carries current-query actions. Tab
+  // management lives on the Tab Strip; settings is app chrome (gear there).
+  v.renderSavedViewsActionControls(actions, rerenderControls, {
+    includeSaveAs: true,
+    contextualSaveAs: true,
+    includeDsl: true,
+    includeManage: false,
+  });
+}

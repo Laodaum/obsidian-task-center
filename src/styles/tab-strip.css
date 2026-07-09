@@ -1,0 +1,269 @@
+/* ── Manage Tabs sheet layout ── */
+.task-center-bottom-sheet .bt-manage-tabs-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.task-center-bottom-sheet .bt-manage-tabs-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px 4px 12px;
+}
+/* Divider between action buttons and the list */
+.task-center-bottom-sheet .bt-manage-tabs-list {
+  border-top: 1px solid var(--background-modifier-border);
+  padding-top: 6px;
+}
+
+/* ── Row chrome ── */
+.task-center-bottom-sheet .bt-manage-tab-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: var(--radius-m);
+  cursor: pointer;
+}
+.task-center-bottom-sheet .bt-manage-tab-row:hover {
+  background: var(--background-modifier-hover);
+}
+/* Active row: accent-tinted background + name in accent color */
+.task-center-bottom-sheet .bt-manage-tab-row-active {
+  background: color-mix(in srgb, var(--interactive-accent) 10%, var(--background-modifier-hover));
+}
+.task-center-bottom-sheet .bt-manage-tab-row-active .bt-manage-tab-title {
+  color: var(--text-accent);
+}
+/* Handle: dimly visible at rest so rows feel balanced; full on hover */
+.task-center-bottom-sheet .bt-manage-tab-handle {
+  flex: 0 0 auto;
+  color: var(--text-faint);
+  cursor: grab;
+  opacity: 0.25;
+  transition: opacity 0.1s ease;
+  font-size: 13px;
+}
+.task-center-bottom-sheet .bt-manage-tab-row:hover .bt-manage-tab-handle {
+  opacity: 0.7;
+}
+.task-center-obsidian-mobile-sheet .bt-manage-tab-handle {
+  opacity: 0.6;
+}
+.task-center-bottom-sheet .bt-manage-tab-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.task-center-bottom-sheet .bt-manage-tab-title {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-semibold);
+  color: var(--text-normal);
+}
+.task-center-bottom-sheet .bt-manage-tab-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-left: auto;
+}
+.task-center-bottom-sheet .bt-manage-tab-badge {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--background-modifier-border);
+  color: var(--text-muted);
+  font-size: 11px;
+}
+/* Preset badge: subtle pill, low visual weight */
+.task-center-bottom-sheet .bt-manage-tab-badge-preset {
+  background: transparent;
+  color: var(--text-faint);
+  font-size: 11px;
+  padding: 1px 4px;
+}
+/* Unsaved dot; default star */
+.task-center-bottom-sheet .bt-manage-tab-dot {
+  flex: 0 0 auto;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--interactive-accent);
+}
+.task-center-bottom-sheet .bt-manage-tab-star {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  color: var(--text-accent);
+}
+.task-center-bottom-sheet .bt-manage-tab-star svg {
+  width: 13px;
+  height: 13px;
+}
+.task-center-bottom-sheet .bt-manage-tab-kebab {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.1s ease;
+}
+.task-center-bottom-sheet .bt-manage-tab-row:hover .bt-manage-tab-kebab {
+  opacity: 1;
+  color: var(--text-muted);
+}
+.task-center-bottom-sheet .bt-manage-tab-kebab:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+.task-center-bottom-sheet .bt-manage-tab-btn {
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+.task-center-bottom-sheet .bt-manage-tab-btn:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+/* DESIGN §5.0: Tab Strip trailing controls — manage tabs + settings (app chrome) */
+.task-center-view .bt-tabbar-tail {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  padding-left: 6px;
+}
+.task-center-view .bt-tabbar-tail-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.task-center-view .bt-tabbar-tail-btn:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+/* Manage tab rows drag-to-reorder */
+.task-center-bottom-sheet .bt-manage-tab-row.bt-manage-tab-row-dragging {
+  opacity: 0.4;
+}
+.task-center-bottom-sheet .bt-manage-tab-row.bt-manage-tab-row-drop-before {
+  border-top: 2px solid var(--interactive-accent);
+}
+.task-center-bottom-sheet .bt-manage-tab-row.bt-manage-tab-row-drop-after {
+  border-bottom: 2px solid var(--interactive-accent);
+}
+
+/* ── Overflow tabs sheet (VAL-GUI-005) ── */
+.task-center-bottom-sheet .bt-overflow-tabs-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+/* DESIGN §5.0: overflow tab = one row (name + badges + count) + kebab. */
+.task-center-bottom-sheet .bt-overflow-tab-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: var(--radius-m);
+  cursor: pointer;
+}
+.task-center-bottom-sheet .bt-overflow-tab-row:hover,
+.task-center-bottom-sheet .bt-overflow-tab-row-active {
+  background: var(--background-modifier-hover);
+}
+.task-center-bottom-sheet .bt-overflow-tab-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.task-center-bottom-sheet .bt-overflow-tab-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: var(--font-semibold);
+  color: var(--text-normal);
+}
+.task-center-bottom-sheet .bt-overflow-tab-count {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--background-modifier-hover);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+.task-center-bottom-sheet .bt-overflow-tab-badge {
+  flex: 0 0 auto;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--background-secondary);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+.task-center-bottom-sheet .bt-overflow-tab-kebab {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.task-center-bottom-sheet .bt-overflow-tab-kebab:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+/* Overflow tab rows drag-to-reorder */
+.task-center-bottom-sheet .bt-overflow-tab-row.bt-overflow-tab-row-dragging {
+  opacity: 0.4;
+}
+.task-center-bottom-sheet .bt-overflow-tab-row.bt-overflow-tab-row-drop-before {
+  border-top: 2px solid var(--interactive-accent);
+}
+.task-center-bottom-sheet .bt-overflow-tab-row.bt-overflow-tab-row-drop-after {
+  border-bottom: 2px solid var(--interactive-accent);
+}
+

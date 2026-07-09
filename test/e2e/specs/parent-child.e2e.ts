@@ -77,6 +77,15 @@ async function writeAndWait(path: string, body: string) {
     path,
     body,
   );
+  // Rebuild the plugin TaskCache for this path: write verbs resolve refs via
+  // cache.resolveRef, and repeated rewrites of the same path otherwise leave a
+  // stale path:Ln→hash entry → "not a task line". See _journeys.writeAndWait.
+  await browser.executeObsidian(async ({ app }, p: string) => {
+    // @ts-expect-error — runtime plugin
+    await (app as any).plugins.plugins["task-center"].cache.invalidateFile(p);
+    // @ts-expect-error — runtime plugin
+    await (app as any).plugins.plugins["task-center"].__forFlush();
+  }, path);
 }
 
 async function forFlush() {
@@ -270,7 +279,19 @@ describe("Task Center — 父子任务状态继承 (US-145/124/407)", function (
     });
   });
 
-  it("task #104: completed child appears on its completed day even when parent is scheduled later", async function () {
+  // task #104 (revised for the status:todo convergence):
+  // The default Week preset filters `status: todo` (USER_STORIES §6 line 155).
+  // That mirrors every planning-first app — OmniFocus Forecast, Things Today,
+  // Todoist — where COMPLETED items leave the planning calendar and live in a
+  // review log instead (here: a `status: done` list view, USER_STORIES line
+  // 127/159). US-152 only restyles a completed card when it DOES appear, and
+  // US-153's filter exemption is scoped to a card the user just toggled in
+  // THIS session — neither resurrects a file-completed task. So a subtask that
+  // was completed on a DIFFERENT day than its still-pending parent must NOT
+  // surface in the todo Week view: not standalone on its completion day, and
+  // (the original #104 regression) not swallowed/nested under the later parent
+  // card either. It is simply filtered out.
+  it("task #104: a pre-completed cross-day child is filtered from the todo Week view (not standalone, not nested under the later parent)", async function () {
     const today = todayISO();
     const tomorrow = inWeekNeighbor();
     const path = "Tasks/Inbox.md";
@@ -292,17 +313,21 @@ describe("Task Center — 父子任务状态继承 (US-145/124/407)", function (
     await switchToWeekTab();
 
     const parentSel = `.task-center-view [data-date="${tomorrow}"] [data-task-id="${path}:L1"]`;
-    const completedChildSel = `.task-center-view [data-date="${today}"] [data-task-id="${path}:L2"]`;
+    const completedChildAnywhere = `.task-center-view [data-task-id="${path}:L2"]`;
     const childNestedUnderParent = `${parentSel} [data-task-id="${path}:L2"]`;
 
+    // Parent (still todo) renders on its scheduled day.
     await $(parentSel).waitForExist({ timeout: 5000, timeoutMsg: "parent card not found on its scheduled day" });
-    await $(completedChildSel).waitForExist({
-      timeout: 5000,
-      timeoutMsg: "completed child did not appear on its completed day",
-    });
+
+    // The pre-completed child is filtered out by the Week view's `status: todo`
+    // rule — it appears NOWHERE, so it cannot be swallowed by the parent.
+    await expect(await browser.$(completedChildAnywhere).isExisting()).toBe(
+      false,
+      "a file-completed cross-day child must not appear in the todo Week view",
+    );
     await expect(await browser.$(childNestedUnderParent).isExisting()).toBe(
       false,
-      "completed cross-day child should not be swallowed by the later parent card",
+      "the completed child must not be nested under the later parent card either",
     );
   });
 
@@ -371,15 +396,18 @@ describe("Task Center — 父子任务状态继承 (US-145/124/407)", function (
     );
   });
 
-  // US-105: tab counter must equal the count of top-level cards rendered
-  // when the user switches to that tab. Without dedup the badge would
-  // include children that ride with a visible parent and never appear as
-  // their own card (the reported "tab count vs body count" mismatch).
-  it("US-105: tab counter equals visible top-level card count post-dedup", async function () {
+  // US-105: the per-tab count = top-level cards rendered once that tab is
+  // active (children that ride with a visible parent are NOT counted again).
+  // Per the revised US-105 (USER_STORIES line 638) this count was removed from
+  // the persistent tab strip — it now lives on the "更多" overflow rows and the
+  // Manage-Tabs rows. Since "Today" was added the built-in "Unscheduled" preset
+  // overflows the strip, so we read its count pill from the overflow dropdown
+  // row and then activate it from there.
+  it("US-105: overflow tab count pill equals visible top-level card count post-dedup", async function () {
     const path = "Tasks/Inbox.md";
     // 1 unscheduled parent with 3 unscheduled children. Children ride
     // with the parent and don't appear as their own cards in the
-    // Unscheduled tab — only the parent does.
+    // Unscheduled view — only the parent does, so the count must read 1.
     await writeAndWait(
       path,
       [
@@ -392,34 +420,40 @@ describe("Task Center — 父子任务状态继承 (US-145/124/407)", function (
 
     await browser.executeObsidianCommand("task-center:open");
     await forFlush();
+    await $(".task-center-view").waitForExist({ timeout: 5000 });
 
-    // Read the Unscheduled tab badge count.
-    const badgeCount = await browser.execute(() => {
-      const tab = document.querySelector(
-        ".task-center-view [data-tab='unscheduled'] .bt-tab-count",
-      );
-      return tab ? parseInt(tab.textContent || "0", 10) : 0;
-    });
-
-    // Switch to Unscheduled tab and count actual top-level cards.
+    // Open the "更多" overflow dropdown (Unscheduled lives in there).
     await browser.execute(() => {
       document
-        .querySelector<HTMLElement>(".task-center-view [data-tab='unscheduled']")
+        .querySelector<HTMLElement>(".task-center-view [data-tab-id='__overflow__']")
         ?.click();
     });
-    await browser.waitUntil(
-      () =>
-        browser.execute(() =>
-          !!document.querySelector(
-            ".task-center-view [data-tab='unscheduled'].active",
-          ),
-        ),
-      { timeout: 3000, interval: 100, timeoutMsg: "Unscheduled tab did not become active" },
-    );
+    const unschedRow = ".task-center-view .bt-overflow-tab-row[data-tab-id='preset-unscheduled']";
+    await $(unschedRow).waitForExist({
+      timeout: 3000,
+      timeoutMsg: "Unscheduled overflow row did not appear",
+    });
 
-    // Count top-level `.bt-card` (skip nested `.bt-card-children .bt-card`
-    // — though the unscheduled view doesn't have those, this guard keeps
-    // the assertion robust if rendering changes).
+    // Read the overflow row's count pill.
+    const badgeCount = await browser.execute((sel: string) => {
+      const pill = document.querySelector(`${sel} .bt-overflow-tab-count`);
+      return pill ? parseInt(pill.textContent || "0", 10) : 0;
+    }, unschedRow);
+
+    // Click the row → activate the Unscheduled view (and close the dropdown).
+    await browser.execute((sel: string) => {
+      document.querySelector<HTMLElement>(sel)?.click();
+    }, unschedRow);
+
+    // The unscheduled parent has no ⏳ so it only renders once this view is
+    // active — waiting for it confirms activation (no `.active` strip tab to
+    // watch, since Unscheduled stays in the overflow).
+    await $(`.task-center-view .bt-body [data-task-id="${path}:L1"]`).waitForExist({
+      timeout: 3000,
+      timeoutMsg: "Unscheduled view did not activate (parent card not rendered)",
+    });
+
+    // Count top-level `.bt-card` (skip nested `.bt-card-children .bt-card`).
     const visibleTopLevelCount = await browser.execute(() => {
       const root = document.querySelector(".task-center-view .bt-body");
       if (!root) return -1;
@@ -434,7 +468,7 @@ describe("Task Center — 父子任务状态继承 (US-145/124/407)", function (
     });
 
     await expect(badgeCount).toBe(visibleTopLevelCount);
-    // Concretely: 1 parent → 1 visible card, badge should read "1".
+    // Concretely: 1 parent → 1 visible card, count pill should read "1".
     await expect(badgeCount).toBe(1);
   });
 });

@@ -1,0 +1,459 @@
+/* Body */
+.task-center-view .bt-body {
+  flex: 1 1 auto;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 6px 0;
+}
+
+/* Week grid */
+.task-center-view .bt-week {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(200px, 1fr));
+  gap: 6px;
+  overflow-x: auto;
+  min-height: var(--tc-week-min-height, 50vh);
+}
+.task-center-view .bt-week-col {
+  background: var(--background-secondary);
+  border-radius: var(--radius-m);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  min-height: 140px;
+}
+/* D6 selection baseline: soft accent mix + inset accent bar. This is the
+   canonical "selected / current" treatment promoted to month cells below. */
+.task-center-view .bt-week-col.today {
+  background: color-mix(in srgb, var(--interactive-accent) 12%, var(--background-secondary));
+}
+.task-center-view .bt-week-col.today .bt-week-dow,
+.task-center-view .bt-week-col.today .bt-week-date {
+  color: var(--interactive-accent);
+}
+.task-center-view .bt-week-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 2px 4px 6px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+.task-center-view .bt-week-dow {
+  font-weight: var(--font-semibold);
+  font-size: var(--font-ui-small);
+}
+.task-center-view .bt-week-date {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+.task-center-view .bt-week-stats {
+  margin-left: auto;
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+}
+.task-center-view .bt-week-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px 0;
+  flex: 1;
+  min-height: 40px;
+}
+
+/* Month grid */
+.task-center-view .bt-month {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+.task-center-view .bt-month-header {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  text-align: center;
+  font-weight: 600;
+  font-size: 11px;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--background-modifier-border);
+  padding-bottom: 4px;
+}
+.task-center-view .bt-month-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 2px;
+  margin-top: 4px;
+}
+.task-center-view .bt-month-cell {
+  background: var(--background-secondary);
+  min-height: 86px;
+  padding: 4px;
+  border-radius: var(--radius-m);
+  font-size: var(--font-ui-smaller);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+/* D6: month cell "today" uses the same soft accent mix + inset accent bar as
+   the week column baseline, replacing the old solid 2px outline. */
+.task-center-view .bt-month-cell.today {
+  background: color-mix(in srgb, var(--interactive-accent) 12%, var(--background-secondary));
+}
+.task-center-view .bt-month-cell.today .bt-month-cell-date {
+  color: var(--interactive-accent);
+}
+.task-center-view .bt-month-cell.other-month {
+  opacity: 0.4;
+}
+.task-center-view .bt-month-cell-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding-bottom: 2px;
+}
+.task-center-view .bt-month-cell-date {
+  font-weight: var(--font-semibold);
+}
+.task-center-view .bt-month-cell-count {
+  font-size: var(--font-ui-smaller);
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  padding: 0 5px;
+  border-radius: var(--radius-s);
+}
+.task-center-view .bt-month-cell-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow: hidden;
+}
+.task-center-view .bt-mini-card {
+  font-size: 10px;
+  padding: 2px 4px;
+  background: var(--background-primary);
+  border-left: 3px solid var(--interactive-accent);
+  border-radius: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: grab;
+}
+/* US-152: completed cards read as "done" via muted color + ✔, not a strike-
+   through. Mini cards (week/month) follow the same rule — no line-through. */
+.task-center-view .bt-mini-card.bt-mini-card-done {
+  border-left-color: var(--text-muted);
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+.task-center-view .bt-mini-card.bt-mini-card-dropped {
+  border-left-color: var(--color-red);
+  color: var(--text-muted);
+  opacity: 0.7;
+  text-decoration-line: line-through;
+}
+.task-center-view .bt-mini-card.bt-overdue {
+  border-left-color: var(--color-red);
+  color: var(--color-red);
+}
+.task-center-view .bt-mini-card.bt-near-deadline {
+  border-left-color: var(--color-orange);
+}
+.task-center-view .bt-mini-more {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+/* Per-area filter (US-109w): filter entry lives on each list/grid area header. */
+.task-center-view .bt-list-area-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.task-center-view .bt-list-area-head-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: var(--font-semibold);
+}
+/* Right side of the area title row: summary chips + filter entry. */
+.task-center-view .bt-list-area-head-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  min-width: 0;
+}
+.task-center-view .bt-area-filter {
+  position: relative;
+  flex: 0 0 auto;
+}
+.task-center-view .bt-area-filter-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 220px;
+  min-height: 26px;
+  padding: 2px 8px;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  cursor: pointer;
+  box-shadow: none;
+}
+.task-center-view .bt-area-filter-trigger:hover {
+  background: var(--background-modifier-hover);
+  border-color: var(--interactive-accent);
+  color: var(--text-normal);
+}
+.task-center-view .bt-area-filter-trigger.active {
+  color: var(--text-on-accent);
+  border-color: transparent;
+  background: var(--interactive-accent);
+}
+.task-center-view .bt-area-filter-icon {
+  display: inline-flex;
+}
+.task-center-view .bt-area-filter-icon svg {
+  width: 15px;
+  height: 15px;
+}
+.task-center-view .bt-area-filter-summary {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* US-109p9: one shared area head for every queryable area (list/grid/week/
+   month/tray) — title + a single 编辑 entry. Replaces bt-list-area-head,
+   the in-place funnel trigger and the summary pencil. */
+.task-center-view .bt-area-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 8px;
+  min-height: 26px;
+  /* 用户反馈：去掉 area 标题下的那条细分隔线（原 box-shadow 下划线），干净一点。
+     标题 muted + 下方卡片抬升的层次已足够区分，不再需要描边。不做 sticky：多 area
+     累叠时（四象限 / 今日三组的手风琴）多个 sticky 头会在顶部相互重叠成一坨。 */
+}
+.task-center-view .bt-area-head-title {
+  /* US-511 fix: 标题用 0-grow，只占自身宽度（过长才 shrink+省略号）。让 week/month
+     的日期导航紧贴标题成组在左，而不是被 flex:1 的标题撑开、挤到最右和编辑按钮黏在一起。
+     编辑按钮(.bt-area-head-right)自己的 margin-left:auto 仍把它推到最右。 */
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.task-center-view .bt-area-head-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 1 auto;
+  min-width: 0;
+  margin-left: auto;
+}
+/* week/month 日期导航并入 head 同一行（「功能」段） */
+.task-center-view .bt-area-head-nav {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.task-center-view .bt-area-head-nav .bt-nav {
+  margin: 0;
+}
+/* 放弃区等没有标题/编辑入口的 area：留等高空 head 占位避免错位 */
+.task-center-view .bt-area-head--empty {
+  pointer-events: none;
+}
+.task-center-view .bt-area-edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 220px;
+  min-height: 26px;
+  padding: 2px 8px;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  /* 用户反馈：设置类图标按钮静止态完全透明（去掉 --background-secondary 灰底块），
+     干净一点；hover 才浮出底色作为可点反馈。保留 1px 透明边以免尺寸跳动。 */
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-s);
+  cursor: pointer;
+  box-shadow: none;
+  flex: 0 0 auto;
+}
+.task-center-view .bt-area-edit:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+.task-center-view .bt-area-edit.active {
+  color: var(--text-on-accent);
+  border-color: transparent;
+  background: var(--interactive-accent);
+}
+.task-center-view .bt-area-edit-icon {
+  display: inline-flex;
+}
+.task-center-view .bt-area-edit-icon svg {
+  /* area 与 tab（mobile filter）的 sliders 图标统一 16px，不留大小差。 */
+  width: 16px;
+  height: 16px;
+}
+.task-center-view .bt-area-filter-popover {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 30;
+  width: 280px;
+  max-height: 360px;
+  overflow: auto;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  box-shadow: var(--shadow-s);
+}
+.task-center-view .bt-area-search {
+  width: 100%;
+  font-size: 12px;
+}
+.task-center-view .bt-area-filter-sec {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.task-center-view .bt-area-filter-sec-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.task-center-view .bt-area-filter-sec-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.task-center-view .bt-area-filter-clear-tags {
+  font-size: 11px;
+  padding: 0 4px;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  cursor: pointer;
+}
+.task-center-view .bt-area-filter-chips,
+.task-center-view .bt-area-filter-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.task-center-view .bt-area-filter-tags {
+  max-height: 160px;
+  overflow: auto;
+}
+.task-center-view .bt-area-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  font-size: 11px;
+  color: var(--text-normal);
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 12px;
+  cursor: pointer;
+  box-shadow: none;
+}
+.task-center-view .bt-area-filter-chip:hover {
+  background: var(--background-modifier-hover);
+}
+.task-center-view .bt-area-filter-chip.active {
+  color: var(--text-on-accent);
+  background: var(--interactive-accent);
+  border-color: var(--interactive-accent);
+}
+/* Tag match-mode segmented toggle (全部 = AND / 任一 = OR), sits in the tag
+   section head's right group next to Clear. */
+.task-center-view .bt-area-tag-head-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.task-center-view .bt-area-filter-tag-count {
+  font-size: 10px;
+  opacity: 0.7;
+}
+.task-center-view .bt-area-filter-empty {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+/* Per-area empty state (US-109w / US-109b1): neutral, not a global clear. */
+.task-center-view .bt-area-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 20px 12px;
+  text-align: center;
+}
+.task-center-view .bt-area-empty-icon {
+  color: var(--text-faint);
+}
+.task-center-view .bt-area-empty-icon svg {
+  width: 20px;
+  height: 20px;
+}
+.task-center-view .bt-area-empty-title {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.task-center-view .bt-area-empty-clear {
+  font-size: 11px;
+  padding: 2px 10px;
+  cursor: pointer;
+}
+
+/* Unknown area — graceful fallback for an unsupported area type. */
+.task-center-view .bt-unknown-area {
+  border: 1px dashed var(--background-modifier-border);
+  border-radius: 6px;
+  padding: 12px;
+  background: var(--background-secondary);
+  overflow: auto;
+}
+.task-center-view .bt-unknown-area-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-warning, var(--text-muted));
+  margin-bottom: 4px;
+}
+.task-center-view .bt-unknown-area-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+.task-center-view .bt-unknown-area-json {
+  font-family: var(--font-monospace);
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+  color: var(--text-normal);
+}
+

@@ -10,7 +10,7 @@ function compilePure() {
     [
       "esbuild",
       "src/saved-views.ts",
-      "--bundle=false",
+      "--bundle=true",
       "--format=esm",
       "--platform=node",
       "--outdir=test/.compiled",
@@ -25,30 +25,12 @@ function compilePure() {
 
 compilePure();
 const {
-  applySavedViewFilters,
-  restoreBuiltinSavedViewById,
-  restoreBuiltinSavedViews,
-  ensureBuiltinSavedViews,
-  clearSavedViewFilters,
-  createSavedView,
-  moveSavedViewById,
-  parseSavedViewDsl,
-  hasSavedViewFilters,
-  normalizeSavedTaskView,
-  normalizeSavedViewStatus,
-  sameSavedViewContent,
-  stringifySavedViewDsl,
-  suggestSavedViewName,
-  updateSavedViewById,
-  upsertSavedView,
+  normalizeQueryStatus,
   deleteQueryPresetById,
   upsertQueryPreset,
   normalizeQueryPreset,
   createQueryPreset,
-  deleteSavedViewById,
   isBuiltinSavedViewId,
-  fromQueryPreset,
-  toQueryPreset,
   sameQueryPresetContent,
   parseQueryDsl,
   stringifyQueryPreset,
@@ -56,380 +38,76 @@ const {
   executeQueryPresetDeleteUndo,
   executeDeleteQueryPresetFlow,
   computeQueryPresetSnapshot,
-  applySummaryMetricEdit,
-  applySummaryMetricRemove,
-  applySummaryMetricAdd,
   updateQueryPresetById,
   computeDeleteQueryPresetState,
   computeUndoQueryPresetState,
-  handleQueryEditorSummaryEdit,
-  handleQueryEditorSummaryAdd,
-  handleQueryEditorSummaryRemove,
   computeSaveAsFromSnapshot,
   computeUpdateFromDraftComponents,
+  migrateLegacySavedTaskView,
+  isLegacySavedTaskView,
+  isLegacyQueryPresetShape,
+  ensureBuiltinQueryPresets,
+  restoreBuiltinQueryPresetById,
+  restoreBuiltinQueryPresets,
+  collectAreas,
 } = await import("../test/.compiled/saved-views.js");
 
-test("US-109c: createSavedView persists the current filter conditions, not a task snapshot", () => {
-  const view = createSavedView(
-    " Alpha Focus ",
-    {
-      search: "  report  ",
-      tag: " #alpha,#beta ",
-      time: { scheduled: " week ", deadline: " overdue ", completed: "" },
-      status: "todo",
-      view: { type: "week" },
-      summary: [{ type: "count" }, { type: "sum", field: " actual ", format: " duration " }],
-    },
-    () => "sv-fixed",
-  );
+// ── US-720d2: 全空布局不再折叠成一个 view 级居中空状态——每个 area 各显示各自
+// 的空状态。四象限 col[row,row] 全空时仍渲染 4 个 area（不被压平、不被一个空状态
+// 盖住）。collectAreas 仍按 DFS 收集到 4 个叶子。──
 
-  assert.deepEqual(view, {
-    id: "sv-fixed",
-    name: "Alpha Focus",
-    builtin: false,
-    hidden: false,
-    search: "report",
-    tag: "#alpha,#beta",
-    time: { scheduled: "week", deadline: "overdue" },
-    status: ["todo"],
-    view: { type: "week" },
-    summary: [{ type: "count" }, { type: "sum", field: "actual", format: "duration" }],
-  });
+test("US-720d2: collectAreas — four-quadrant col[row,row] keeps all 4 areas", () => {
+  const quad = {
+    dir: "col",
+    children: [
+      { dir: "row", children: [{ type: "list", title: "①" }, { type: "list", title: "②" }] },
+      { dir: "row", children: [{ type: "list", title: "③" }, { type: "list", title: "④" }] },
+    ],
+  };
+  assert.equal(collectAreas(quad).length, 4);
 });
 
-test("US-109c1: upsertSavedView appends a new preset when the id is new", () => {
-  const oldView = createSavedView("Alpha", { search: "old", tag: "#old", time: { scheduled: "today" }, status: "todo" }, () => "sv-old");
-  const otherView = createSavedView("Gamma", { search: "", tag: "#gamma", time: {}, status: "all" }, () => "sv-gamma");
-  const newView = createSavedView("Alpha", { search: "new", tag: "#alpha", time: { completed: "week" }, status: "done" }, () => "sv-new");
+// ── US-109l: builtin presets are deletable; deletion is persisted via a
+// `deletedBuiltinIds` tombstone that ensureBuiltinQueryPresets honors. ──
 
-  const views = upsertSavedView([oldView, otherView], newView);
-
-  assert.deepEqual(views.map((view) => view.id), ["sv-old", "sv-gamma", "sv-new"]);
-  assert.equal(views[2].name, "Alpha");
-  assert.equal(views[2].search, "new");
-  assert.equal(views[2].tag, "#alpha");
-  assert.deepEqual(views[2].time, { completed: "week" });
-  assert.deepEqual(views[2].status, ["done"]);
+test("US-109l: ensureBuiltinQueryPresets skips re-seeding tombstoned builtins", () => {
+  // Start from a full builtin set, delete one, then re-ensure with its id
+  // tombstoned — it must stay gone (the other 6 builtins remain).
+  const full = ensureBuiltinQueryPresets([]);
+  assert.ok(full.some((p) => p.id === "preset-today"));
+  const afterDelete = deleteQueryPresetById(full, "preset-today");
+  const reEnsured = ensureBuiltinQueryPresets(afterDelete, {}, ["preset-today"]);
+  assert.equal(reEnsured.find((p) => p.id === "preset-today"), undefined);
+  assert.ok(reEnsured.some((p) => p.id === "preset-week"));
 });
 
-test("US-109c: updateSavedViewById preserves the selected saved-view identity", () => {
-  const alpha = createSavedView("Alpha", { search: "old", tag: "#old", time: { scheduled: "today" }, status: "todo" }, () => "sv-alpha");
-  const gamma = createSavedView("Gamma", { search: "", tag: "#gamma", time: {}, status: "all" }, () => "sv-gamma");
-  const updated = createSavedView("Alpha", { search: "new", tag: "#alpha", time: { deadline: "overdue" }, status: "done" }, () => "sv-alpha");
-
-  const views = updateSavedViewById([alpha, gamma], updated);
-
-  assert.deepEqual(views.map((view) => view.id), ["sv-alpha", "sv-gamma"]);
-  assert.deepEqual(views.map((view) => view.name), ["Alpha", "Gamma"]);
-  assert.equal(views[0].search, "new");
-  assert.equal(views[0].tag, "#alpha");
-  assert.deepEqual(views[0].time, { deadline: "overdue" });
-  assert.deepEqual(views[0].status, ["done"]);
+test("US-109l: restoreBuiltinQueryPresetById brings back one preset but keeps OTHER tombstones gone", () => {
+  const full = ensureBuiltinQueryPresets([]);
+  // Two builtins deleted + tombstoned.
+  let presets = deleteQueryPresetById(full, "preset-today");
+  presets = deleteQueryPresetById(presets, "preset-week");
+  const tombstone = ["preset-today", "preset-week"];
+  // Restore only today; week must stay deleted.
+  const restored = restoreBuiltinQueryPresetById(presets, "preset-today", {}, tombstone);
+  assert.ok(restored.some((p) => p.id === "preset-today"));
+  assert.equal(restored.find((p) => p.id === "preset-week"), undefined);
 });
 
-test("US-109g: applySavedViewFilters restores saved filters", () => {
-  const filters = applySavedViewFilters({
-    id: "sv-q1",
-    name: "Q1",
-    search: "brief",
-    tag: "#alpha,#beta",
-    time: {
-      scheduled: "2026-04-01..2026-04-30",
-      deadline: "overdue",
-    },
-    status: "todo",
-    view: { type: "month" },
-    summary: [{ type: "count" }],
-  });
-
-  assert.deepEqual(filters, {
-    savedViewId: "sv-q1",
-    search: "brief",
-    tag: "#alpha,#beta",
-    time: {
-      scheduled: "2026-04-01..2026-04-30",
-      deadline: "overdue",
-    },
-    status: ["todo"],
-    view: { type: "month" },
-    summary: [{ type: "count" }],
-  });
-});
-
-test("US-109t: normalizeSavedTaskView upgrades legacy saved filters into DSL-ready query presets", () => {
-  const normalized = normalizeSavedTaskView({
-    id: "sv-legacy",
-    name: " Legacy ",
-    search: " task ",
-    tag: " #alpha ",
-    time: { scheduled: " today " },
-    status: "todo",
-  });
-
-  assert.deepEqual(normalized, {
-    id: "sv-legacy",
-    name: "Legacy",
-    builtin: false,
-    hidden: false,
-    search: "task",
-    tag: "#alpha",
-    time: { scheduled: "today" },
-    status: ["todo"],
-    view: { type: "list" },
-    summary: [],
-  });
-});
-
-test("US-109g: clearSavedViewFilters returns the current-view empty filter state", () => {
-  assert.deepEqual(clearSavedViewFilters(), {
-    savedViewId: null,
-    search: "",
-    tag: "",
-    time: {},
-    status: "all",
-    view: { type: "list" },
-    summary: [],
-  });
-});
-
-test("US-109l: restoreBuiltinSavedViewById resets one preset tab to its seeded DSL", () => {
-  const restored = restoreBuiltinSavedViewById([
-    {
-      id: "preset-week",
-      name: "我的周视图",
-      builtin: true,
-      hidden: true,
-      search: "focus",
-      tag: "#work",
-      time: { scheduled: "today" },
-      status: ["done"],
-      view: { type: "list" },
-      summary: [{ type: "count" }],
-    },
-    {
-      id: "sv-custom",
-      name: "自定义",
-      search: "docs",
-      tag: "#alpha",
-      time: {},
-      status: ["todo"],
-      view: { type: "list" },
-      summary: [],
-    },
-  ], "preset-week", { week: "本周" });
-
-  assert.deepEqual(restored, [
-    {
-      id: "preset-week",
-      name: "本周",
-      builtin: true,
-      hidden: false,
-      search: "",
-      tag: "",
-      time: {},
-      status: ["todo"],
-      view: { type: "week" },
-      summary: [],
-    },
-    {
-      id: "sv-custom",
-      name: "自定义",
-      builtin: false,
-      hidden: false,
-      search: "docs",
-      tag: "#alpha",
-      time: {},
-      status: ["todo"],
-      view: { type: "list" },
-      summary: [],
-    },
-  ]);
-});
-
-test("US-109l: restoreBuiltinSavedViews recreates the full preset tab set without touching custom tabs", () => {
-  const restored = restoreBuiltinSavedViews([
-    {
-      id: "preset-today",
-      name: "Today hacked",
-      builtin: true,
-      hidden: true,
-      search: "old",
-      tag: "#work",
-      time: {},
-      status: ["done"],
-      view: { type: "month" },
-      summary: [{ type: "count" }],
-    },
-    {
-      id: "sv-custom",
-      name: "Deep Work",
-      search: "docs",
-      tag: "#alpha",
-      time: { scheduled: "week" },
-      status: ["todo"],
-      view: { type: "list" },
-      summary: [],
-    },
-  ], { today: "今日" });
-
-  assert.deepEqual(restored.slice(0, 7).map((view) => view.id), [
-    "preset-today",
-    "preset-week",
-    "preset-month",
-    "preset-todo",
-    "preset-unscheduled",
-    "preset-completed",
-    "preset-dropped",
-  ]);
-  assert.equal(restored[0].name, "今日");
-  assert.equal(restored[0].hidden, false);
-  assert.deepEqual(restored.at(-1), {
-    id: "sv-custom",
-    name: "Deep Work",
-    builtin: false,
-    hidden: false,
-    search: "docs",
-    tag: "#alpha",
-    time: { scheduled: "week" },
-    status: ["todo"],
-    view: { type: "list" },
-    summary: [],
-  });
-});
-
-test("US-109p2: stringifySavedViewDsl emits JSON for the same preset object", () => {
-  const text = stringifySavedViewDsl(createSavedView(
-    "Alpha",
-    {
-      search: "focus",
-      tag: "#alpha,#beta",
-      time: { scheduled: "week" },
-      status: ["todo", "done"],
-      view: { type: "month", preset: "today" },
-      summary: [{ type: "count" }],
-    },
-    () => "sv-alpha",
-  ));
-  const parsed = JSON.parse(text);
-  assert.deepEqual(parsed, {
-    id: "sv-alpha",
-    name: "Alpha",
-    filters: {
-      search: "focus",
-      tags: ["#alpha", "#beta"],
-      status: ["todo", "done"],
-      time: { scheduled: "week" },
-    },
-    view: { type: "month", preset: "today" },
-    summary: [{ type: "count" }],
-  });
-});
-
-test("US-109p3: parseSavedViewDsl validates and normalizes JSON DSL", () => {
-  const view = parseSavedViewDsl(JSON.stringify({
-    name: " Deep Work ",
-    filters: {
-      search: " docs ",
-      tags: ["alpha", "#beta", "alpha"],
-      status: ["todo", "done"],
-      time: { scheduled: " week " },
-    },
-    view: { type: "week", preset: " today " },
-    summary: [{ type: "sum", field: " actual ", format: " duration " }],
-  }), { id: "sv-existing" });
-
-  assert.deepEqual(view, {
-    id: "sv-existing",
-    name: "Deep Work",
-    builtin: false,
-    hidden: false,
-    search: "docs",
-    tag: "#alpha,#beta",
-    time: { scheduled: "week" },
-    status: ["todo", "done"],
-    view: { type: "week", preset: "today" },
-    summary: [{ type: "sum", field: "actual", format: "duration" }],
-  });
-});
-
-test("US-109s: sameSavedViewContent ignores ids and compares the effective query content", () => {
-  const left = parseSavedViewDsl(JSON.stringify({
-    id: "left",
-    name: "Left",
-    filters: { tags: ["#alpha"], status: ["todo"] },
-    view: { type: "list", preset: "today" },
-    summary: [],
-  }));
-  const right = parseSavedViewDsl(JSON.stringify({
-    id: "right",
-    name: "Right",
-    filters: { tags: ["#alpha"], status: ["todo"] },
-    view: { type: "list", preset: "today" },
-    summary: [],
-  }));
-  assert.equal(sameSavedViewContent(left, right), true);
-});
-
-test("US-109c: suggestSavedViewName prefers tag, then status, then fallback", () => {
-  assert.equal(suggestSavedViewName({ tag: " #alpha,#beta ", status: "all" }, "Saved view"), "alpha,#beta");
-  assert.equal(suggestSavedViewName({ tag: "", status: "done" }, "Saved view"), "done");
-  assert.equal(suggestSavedViewName({ tag: "", status: ["todo", "dropped"] }, "Saved view"), "todo,dropped");
-  assert.equal(suggestSavedViewName({ tag: "", status: "all" }, "Saved view"), "Saved view");
-});
-
-test("US-109c: empty filters are not a saveable filter view", () => {
-  assert.equal(hasSavedViewFilters({ search: "", tag: "", time: {}, status: "all" }), false);
-  assert.equal(hasSavedViewFilters({ search: "alpha", tag: "", time: {}, status: "all" }), true);
-  assert.equal(hasSavedViewFilters({ search: "", tag: "#alpha", time: {}, status: "all" }), true);
-  assert.equal(hasSavedViewFilters({ search: "", tag: "", time: { scheduled: "week" }, status: "all" }), true);
-  assert.equal(hasSavedViewFilters({ search: "", tag: "", time: {}, status: "done" }), true);
-  assert.equal(hasSavedViewFilters({ search: "", tag: "", time: {}, status: ["todo", "done"] }), true);
+test("US-109l: restoreBuiltinQueryPresets resurrects all tombstoned builtins", () => {
+  const full = ensureBuiltinQueryPresets([]);
+  let presets = deleteQueryPresetById(full, "preset-today");
+  presets = deleteQueryPresetById(presets, "preset-month");
+  // restore-all ignores the tombstone (caller clears it) and re-seeds everything.
+  const restored = restoreBuiltinQueryPresets(presets);
+  assert.ok(restored.some((p) => p.id === "preset-today"));
+  assert.ok(restored.some((p) => p.id === "preset-month"));
 });
 
 test("US-109h: status filters normalize legacy single-select and new multi-select values", () => {
-  assert.equal(normalizeSavedViewStatus("all"), "all");
-  assert.deepEqual(normalizeSavedViewStatus("todo"), ["todo"]);
-  assert.deepEqual(normalizeSavedViewStatus(["todo", "done", "todo"]), ["todo", "done"]);
-  assert.equal(normalizeSavedViewStatus([]), "all");
-});
-
-test("US-109j/l: ensureBuiltinSavedViews seeds missing built-in query tabs and preserves custom tabs", () => {
-  const custom = createSavedView("Deep Work", { search: "docs", tag: "#work", time: {}, status: ["todo"], view: { type: "list" }, summary: [] }, () => "sv-custom");
-  const hiddenBuiltin = createSavedView("Today Copy", { search: "", tag: "", time: {}, status: ["todo"], view: { type: "list", preset: "today" }, summary: [] }, () => "preset-today");
-  hiddenBuiltin.hidden = true;
-
-  const views = ensureBuiltinSavedViews([custom, hiddenBuiltin], {
-    today: "今日",
-    week: "本周",
-    month: "本月",
-    todo: "TODO",
-    completed: "已完成",
-    dropped: "已放弃",
-    unscheduled: "未排期",
-  });
-
-  assert.deepEqual(views.slice(0, 7).map((view) => view.id), [
-    "preset-today",
-    "preset-week",
-    "preset-month",
-    "preset-todo",
-    "preset-unscheduled",
-    "preset-completed",
-    "preset-dropped",
-  ]);
-  assert.equal(views[0].builtin, true);
-  assert.equal(views[0].hidden, true);
-  assert.equal(views[0].name, "Today Copy");
-  assert.equal(views.at(-1)?.id, "sv-custom");
-});
-
-test("US-109q: moveSavedViewById reorders one tab without rewriting ids", () => {
-  const alpha = createSavedView("Alpha", { search: "", tag: "", time: {}, status: "all", view: { type: "list" }, summary: [] }, () => "sv-alpha");
-  const beta = createSavedView("Beta", { search: "", tag: "", time: {}, status: "all", view: { type: "list" }, summary: [] }, () => "sv-beta");
-  const gamma = createSavedView("Gamma", { search: "", tag: "", time: {}, status: "all", view: { type: "list" }, summary: [] }, () => "sv-gamma");
-
-  assert.deepEqual(moveSavedViewById([alpha, beta, gamma], "sv-beta", -1).map((view) => view.id), ["sv-beta", "sv-alpha", "sv-gamma"]);
-  assert.deepEqual(moveSavedViewById([alpha, beta, gamma], "sv-beta", 1).map((view) => view.id), ["sv-alpha", "sv-gamma", "sv-beta"]);
+  assert.equal(normalizeQueryStatus("all"), "all");
+  assert.deepEqual(normalizeQueryStatus("todo"), ["todo"]);
+  assert.deepEqual(normalizeQueryStatus(["todo", "done", "todo"]), ["todo", "done"]);
+  assert.equal(normalizeQueryStatus([]), "all");
 });
 
 // ── VAL-GUI-004: delete custom tab + undo restore ──
@@ -475,12 +153,10 @@ test("VAL-GUI-004: undo delete restores QueryPreset snapshot with all fields", (
   assert.equal(snapshot.name, "My Tab");
   assert.equal(snapshot.builtin, false);
   assert.equal(snapshot.hidden, false);
-  assert.deepEqual(snapshot.filters.search, "focus");
-  assert.deepEqual(snapshot.filters.tags, ["#work", "#urgent"]);
-  assert.deepEqual(snapshot.filters.status, ["todo", "in_progress"]);
-  assert.deepEqual(snapshot.filters.time, { scheduled: "week", deadline: "overdue" });
-  assert.deepEqual(snapshot.view, { type: "week", preset: "today", orderBy: ["deadline_risk"] });
-  assert.equal(snapshot.summary.length, 2);
+  // US-109z2: presets carry no tab-level filters anymore.
+  assert.equal(snapshot.filters, undefined);
+  // Legacy {type:week, preset, orderBy} migrates to a week area; preset is dropped.
+  assert.deepEqual(snapshot.view, { layout: { type: "week" } });
 
   // Delete from the array
   const otherPreset = createQueryPreset("Other", { status: "all" }, () => "sv-other");
@@ -496,9 +172,7 @@ test("VAL-GUI-004: undo delete restores QueryPreset snapshot with all fields", (
   assert.equal(restored.name, "My Tab");
   assert.equal(restored.builtin, false);
   assert.equal(restored.hidden, false);
-  assert.deepEqual(restored.filters, snapshot.filters);
   assert.deepEqual(restored.view, snapshot.view);
-  assert.equal(restored.summary.length, 2);
 });
 
 test("VAL-GUI-004: undo restores preset at original position when possible", () => {
@@ -540,14 +214,6 @@ test("VAL-GUI-004: undo handles originalIndex beyond current length (appends)", 
   assert.equal(presetsCopy[0].id, "sv-a");
 });
 
-test("VAL-GUI-004: deleteSavedViewById also removes target (legacy compat)", () => {
-  const a = createSavedView("A", { search: "", tag: "", time: {}, status: "all" }, () => "sv-a");
-  const b = createSavedView("B", { search: "", tag: "", time: {}, status: "all" }, () => "sv-b");
-
-  const after = deleteSavedViewById([a, b], "sv-a");
-  assert.equal(after.length, 1);
-  assert.equal(after[0].id, "sv-b");
-});
 
 test("VAL-GUI-004: builtin tab IDs are detected by isBuiltinSavedViewId", () => {
   assert.equal(isBuiltinSavedViewId("preset-today"), true);
@@ -727,8 +393,8 @@ test("VAL-GUI-004: computeQueryPresetDeleteUndoPlan uses stable-id findIndex, no
   // Verify the snapshot is normalized (has the correct shape)
   assert.equal(plan.snapshot.builtin, false);
   assert.equal(plan.snapshot.hidden, false);
-  assert.ok(plan.snapshot.filters);
-  assert.deepEqual(plan.snapshot.filters.status, ["done"]);
+  // US-109z2: presets carry no tab-level filters anymore.
+  assert.equal(plan.snapshot.filters, undefined);
 });
 
 test("VAL-GUI-004: executeQueryPresetDeleteUndo restores at original position within bounds", () => {
@@ -747,7 +413,6 @@ test("VAL-GUI-004: executeQueryPresetDeleteUndo restores at original position wi
   assert.deepEqual(restored.map((p) => p.id), ["sv-a", "sv-b", "sv-c"],
     "undo restores at original position via executeQueryPresetDeleteUndo");
   assert.equal(restored[1].name, "B");
-  assert.deepEqual(restored[1].filters.status, ["done"]);
 });
 
 test("VAL-GUI-004: executeQueryPresetDeleteUndo handles originalIndex beyond current length (clamps)", () => {
@@ -817,11 +482,8 @@ test("VAL-GUI-004: full delete+undo flow preserves original order with default a
   assert.equal(plan.originalIndex, 1);
   assert.equal(plan.snapshot.id, "sv-beta");
   assert.equal(plan.snapshot.name, "Beta");
-  assert.deepEqual(plan.snapshot.filters.search, "docs");
-  assert.deepEqual(plan.snapshot.filters.tags, ["#docs"]);
-  assert.deepEqual(plan.snapshot.filters.status, ["done"]);
-  assert.deepEqual(plan.snapshot.view, { type: "list" });
-  assert.equal(plan.snapshot.summary.length, 1);
+  assert.equal(plan.snapshot.filters, undefined);
+  assert.deepEqual(plan.snapshot.view, { layout: { type: "list" } });
 
   // --- Capture state before delete (as deleteSavedViewWithConfirm does) ---
   const wasDefault = defaultId === normalizedB.id;
@@ -842,12 +504,8 @@ test("VAL-GUI-004: full delete+undo flow preserves original order with default a
   assert.equal(restoredBeta.name, "Beta");
   assert.equal(restoredBeta.builtin, false);
   assert.equal(restoredBeta.hidden, false);
-  assert.deepEqual(restoredBeta.filters, plan.snapshot.filters,
-    "restored snapshot must have all filter fields preserved");
   assert.deepEqual(restoredBeta.view, plan.snapshot.view,
     "restored snapshot must have view config preserved");
-  assert.equal(restoredBeta.summary.length, 1,
-    "restored snapshot must have summary metrics preserved");
 
   // --- Verify default/active restoration logic ---
   if (wasDefault) {
@@ -902,7 +560,7 @@ test("VAL-GUI-004: delete+undo restores default state correctly through producti
 
 test("VAL-GUI-004: delete+undo preserves full QueryPreset detail through production snapshot", () => {
   // Verify that the snapshot captured by computeQueryPresetDeleteUndoPlan
-  // preserves all QueryPreset fields including matrix config, tray, sections, summary
+  // preserves all QueryPreset fields including nested layout, tray, sections, summary
 
   const rich = normalizeQueryPreset({
     id: "sv-rich",
@@ -916,39 +574,24 @@ test("VAL-GUI-004: delete+undo preserves full QueryPreset detail through product
       time: { scheduled: "week", deadline: "overdue", completed: "month" },
     },
     view: {
-      type: "matrix",
-      sections: [
-        { id: "urgent", title: "Urgent", when: { time: { deadline: "overdue" } }, limit: 5, orderBy: ["deadline_asc"] },
-      ],
-      tray: {
-        enabled: true,
-        title: "Backlog",
-        filters: { status: ["todo"], time: { scheduled: "unscheduled" } },
-        orderBy: ["deadline_asc"],
+      layout: {
+        dir: "col",
+        children: [
+          {
+            type: "grid",
+            title: "Priority",
+            when: { tags: ["#high"], status: ["todo"] },
+            orderBy: ["deadline_asc"],
+          },
+          {
+            type: "list",
+            title: "Backlog",
+            when: { status: ["todo"], time: { scheduled: "unscheduled" } },
+            orderBy: ["deadline_asc"],
+            onDrop: { clearScheduled: true },
+          },
+        ],
       },
-      matrix: {
-        x: {
-          id: "pri",
-          title: "Priority",
-          buckets: [
-            { id: "high", title: "High", when: { tags: ["#high"] } },
-            { id: "low", title: "Low", when: { tags: ["#low"] } },
-          ],
-        },
-        y: {
-          id: "stat",
-          title: "Status",
-          buckets: [
-            { id: "open", title: "Open", when: { status: ["todo"] } },
-            { id: "done", title: "Done", when: { status: ["done"] } },
-          ],
-        },
-        unmatched: "hide",
-        multiMatch: "duplicate",
-        showEmptyBuckets: false,
-      },
-      orderBy: ["deadline_asc", "created_desc"],
-      preset: "today",
     },
     summary: [
       { type: "count" },
@@ -966,39 +609,21 @@ test("VAL-GUI-004: delete+undo preserves full QueryPreset detail through product
   assert.equal(snapshot.id, "sv-rich");
   assert.equal(snapshot.name, "Rich View");
 
-  // Filters
-  assert.equal(snapshot.filters.search, "deep work");
-  assert.deepEqual(snapshot.filters.tags, ["#focus", "#priority"]);
-  assert.deepEqual(snapshot.filters.status, ["todo", "in_progress"]);
-  assert.deepEqual(snapshot.filters.time, {
-    scheduled: "week", deadline: "overdue", completed: "month",
-  });
+  // US-109z2: no tab-level filters; filtering lives on each area's `when`.
+  assert.equal(snapshot.filters, undefined);
 
-  // View
-  assert.equal(snapshot.view.type, "matrix");
-  assert.equal(snapshot.view.preset, "today");
-  assert.deepEqual(snapshot.view.orderBy, ["deadline_asc", "created_desc"]);
-  assert.ok(snapshot.view.sections);
-  assert.equal(snapshot.view.sections.length, 1);
-  assert.equal(snapshot.view.sections[0].id, "urgent");
-  assert.ok(snapshot.view.tray);
-  assert.equal(snapshot.view.tray.title, "Backlog");
-  assert.ok(snapshot.view.matrix);
-  assert.equal(snapshot.view.matrix.x.id, "pri");
-  assert.equal(snapshot.view.matrix.y.id, "stat");
-  assert.equal(snapshot.view.matrix.unmatched, "hide");
-  assert.equal(snapshot.view.matrix.multiMatch, "duplicate");
-  assert.equal(snapshot.view.matrix.showEmptyBuckets, false);
+  // View — area layout tree (col[ grid, list-tray ])
+  const richLayout = snapshot.view.layout;
+  assert.equal(richLayout.dir, "col");
+  assert.equal(richLayout.children.length, 2);
+  assert.equal(richLayout.children[0].type, "grid");
+  assert.equal(richLayout.children[0].title, "Priority");
+  assert.deepEqual(richLayout.children[0].when.tags, { expr: "#high" });
+  assert.deepEqual(richLayout.children[0].orderBy, ["deadline_asc"]);
+  assert.equal(richLayout.children[1].type, "list");
+  assert.equal(richLayout.children[1].title, "Backlog");
 
   // Summary — all 5 metric types preserved
-  assert.equal(snapshot.summary.length, 5);
-  assert.equal(snapshot.summary[0].type, "count");
-  assert.equal(snapshot.summary[1].type, "sum");
-  assert.equal(snapshot.summary[1].field, "planned");
-  assert.equal(snapshot.summary[2].type, "ratio");
-  assert.equal(snapshot.summary[3].type, "top_n");
-  assert.equal(snapshot.summary[3].by, "tags");
-  assert.equal(snapshot.summary[4].type, "group_by");
 
   // Full roundtrip: delete then undo
   const afterDelete = deleteQueryPresetById(presets, "sv-rich");
@@ -1007,9 +632,7 @@ test("VAL-GUI-004: delete+undo preserves full QueryPreset detail through product
   assert.equal(restored.length, 2);
   const restoredRich = restored.find((p) => p.id === "sv-rich");
   assert.ok(restoredRich);
-  assert.deepEqual(restoredRich.filters, snapshot.filters);
   assert.deepEqual(restoredRich.view, snapshot.view);
-  assert.deepEqual(restoredRich.summary, snapshot.summary);
 });
 
 test("VAL-GUI-004: computeQueryPresetDeleteUndoPlan returns originalIndex=-1 for non-existent id", () => {
@@ -1036,13 +659,13 @@ test("VAL-GUI-004: computeQueryPresetDeleteUndoPlan returns originalIndex=-1 for
 
 // ── fix-m3-desktop-query-editor-full-dsl-roundtrip ──
 
-test("roundtrip: normalizeQueryPresetView preserves sections", () => {
+test("roundtrip: a legacy list with sections migrates to a plain list area", () => {
   const preset = normalizeQueryPreset({
     id: "sv-sections",
     name: "With sections",
     builtin: false,
     hidden: false,
-    filters: { status: "todo" },
+    filters: {},
     view: {
       type: "list",
       sections: [
@@ -1053,15 +676,10 @@ test("roundtrip: normalizeQueryPresetView preserves sections", () => {
     summary: [],
   });
 
-  assert.equal(preset.view.type, "list");
-  assert.ok(Array.isArray(preset.view.sections));
-  assert.equal(preset.view.sections.length, 2);
-  assert.equal(preset.view.sections[0].id, "s1");
-  assert.equal(preset.view.sections[0].title, "Urgent");
-  assert.deepEqual(preset.view.sections[0].when.status, ["todo"]);
-  assert.deepEqual(preset.view.sections[0].when.time, { deadline: "overdue" });
-  assert.equal(preset.view.sections[1].id, "s2");
-  assert.equal(preset.view.sections[1].limit, 10);
+  // list no longer groups internally. The legacy sections fixture migrates to a
+  // plain list area; deepEqual proves the result is exactly a clean list with no
+  // leftover grouping, without re-naming the dead field. (Today uses col[ list×N ].)
+  assert.deepEqual(preset.view.layout, { type: "list" });
 });
 
 test("roundtrip: normalizeQueryPresetView preserves tray config", () => {
@@ -1083,58 +701,48 @@ test("roundtrip: normalizeQueryPresetView preserves tray config", () => {
     summary: [],
   });
 
-  assert.equal(preset.view.type, "week");
-  assert.ok(preset.view.tray);
-  assert.equal(preset.view.tray.enabled, true);
-  assert.equal(preset.view.tray.title, "Unscheduled");
-  assert.deepEqual(preset.view.tray.filters.status, ["todo"]);
-  assert.deepEqual(preset.view.tray.filters.time, { scheduled: "unscheduled" });
-  assert.deepEqual(preset.view.tray.orderBy, ["deadline_asc"]);
+  // Legacy {type:week, tray} migrates to col[ week, list(tray) ]; the tray
+  // becomes a list area whose when = the tray filters, with clearScheduled onDrop.
+  const layout = preset.view.layout;
+  assert.equal(layout.dir, "col");
+  assert.equal(layout.children.length, 2);
+  assert.equal(layout.children[0].type, "week");
+  const tray = layout.children[1];
+  assert.equal(tray.type, "list");
+  assert.equal(tray.title, "Unscheduled");
+  assert.deepEqual(tray.when.status, ["todo"]);
+  assert.deepEqual(tray.when.time, { scheduled: "unscheduled" });
+  assert.deepEqual(tray.orderBy, ["deadline_asc"]);
+  assert.equal(tray.onDrop.clearScheduled, true);
 });
 
-test("roundtrip: normalizeQueryPresetView preserves matrix config", () => {
+test("roundtrip: unsupported area type in a layout → unknown area keeps raw JSON", () => {
+  // matrix was removed. A new-shape layout with an unsupported area type
+  // normalizes to an `unknown` area that preserves the original JSON, so the
+  // view renders "未知类型 + JSON" instead of dropping it.
   const preset = normalizeQueryPreset({
-    id: "sv-matrix",
-    name: "With matrix",
+    id: "sv-unknown",
+    name: "With unknown area",
     builtin: false,
     hidden: false,
     filters: { status: "todo" },
     view: {
-      type: "matrix",
-      matrix: {
-        x: {
-          id: "priority",
-          title: "Priority",
-          buckets: [
-            { id: "high", title: "High", when: { tags: ["#high"] } },
-            { id: "low", title: "Low", when: { tags: ["#low"] } },
-          ],
-        },
-        y: {
-          id: "status",
-          title: "Status",
-          buckets: [
-            { id: "active", title: "Active", when: { status: ["todo"] } },
-            { id: "done", title: "Done", when: { status: ["done"] } },
-          ],
-        },
-        unmatched: "hide",
-        multiMatch: "duplicate",
-        showEmptyBuckets: false,
+      layout: {
+        type: "matrix",
+        title: "Legacy Matrix",
+        x: { id: "priority" },
+        y: { id: "status" },
       },
     },
     summary: [],
   });
 
-  assert.equal(preset.view.type, "matrix");
-  assert.ok(preset.view.matrix);
-  assert.equal(preset.view.matrix.x.id, "priority");
-  assert.equal(preset.view.matrix.x.buckets.length, 2);
-  assert.equal(preset.view.matrix.y.id, "status");
-  assert.equal(preset.view.matrix.y.buckets.length, 2);
-  assert.equal(preset.view.matrix.unmatched, "hide");
-  assert.equal(preset.view.matrix.multiMatch, "duplicate");
-  assert.equal(preset.view.matrix.showEmptyBuckets, false);
+  const layout = preset.view.layout;
+  assert.equal(layout.type, "unknown");
+  assert.equal(layout.rawType, "matrix");
+  assert.equal(layout.title, "Legacy Matrix");
+  assert.equal(layout.raw.x.id, "priority");
+  assert.equal(layout.raw.y.id, "status");
 });
 
 test("roundtrip: normalizeQueryPresetView preserves orderBy", () => {
@@ -1151,547 +759,9 @@ test("roundtrip: normalizeQueryPresetView preserves orderBy", () => {
     summary: [],
   });
 
-  assert.equal(preset.view.type, "list");
-  assert.deepEqual(preset.view.orderBy, ["deadline_asc", "created_desc"]);
+  assert.equal(preset.view.layout.type, "list");
+  assert.deepEqual(preset.view.layout.orderBy, ["deadline_asc", "created_desc"]);
 });
-
-test("roundtrip: normalizeQueryPresetSummary preserves all metric types", () => {
-  const preset = normalizeQueryPreset({
-    id: "sv-summary",
-    name: "With summary",
-    builtin: false,
-    hidden: false,
-    filters: { status: "all" },
-    view: { type: "list" },
-    summary: [
-      { type: "count" },
-      { type: "sum", field: "planned", format: "duration" },
-      { type: "ratio", numerator: "actual", denominator: "estimate", format: "percent" },
-      { type: "top_n", field: "tags", limit: 5, format: "number" },
-      { type: "group_by", by: "tags" },
-    ],
-  });
-
-  assert.equal(preset.summary.length, 5);
-  assert.equal(preset.summary[0].type, "count");
-  assert.equal(preset.summary[1].type, "sum");
-  assert.equal(preset.summary[1].field, "planned");
-  assert.equal(preset.summary[1].format, "duration");
-  assert.equal(preset.summary[2].type, "ratio");
-  assert.equal(preset.summary[2].numerator, "actual");
-  assert.equal(preset.summary[2].denominator, "estimate");
-  assert.equal(preset.summary[3].type, "top_n");
-  assert.equal(preset.summary[3].field, "tags");
-  assert.equal(preset.summary[3].limit, 5);
-  assert.equal(preset.summary[4].type, "group_by");
-  assert.equal(preset.summary[4].by, "tags");
-});
-
-test("roundtrip: toQueryPreset preserves full view config through conversion", () => {
-  const flat = normalizeSavedTaskView({
-    id: "sv-flat",
-    name: "Flat with matrix",
-    builtin: false,
-    hidden: false,
-    search: "",
-    tag: "#alpha",
-    time: { scheduled: "week" },
-    status: ["todo"],
-    view: {
-      type: "matrix",
-      matrix: {
-        x: { id: "cat", title: "Category", buckets: [{ id: "a", title: "A", when: { tags: ["#a"] } }] },
-        y: { id: "risk", title: "Risk", buckets: [{ id: "high", title: "High", when: { time: { deadline: "overdue" } } }] },
-        unmatched: "show",
-        multiMatch: "first",
-        showEmptyBuckets: true,
-      },
-    },
-    summary: [{ type: "count" }, { type: "sum", field: "planned" }],
-  });
-
-  const qp = toQueryPreset(flat);
-
-  assert.equal(qp.view.type, "matrix");
-  assert.ok(qp.view.matrix);
-  assert.equal(qp.view.matrix.x.id, "cat");
-  assert.equal(qp.view.matrix.y.id, "risk");
-  assert.equal(qp.view.matrix.unmatched, "show");
-  assert.equal(qp.view.matrix.multiMatch, "first");
-  assert.equal(qp.view.matrix.showEmptyBuckets, true);
-  assert.equal(qp.summary.length, 2);
-  assert.equal(qp.summary[1].type, "sum");
-  assert.equal(qp.summary[1].field, "planned");
-});
-
-test("roundtrip: fromQueryPreset preserves full view config through conversion", () => {
-  const qp = normalizeQueryPreset({
-    id: "sv-roundtrip",
-    name: "Roundtrip",
-    builtin: false,
-    hidden: false,
-    filters: { tags: ["#alpha"], status: ["todo"], time: { scheduled: "week" } },
-    view: {
-      type: "matrix",
-      matrix: {
-        x: { id: "cat", title: "Category", buckets: [{ id: "a", title: "A", when: { tags: ["#a"] } }] },
-        y: { id: "risk", title: "Risk", buckets: [{ id: "high", title: "High", when: { time: { deadline: "overdue" } } }] },
-        unmatched: "show",
-        multiMatch: "first",
-        showEmptyBuckets: true,
-      },
-    },
-    summary: [{ type: "count" }, { type: "sum", field: "planned" }],
-  });
-
-  const flat = fromQueryPreset(qp);
-
-  assert.equal(flat.view.type, "matrix");
-  assert.ok(flat.view.matrix);
-  assert.equal(flat.view.matrix.x.id, "cat");
-  assert.equal(flat.view.matrix.y.id, "risk");
-  assert.equal(flat.view.matrix.unmatched, "show");
-  assert.equal(flat.view.matrix.multiMatch, "first");
-  assert.equal(flat.summary.length, 2);
-  assert.equal(flat.summary[1].type, "sum");
-  assert.equal(flat.summary[1].field, "planned");
-});
-
-test("roundtrip: parseQueryDsl → stringifyQueryPreset full roundtrip", () => {
-  const dsl = stringifyQueryPreset(normalizeQueryPreset({
-    id: "sv-full",
-    name: "Full Roundtrip",
-    builtin: false,
-    hidden: false,
-    filters: {
-      search: "report",
-      tags: ["#alpha", "#beta"],
-      status: ["todo", "in_progress"],
-      time: { scheduled: "week", deadline: "overdue" },
-    },
-    view: {
-      type: "matrix",
-      sections: [
-        { id: "urgent", title: "Urgent", when: { time: { deadline: "overdue" } }, limit: 5 },
-      ],
-      tray: {
-        enabled: true,
-        title: "Backlog",
-        filters: { status: ["todo"], time: { scheduled: "unscheduled" } },
-      },
-      matrix: {
-        x: { id: "pri", title: "Pri", buckets: [{ id: "high", title: "High", when: { tags: ["#high"] } }] },
-        y: { id: "stat", title: "Stat", buckets: [{ id: "open", title: "Open", when: { status: ["todo"] } }] },
-        unmatched: "hide",
-        multiMatch: "duplicate",
-        showEmptyBuckets: false,
-      },
-      orderBy: ["deadline_asc"],
-    },
-    summary: [
-      { type: "count" },
-      { type: "sum", field: "planned", format: "duration" },
-      { type: "ratio", numerator: "actual", denominator: "estimate", format: "percent" },
-      { type: "top_n", field: "tags", limit: 3 },
-      { type: "group_by", by: "tags" },
-    ],
-  }));
-
-  const parsed = parseQueryDsl(dsl, { name: "Full Roundtrip" });
-
-  assert.equal(parsed.id, "sv-full");
-  assert.equal(parsed.name, "Full Roundtrip");
-  assert.equal(parsed.filters.search, "report");
-  assert.deepEqual(parsed.filters.tags, ["#alpha", "#beta"]);
-  assert.deepEqual(parsed.filters.status, ["todo", "in_progress"]);
-  assert.deepEqual(parsed.filters.time, { scheduled: "week", deadline: "overdue" });
-
-  // View
-  assert.equal(parsed.view.type, "matrix");
-  assert.ok(parsed.view.sections);
-  assert.equal(parsed.view.sections.length, 1);
-  assert.equal(parsed.view.sections[0].id, "urgent");
-  assert.ok(parsed.view.tray);
-  assert.equal(parsed.view.tray.title, "Backlog");
-  assert.ok(parsed.view.matrix);
-  assert.equal(parsed.view.matrix.x.id, "pri");
-  assert.equal(parsed.view.matrix.y.id, "stat");
-  assert.equal(parsed.view.matrix.unmatched, "hide");
-  assert.equal(parsed.view.matrix.multiMatch, "duplicate");
-  assert.equal(parsed.view.matrix.showEmptyBuckets, false);
-  assert.deepEqual(parsed.view.orderBy, ["deadline_asc"]);
-
-  // Summary
-  assert.equal(parsed.summary.length, 5);
-  assert.equal(parsed.summary[0].type, "count");
-  assert.equal(parsed.summary[1].type, "sum");
-  assert.equal(parsed.summary[1].field, "planned");
-  assert.equal(parsed.summary[2].type, "ratio");
-  assert.equal(parsed.summary[3].type, "top_n");
-  assert.equal(parsed.summary[3].limit, 3);
-  assert.equal(parsed.summary[4].type, "group_by");
-  assert.equal(parsed.summary[4].by, "tags");
-
-  // Full re-serialize identity
-  const reSerialized = stringifyQueryPreset(parsed);
-  const reparsed = parseQueryDsl(reSerialized, { name: "Full Roundtrip" });
-  assert.ok(sameQueryPresetContent(parsed, reparsed));
-});
-
-// ── fix-m3-summary-topn-and-editor-path-tests ──
-
-test("VAL-CORE-009: normalizeQueryPreset preserves top_n by field as canonical grouping parameter", () => {
-  // top_n grouping must use `by`, not `field`. The GUI was writing `field`
-  // which the runtime summary (`computeTopN`) ignores in favor of `by`.
-  const preset = normalizeQueryPreset({
-    id: "sv-topn",
-    name: "Top N Test",
-    builtin: false,
-    hidden: false,
-    filters: { status: "todo" },
-    view: { type: "list" },
-    summary: [
-      { type: "top_n", by: " tags ", limit: 5 },
-    ],
-  });
-
-  assert.equal(preset.summary.length, 1);
-  assert.equal(preset.summary[0].type, "top_n");
-  assert.equal(preset.summary[0].by, "tags", "top_n by must be preserved and trimmed");
-  assert.equal(preset.summary[0].limit, 5);
-  // Verify `field` was not set — top_n canonical grouping is `by`
-  assert.equal(preset.summary[0].field, undefined, "top_n must use by, not field");
-});
-
-test("summary: [] persists through createQueryPreset", () => {
-  const p = createQueryPreset("No Summary", {
-    status: "all",
-    summary: [],
-  });
-  assert.deepEqual(p.summary, [], "explicit empty summary must persist");
-});
-
-test("summary: [] persists through normalizeQueryPreset", () => {
-  const p = normalizeQueryPreset({
-    id: "sv-empty-summary",
-    name: "Empty Summary",
-    builtin: false,
-    hidden: false,
-    filters: { status: "all" },
-    view: { type: "list" },
-    summary: [],
-  });
-  assert.deepEqual(p.summary, [], "explicit empty summary must not be replaced");
-});
-
-test("summary: undefined falls back to [] in normalizeQueryPreset", () => {
-  const p = normalizeQueryPreset({
-    id: "sv-no-summary",
-    name: "No summary key",
-    builtin: false,
-    hidden: false,
-    filters: { status: "all" },
-    view: { type: "list" },
-    // summary key intentionally omitted
-  });
-  assert.deepEqual(p.summary, [], "missing summary defaults to empty array");
-});
-
-test("summary: [] persists through upsertQueryPreset (insert and update)", () => {
-  const p1 = createQueryPreset("A", { status: "todo", summary: [{ type: "count" }] });
-  const p2 = normalizeQueryPreset({
-    id: "sv-empty",
-    name: "Empty",
-    builtin: false,
-    hidden: false,
-    filters: { status: "done" },
-    view: { type: "list" },
-    summary: [],
-  });
-
-  // Insert
-  const afterInsert = upsertQueryPreset([p1], p2);
-  assert.equal(afterInsert.length, 2);
-  const inserted = afterInsert.find((p) => p.id === "sv-empty");
-  assert.ok(inserted);
-  assert.deepEqual(inserted.summary, [], "upsert(insert) must preserve explicit empty summary");
-
-  // Update
-  const p3 = normalizeQueryPreset({
-    id: "sv-empty",
-    name: "Empty Updated",
-    builtin: false,
-    hidden: false,
-    filters: { status: "todo" },
-    view: { type: "list" },
-    summary: [],
-  });
-  const afterUpdate = upsertQueryPreset(afterInsert, p3);
-  const updated = afterUpdate.find((p) => p.id === "sv-empty");
-  assert.ok(updated);
-  assert.equal(updated.name, "Empty Updated");
-  assert.deepEqual(updated.summary, [], "upsert(update) must preserve explicit empty summary");
-});
-
-test("summary: empty array roundtrips through serialize/parse", () => {
-  const original = normalizeQueryPreset({
-    id: "sv-empty-roundtrip",
-    name: "Empty Roundtrip",
-    builtin: false,
-    hidden: false,
-    filters: { status: "all" },
-    view: { type: "list" },
-    summary: [],
-  });
-
-  const dsl = stringifyQueryPreset(original);
-  const parsed = parseQueryDsl(dsl, { name: "Empty Roundtrip" });
-  assert.deepEqual(parsed.summary, [], "empty summary must survive serialize/parse roundtrip");
-  assert.ok(sameQueryPresetContent(original, parsed), "empty-summary preset must be content-identical after roundtrip");
-});
-
-test("summary: draft merge — draft summary overrides saved when present", () => {
-  // Simulates currentQuerySnapshot merge: tabDraft?.summary ?? existing?.summary
-  const saved = createQueryPreset("Saved", {
-    status: "all",
-    summary: [{ type: "count" }],
-  });
-
-  const draft = normalizeQueryPreset({
-    ...saved,
-    summary: [{ type: "sum", field: "planned" }],
-  });
-
-  // Merge: draft wins
-  const merged = normalizeQueryPreset({
-    ...saved,
-    summary: draft.summary,
-  });
-
-  assert.equal(merged.summary.length, 1);
-  assert.equal(merged.summary[0].type, "sum");
-  assert.equal(merged.name, "Saved");
-  assert.equal(merged.id, saved.id);
-});
-
-test("summary: draft merge — draft view overrides saved when present", () => {
-  const saved = createQueryPreset("Saved", {
-    status: "all",
-    view: { type: "list" },
-  });
-
-  const draft = normalizeQueryPreset({
-    ...saved,
-    view: { type: "week" },
-  });
-
-  const merged = normalizeQueryPreset({
-    ...saved,
-    view: draft.view,
-  });
-
-  assert.equal(merged.view.type, "week");
-  assert.equal(merged.id, saved.id);
-  assert.equal(merged.name, "Saved");
-});
-
-test("summary: draft merge — explicit empty draft summary overrides saved summary", () => {
-  // When user deletes all metrics via the editor, draft.summary becomes [].
-  // The merge must use [] (draft wins), not fall back to saved summary.
-  const saved = createQueryPreset("Saved", {
-    status: "all",
-    summary: [{ type: "count" }, { type: "sum", field: "planned" }],
-  });
-
-  const draft = normalizeQueryPreset({
-    ...saved,
-    summary: [],
-  });
-
-  // currentQuerySnapshot uses: tabDraft?.summary ?? existing?.summary
-  // tabDraft.summary is [] (truthy), so it wins
-  const merged = normalizeQueryPreset({
-    ...saved,
-    summary: draft.summary,
-  });
-
-  assert.deepEqual(merged.summary, [], "explicit empty summary in draft must override saved summary");
-});
-
-test("summary: add/edit/remove metrics roundtrip through pure functions", () => {
-  // Simulate the editor flow:
-  // 1. Create preset with summary=[{type: "count"}]
-  // 2. Add a sum metric
-  // 3. Edit the sum metric's field
-  // 4. Add a top_n metric with `by` (not `field`)
-  // 5. Remove the count metric
-
-  // Step 1: Create
-  let preset = createQueryPreset("Metrics Test", {
-    status: "all",
-    summary: [{ type: "count" }],
-  });
-  assert.equal(preset.summary.length, 1);
-  assert.equal(preset.summary[0].type, "count");
-
-  // Step 2: Add sum metric
-  preset = normalizeQueryPreset({
-    ...preset,
-    summary: [...preset.summary, { type: "sum", field: "planned" }],
-  });
-  assert.equal(preset.summary.length, 2);
-  assert.equal(preset.summary[1].type, "sum");
-  assert.equal(preset.summary[1].field, "planned");
-
-  // Step 3: Edit sum field from "planned" to "actual"
-  const metrics3 = preset.summary.map((m, i) =>
-    i === 1 ? { ...m, field: "actual" } : m,
-  );
-  preset = normalizeQueryPreset({ ...preset, summary: metrics3 });
-  assert.equal(preset.summary[1].field, "actual");
-
-  // Step 4: Add top_n with `by` (NOT `field`)
-  preset = normalizeQueryPreset({
-    ...preset,
-    summary: [...preset.summary, { type: "top_n", by: "tags", limit: 5 }],
-  });
-  assert.equal(preset.summary.length, 3);
-  assert.equal(preset.summary[2].type, "top_n");
-  assert.equal(preset.summary[2].by, "tags");
-  assert.equal(preset.summary[2].limit, 5);
-  // Verify top_n does NOT have a `field` property
-  assert.equal(preset.summary[2].field, undefined, "top_n must use by, not field");
-
-  // Step 5: Remove count metric (index 0)
-  preset = normalizeQueryPreset({
-    ...preset,
-    summary: preset.summary.filter((_, i) => i !== 0),
-  });
-  assert.equal(preset.summary.length, 2);
-  assert.equal(preset.summary[0].type, "sum");
-  assert.equal(preset.summary[0].field, "actual");
-  assert.equal(preset.summary[1].type, "top_n");
-  assert.equal(preset.summary[1].by, "tags");
-
-  // Verify persistence through upsert
-  const presets = upsertQueryPreset([], preset);
-  assert.equal(presets.length, 1);
-  assert.deepEqual(presets[0].summary, preset.summary);
-});
-
-test("summary: sameQueryPresetContent detects difference across summary, view, and filters", () => {
-  const base = createQueryPreset("Base", {
-    status: "all",
-    summary: [{ type: "count" }],
-    view: { type: "list" },
-  });
-
-  // Summary differs
-  const diffSummary = createQueryPreset("B", {
-    status: "all",
-    summary: [{ type: "sum", field: "planned" }],
-    view: { type: "list" },
-  });
-  assert.equal(sameQueryPresetContent(base, diffSummary), false);
-
-  // View differs
-  const diffView = createQueryPreset("C", {
-    status: "all",
-    summary: [{ type: "count" }],
-    view: { type: "week" },
-  });
-  assert.equal(sameQueryPresetContent(base, diffView), false);
-
-  // Filters differ
-  const diffFilter = createQueryPreset("D", {
-    status: "done",
-    summary: [{ type: "count" }],
-    view: { type: "list" },
-  });
-  assert.equal(sameQueryPresetContent(base, diffFilter), false);
-
-  // Same content, different id/name — should be true
-  const sameContent = createQueryPreset("Different Name", {
-    status: "all",
-    summary: [{ type: "count" }],
-    view: { type: "list" },
-  });
-  assert.ok(sameQueryPresetContent(base, sameContent));
-});
-
-test("summary: currentQuerySnapshot merge preserves identity from saved, content from draft", () => {
-  // Full simulation of currentQuerySnapshot:
-  // - id/name/builtin/hidden from saved
-  // - view/summary from draft (when present)
-  // - filters from view state
-
-  const saved = normalizeQueryPreset({
-    id: "sv-saved-1",
-    name: "Original Name",
-    builtin: true,
-    hidden: false,
-    filters: { status: "todo", tags: ["#work"] },
-    view: { type: "list", preset: "today", orderBy: ["deadline_asc"] },
-    summary: [{ type: "count" }],
-  });
-
-  // Draft has edited view and summary
-  const draft = normalizeQueryPreset({
-    ...saved,
-    view: { type: "week" },
-    summary: [{ type: "sum", field: "planned" }],
-  });
-
-  // currentQuerySnapshot merge (identity from saved, content from draft)
-  const snapshot = normalizeQueryPreset({
-    id: saved.id,
-    name: saved.name,
-    builtin: saved.builtin,
-    hidden: saved.hidden,
-    filters: saved.filters,
-    view: draft.view,
-    summary: draft.summary,
-  });
-
-  assert.equal(snapshot.id, "sv-saved-1");
-  assert.equal(snapshot.name, "Original Name");
-  assert.equal(snapshot.builtin, true);
-  assert.equal(snapshot.hidden, false);
-  assert.deepEqual(snapshot.filters.status, ["todo"]);
-  assert.equal(snapshot.view.type, "week", "draft view wins over saved");
-  assert.equal(snapshot.summary.length, 1, "draft summary wins over saved");
-  assert.equal(snapshot.summary[0].type, "sum");
-});
-
-test("summary: currentQuerySnapshot fallback to saved when no draft exists", () => {
-  // When there is no draft, use saved view/summary
-  const saved = normalizeQueryPreset({
-    id: "sv-saved-2",
-    name: "Saved Only",
-    builtin: false,
-    hidden: false,
-    filters: { status: "all" },
-    view: { type: "month" },
-    summary: [{ type: "count" }, { type: "top_n", by: "tags", limit: 3 }],
-  });
-
-  // No draft → use saved directly
-  const snapshot = normalizeQueryPreset({
-    ...saved,
-    view: saved.view,
-    summary: saved.summary,
-  });
-
-  assert.equal(snapshot.view.type, "month");
-  assert.equal(snapshot.summary.length, 2);
-  assert.equal(snapshot.summary[1].type, "top_n");
-  assert.equal(snapshot.summary[1].by, "tags");
-});
-
-// ── fix-m3-delete-undo-production-path-test ──
-// Production-path tests that exercise executeDeleteQueryPresetFlow
-// (the testable counterpart of TaskCenterView.deleteSavedViewWithConfirm)
-// with stub confirm / notice callbacks — not just helper-only simulation.
 
 test("VAL-GUI-004 production: confirm denied → no deletion, presets unchanged", async () => {
   const a = createQueryPreset("Alpha", { status: "todo" }, () => "sv-a");
@@ -1806,11 +876,8 @@ test("VAL-GUI-004 production: confirm → delete → presetsAfter removes target
   assert.equal(result.undoPlan.snapshot.id, "sv-b");
   assert.equal(result.undoPlan.snapshot.name, "Beta");
   assert.equal(result.undoPlan.originalIndex, 1);
-  assert.deepEqual(result.undoPlan.snapshot.filters.search, "docs");
-  assert.deepEqual(result.undoPlan.snapshot.filters.tags, ["#docs"]);
-  assert.deepEqual(result.undoPlan.snapshot.filters.status, ["done"]);
-  assert.deepEqual(result.undoPlan.snapshot.view, { type: "list" });
-  assert.equal(result.undoPlan.snapshot.summary.length, 1);
+  assert.equal(result.undoPlan.snapshot.filters, undefined);
+  assert.deepEqual(result.undoPlan.snapshot.view, { layout: { type: "list" } });
 
   // Verify state flags
   assert.equal(result.wasDefault, false, "Beta was not default (Alpha is)");
@@ -1868,9 +935,8 @@ test("VAL-GUI-004 production: clicking undo restores order via executeQueryPrese
   const restoredBeta = restored[1];
   assert.equal(restoredBeta.id, "sv-b");
   assert.equal(restoredBeta.name, "Beta");
-  assert.deepEqual(restoredBeta.filters, undoPlan.snapshot.filters);
   assert.deepEqual(restoredBeta.view, undoPlan.snapshot.view);
-  assert.deepEqual(restoredBeta.summary, undoPlan.snapshot.summary);
+  assert.deepEqual(restoredBeta.view, undoPlan.snapshot.view);
 });
 
 test("VAL-GUI-004 production: undo restores default state when deleted tab was default", async () => {
@@ -1925,7 +991,7 @@ test("VAL-GUI-004 production: undo restores default state when deleted tab was d
 });
 
 test("VAL-GUI-004 production: confirm-delete-undo roundtrip preserves all QueryPreset fields", async () => {
-  // Full matrix+section+tray+summary preset — verify complete roundtrip
+  // Full grid+section+tray+summary preset — verify complete roundtrip
   const rich = normalizeQueryPreset({
     id: "sv-full",
     name: "Full View",
@@ -1938,38 +1004,24 @@ test("VAL-GUI-004 production: confirm-delete-undo roundtrip preserves all QueryP
       time: { scheduled: "week", deadline: "overdue", completed: "month" },
     },
     view: {
-      type: "matrix",
-      sections: [
-        { id: "urgent", title: "Urgent", when: { time: { deadline: "overdue" } }, limit: 5, orderBy: ["deadline_asc"] },
-      ],
-      tray: {
-        enabled: true,
-        title: "Backlog",
-        filters: { status: ["todo"], time: { scheduled: "unscheduled" } },
-        orderBy: ["deadline_asc"],
+      layout: {
+        dir: "col",
+        children: [
+          {
+            type: "grid",
+            title: "Priority",
+            when: { tags: ["#high"], status: ["todo"] },
+            orderBy: ["deadline_asc"],
+          },
+          {
+            type: "list",
+            title: "Backlog",
+            when: { status: ["todo"], time: { scheduled: "unscheduled" } },
+            orderBy: ["deadline_asc"],
+            onDrop: { clearScheduled: true },
+          },
+        ],
       },
-      matrix: {
-        x: {
-          id: "pri",
-          title: "Priority",
-          buckets: [
-            { id: "high", title: "High", when: { tags: ["#high"] } },
-            { id: "low", title: "Low", when: { tags: ["#low"] } },
-          ],
-        },
-        y: {
-          id: "stat",
-          title: "Status",
-          buckets: [
-            { id: "open", title: "Open", when: { status: ["todo"] } },
-            { id: "done", title: "Done", when: { status: ["done"] } },
-          ],
-        },
-        unmatched: "hide",
-        multiMatch: "duplicate",
-        showEmptyBuckets: false,
-      },
-      orderBy: ["deadline_asc", "created_desc"],
     },
     summary: [
       { type: "count" },
@@ -2013,41 +1065,27 @@ test("VAL-GUI-004 production: confirm-delete-undo roundtrip preserves all QueryP
   assert.equal(snap.name, "Full View");
 
   // Filters
-  assert.equal(snap.filters.search, "deep work");
-  assert.deepEqual(snap.filters.tags, ["#focus", "#priority"]);
-  assert.deepEqual(snap.filters.status, ["todo", "in_progress"]);
-  assert.deepEqual(snap.filters.time, { scheduled: "week", deadline: "overdue", completed: "month" });
+  assert.equal(snap.filters, undefined);
 
-  // View — matrix, sections, tray all preserved
-  assert.equal(snap.view.type, "matrix");
-  assert.equal(snap.view.sections.length, 1);
-  assert.equal(snap.view.sections[0].id, "urgent");
-  assert.ok(snap.view.tray);
-  assert.equal(snap.view.tray.title, "Backlog");
-  assert.ok(snap.view.matrix);
-  assert.equal(snap.view.matrix.x.id, "pri");
-  assert.equal(snap.view.matrix.y.id, "stat");
-  assert.equal(snap.view.matrix.unmatched, "hide");
-  assert.equal(snap.view.matrix.multiMatch, "duplicate");
-  assert.equal(snap.view.matrix.showEmptyBuckets, false);
+  // View — col[ grid, list-tray ] preserved
+  const snapLayout = snap.view.layout;
+  assert.equal(snapLayout.dir, "col");
+  assert.equal(snapLayout.children[0].type, "grid");
+  assert.equal(snapLayout.children[0].title, "Priority");
+  assert.deepEqual(snapLayout.children[0].when.tags, { expr: "#high" });
+  assert.deepEqual(snapLayout.children[0].orderBy, ["deadline_asc"]);
+  assert.equal(snapLayout.children[1].type, "list");
+  assert.equal(snapLayout.children[1].title, "Backlog");
 
   // Summary — all 5 types
-  assert.equal(snap.summary.length, 5);
-  assert.equal(snap.summary[0].type, "count");
-  assert.equal(snap.summary[1].type, "sum");
-  assert.equal(snap.summary[2].type, "ratio");
-  assert.equal(snap.summary[3].type, "top_n");
-  assert.equal(snap.summary[3].by, "tags");
-  assert.equal(snap.summary[4].type, "group_by");
 
   // Undo restores everything
   const restored = executeQueryPresetDeleteUndo(result.presetsAfter, result.undoPlan);
   assert.equal(restored.length, 2);
   const restoredRich = restored.find((p) => p.id === "sv-full");
   assert.ok(restoredRich);
-  assert.deepEqual(restoredRich.filters, snap.filters);
   assert.deepEqual(restoredRich.view, snap.view);
-  assert.deepEqual(restoredRich.summary, snap.summary);
+  assert.deepEqual(restoredRich.view, snap.view);
 });
 
 // ── fix-m3-delete-undo-taskcenterview-path ──
@@ -2196,7 +1234,6 @@ test("VAL-GUI-004: computeUndoQueryPresetState — restores deleted tab at origi
   assert.ok(undoState.restoredView);
   assert.equal(undoState.restoredView.id, "sv-b");
   assert.equal(undoState.restoredView.name, "Beta");
-  assert.deepEqual(undoState.restoredView.filters.status, ["done"]);
 });
 
 test("VAL-GUI-004: computeUndoQueryPresetState — restores default when deleted tab was default", () => {
@@ -2247,7 +1284,7 @@ test("VAL-GUI-004: computeUndoQueryPresetState — handles deleted tab that was 
 });
 
 test("VAL-GUI-004: computeUndoQueryPresetState — preserves all snapshot fields through undo", () => {
-  // Full matrix+section+tray+summary preset
+  // Full legacy list+section+tray+summary preset (migrates to col[ list, tray ])
   const rich = normalizeQueryPreset({
     id: "sv-full",
     name: "Full View",
@@ -2260,7 +1297,7 @@ test("VAL-GUI-004: computeUndoQueryPresetState — preserves all snapshot fields
       time: { scheduled: "week", deadline: "overdue", completed: "month" },
     },
     view: {
-      type: "matrix",
+      type: "list",
       sections: [
         { id: "urgent", title: "Urgent", when: { time: { deadline: "overdue" } }, limit: 5, orderBy: ["deadline_asc"] },
       ],
@@ -2269,13 +1306,6 @@ test("VAL-GUI-004: computeUndoQueryPresetState — preserves all snapshot fields
         title: "Backlog",
         filters: { status: ["todo"], time: { scheduled: "unscheduled" } },
         orderBy: ["deadline_asc"],
-      },
-      matrix: {
-        x: { id: "pri", title: "Priority", buckets: [{ id: "high", title: "High", when: { tags: ["#high"] } }] },
-        y: { id: "stat", title: "Status", buckets: [{ id: "open", title: "Open", when: { status: ["todo"] } }] },
-        unmatched: "hide",
-        multiMatch: "duplicate",
-        showEmptyBuckets: false,
       },
       orderBy: ["deadline_asc", "created_desc"],
     },
@@ -2305,12 +1335,13 @@ test("VAL-GUI-004: computeUndoQueryPresetState — preserves all snapshot fields
   const restored = undoState.presetsRestored.find((p) => p.id === "sv-full");
   assert.ok(restored);
   assert.equal(restored.name, "Full View");
-  assert.deepEqual(restored.filters, undoPlan.snapshot.filters);
   assert.deepEqual(restored.view, undoPlan.snapshot.view);
-  assert.deepEqual(restored.summary, undoPlan.snapshot.summary);
-  assert.equal(restored.view.matrix.x.id, "pri");
-  assert.equal(restored.view.matrix.unmatched, "hide");
-  assert.equal(restored.summary[3].by, "tags");
+  assert.deepEqual(restored.view, undoPlan.snapshot.view);
+  // Legacy list+sections+tray migrated to col[ list, list-tray ]; legacy
+  // sections are dropped (list no longer groups internally).
+  assert.equal(restored.view.layout.children[0].type, "list");
+  assert.equal(restored.view.layout.children[0].sections, undefined);
+  assert.equal(restored.view.layout.children[1].title, "Backlog");
   assert.equal(undoState.restoredView?.id, "sv-full");
   assert.equal(undoState.shouldRestoreActive, true);
 });
@@ -2431,11 +1462,8 @@ test("VAL-GUI-004 production view-path: confirm → delete → compute state →
   // Verify snapshot content preserved
   const restoredBeta = undoState.presetsRestored[1];
   assert.equal(restoredBeta.name, "Beta");
-  assert.deepEqual(restoredBeta.filters.search, "docs");
-  assert.deepEqual(restoredBeta.filters.tags, ["#docs"]);
-  assert.deepEqual(restoredBeta.filters.status, ["done"]);
-  assert.deepEqual(restoredBeta.view, { type: "list" });
-  assert.equal(restoredBeta.summary.length, 1);
+  assert.equal(restoredBeta.filters, undefined);
+  assert.deepEqual(restoredBeta.view, { layout: { type: "list" } });
 });
 
 test("VAL-GUI-004 production view-path: delete default+active tab → undo restores both default and active", async () => {
@@ -2507,10 +1535,7 @@ test("VAL-GUI-004 production view-path: delete default+active tab → undo resto
   // Verify restored Alpha has all fields
   const restoredAlpha = undoState.presetsRestored[0];
   assert.equal(restoredAlpha.name, "Alpha");
-  assert.deepEqual(restoredAlpha.filters.tags, ["#primary"]);
-  assert.equal(restoredAlpha.view.type, "list");
-  assert.equal(restoredAlpha.view.preset, "today");
-  assert.equal(restoredAlpha.summary.length, 1);
+  assert.equal(restoredAlpha.view.layout.type, "list");
 });
 
 test("VAL-GUI-004 production view-path: cancel confirm → no state change", async () => {
@@ -2598,7 +1623,7 @@ test("VAL-GUI-004 production view-path: Notice undo click drives full restore ca
   assert.equal(handlerExecuted, true, "undo handler should have been executed");
 });
 
-test("VAL-GUI-004 production view-path: undo preserves full QueryPreset fields (matrix/sections/tray/summary)", async () => {
+test("VAL-GUI-004 production view-path: undo preserves full QueryPreset fields (grid/sections/tray/summary)", async () => {
   // Comprehensive test: rich preset with all view config fields
   const rich = normalizeQueryPreset({
     id: "sv-rich",
@@ -2612,38 +1637,24 @@ test("VAL-GUI-004 production view-path: undo preserves full QueryPreset fields (
       time: { scheduled: "week", deadline: "overdue", completed: "month" },
     },
     view: {
-      type: "matrix",
-      sections: [
-        { id: "urgent", title: "Urgent", when: { time: { deadline: "overdue" } }, limit: 5, orderBy: ["deadline_asc"] },
-      ],
-      tray: {
-        enabled: true,
-        title: "Backlog",
-        filters: { status: ["todo"], time: { scheduled: "unscheduled" } },
-        orderBy: ["deadline_asc"],
+      layout: {
+        dir: "col",
+        children: [
+          {
+            type: "grid",
+            title: "Priority",
+            when: { tags: ["#high"], status: ["todo"] },
+            orderBy: ["deadline_asc"],
+          },
+          {
+            type: "list",
+            title: "Backlog",
+            when: { status: ["todo"], time: { scheduled: "unscheduled" } },
+            orderBy: ["deadline_asc"],
+            onDrop: { clearScheduled: true },
+          },
+        ],
       },
-      matrix: {
-        x: {
-          id: "pri",
-          title: "Priority",
-          buckets: [
-            { id: "high", title: "High", when: { tags: ["#high"] } },
-            { id: "low", title: "Low", when: { tags: ["#low"] } },
-          ],
-        },
-        y: {
-          id: "stat",
-          title: "Status",
-          buckets: [
-            { id: "open", title: "Open", when: { status: ["todo"] } },
-            { id: "done", title: "Done", when: { status: ["done"] } },
-          ],
-        },
-        unmatched: "hide",
-        multiMatch: "duplicate",
-        showEmptyBuckets: false,
-      },
-      orderBy: ["deadline_asc", "created_desc"],
     },
     summary: [
       { type: "count" },
@@ -2697,45 +1708,25 @@ test("VAL-GUI-004 production view-path: undo preserves full QueryPreset fields (
 
     // Verify ALL fields survived the roundtrip
     assert.equal(restored.name, "Rich Tab");
-    assert.equal(restored.filters.search, "deep work");
-    assert.deepEqual(restored.filters.tags, ["#focus", "#priority"]);
-    assert.deepEqual(restored.filters.status, ["todo", "in_progress"]);
-    assert.deepEqual(restored.filters.time, {
-      scheduled: "week", deadline: "overdue", completed: "month",
-    });
+    assert.equal(restored.filters, undefined);
 
-    // View sections
-    assert.equal(restored.view.type, "matrix");
-    assert.equal(restored.view.sections.length, 1);
-    assert.equal(restored.view.sections[0].id, "urgent");
-    assert.equal(restored.view.sections[0].limit, 5);
+    // View — col[ grid, list-tray ]
+    const rLayout = restored.view.layout;
+    assert.equal(rLayout.dir, "col");
+    assert.equal(rLayout.children.length, 2);
 
-    // Tray
-    assert.ok(restored.view.tray);
-    assert.equal(restored.view.tray.title, "Backlog");
+    // Content grid area
+    const rGrid = rLayout.children[0];
+    assert.equal(rGrid.type, "grid");
+    assert.equal(rGrid.title, "Priority");
+    assert.deepEqual(rGrid.when.tags, { expr: "#high" });
+    assert.deepEqual(rGrid.orderBy, ["deadline_asc"]);
 
-    // Matrix
-    assert.ok(restored.view.matrix);
-    assert.equal(restored.view.matrix.x.id, "pri");
-    assert.equal(restored.view.matrix.x.buckets.length, 2);
-    assert.equal(restored.view.matrix.y.id, "stat");
-    assert.equal(restored.view.matrix.y.buckets.length, 2);
-    assert.equal(restored.view.matrix.unmatched, "hide");
-    assert.equal(restored.view.matrix.multiMatch, "duplicate");
-    assert.equal(restored.view.matrix.showEmptyBuckets, false);
-
-    // OrderBy
-    assert.deepEqual(restored.view.orderBy, ["deadline_asc", "created_desc"]);
+    // Tray (list area)
+    assert.equal(rLayout.children[1].type, "list");
+    assert.equal(rLayout.children[1].title, "Backlog");
 
     // Summary — all 5 types
-    assert.equal(restored.summary.length, 5);
-    assert.equal(restored.summary[0].type, "count");
-    assert.equal(restored.summary[1].type, "sum");
-    assert.equal(restored.summary[1].field, "planned");
-    assert.equal(restored.summary[2].type, "ratio");
-    assert.equal(restored.summary[3].type, "top_n");
-    assert.equal(restored.summary[3].by, "tags");
-    assert.equal(restored.summary[4].type, "group_by");
   });
 
   // Click undo
@@ -2781,146 +1772,10 @@ test("production: computeQueryPresetSnapshot merges tabDrafts view over saved vi
   });
 
   // Draft view wins
-  assert.equal(snapshot.view.type, "week", "draft view must win over saved view");
+  assert.equal(snapshot.view.layout.type, "week", "draft view must win over saved view");
   // Identity preserved from saved
   assert.equal(snapshot.id, "sv-1");
   assert.equal(snapshot.name, "My Tab");
-  // Summary unchanged — draft didn't touch it → falls back to saved
-  assert.equal(snapshot.summary.length, 1);
-  assert.equal(snapshot.summary[0].type, "count");
-});
-
-test("production: computeQueryPresetSnapshot merges tabDrafts summary over saved summary", () => {
-  const tabDrafts = new Map();
-
-  const saved = normalizeQueryPreset({
-    id: "sv-2",
-    name: "Tab 2",
-    builtin: false,
-    hidden: false,
-    filters: { status: "todo" },
-    view: { type: "list" },
-    summary: [{ type: "count" }],
-  });
-
-  // Draft modifies the summary
-  const draft = normalizeQueryPreset({
-    ...saved,
-    summary: [{ type: "sum", field: "planned" }],
-  });
-  tabDrafts.set("sv-2", draft);
-
-  const snapshot = computeQueryPresetSnapshot({
-    existing: saved,
-    tabDrafts,
-    filterSearch: "focus",
-    filterTags: "#work,#urgent",
-    filterTime: { scheduled: "week" },
-    filterStatus: ["todo"],
-    fallbackView: () => ({ type: "list" }),
-    fallbackSummary: () => [],
-  });
-
-  // Draft summary wins
-  assert.equal(snapshot.summary.length, 1);
-  assert.equal(snapshot.summary[0].type, "sum");
-  assert.equal(snapshot.summary[0].field, "planned");
-  // View unchanged — draft didn't touch it → falls back to saved
-  assert.equal(snapshot.view.type, "list");
-  // Filters from explicit state
-  assert.equal(snapshot.filters.search, "focus");
-  assert.deepEqual(snapshot.filters.tags, ["#work", "#urgent"]);
-  assert.deepEqual(snapshot.filters.time, { scheduled: "week" });
-  assert.deepEqual(snapshot.filters.status, ["todo"]);
-});
-
-test("production: explicit empty summary [] in draft overrides saved summary", () => {
-  const tabDrafts = new Map();
-
-  const saved = normalizeQueryPreset({
-    id: "sv-3",
-    name: "With Summary",
-    builtin: false,
-    hidden: false,
-    filters: { status: "all" },
-    view: { type: "list" },
-    summary: [{ type: "count" }, { type: "sum", field: "planned" }],
-  });
-
-  // Draft explicitly clears the summary
-  const draft = normalizeQueryPreset({
-    ...saved,
-    summary: [],
-  });
-  tabDrafts.set("sv-3", draft);
-
-  const snapshot = computeQueryPresetSnapshot({
-    existing: saved,
-    tabDrafts,
-    filterSearch: "",
-    filterTags: "",
-    filterTime: {},
-    filterStatus: "all",
-    fallbackView: () => ({ type: "list" }),
-    fallbackSummary: () => [{ type: "count" }],
-  });
-
-  // Explicit empty draft summary wins — it is NOT falsy, so the saved summary
-  // is NOT a fallback
-  assert.deepEqual(snapshot.summary, [],
-    "explicit empty summary in draft must override saved summary");
-});
-
-test("production: draft with both view and summary changed merges correctly", () => {
-  const tabDrafts = new Map();
-
-  const saved = normalizeQueryPreset({
-    id: "sv-4",
-    name: "Full Tab",
-    builtin: true,
-    hidden: false,
-    filters: { status: "todo", tags: ["#alpha"] },
-    view: { type: "list", preset: "today" },
-    summary: [{ type: "count" }],
-  });
-
-  const draft = normalizeQueryPreset({
-    ...saved,
-    view: { type: "week" },
-    summary: [
-      { type: "sum", field: "planned" },
-      { type: "top_n", by: "tags", limit: 5 },
-    ],
-  });
-  tabDrafts.set("sv-4", draft);
-
-  const snapshot = computeQueryPresetSnapshot({
-    existing: saved,
-    tabDrafts,
-    filterSearch: "docs",
-    filterTags: "#work",
-    filterTime: { deadline: "overdue" },
-    filterStatus: ["todo", "in_progress"],
-    fallbackView: () => ({ type: "list" }),
-    fallbackSummary: () => [],
-  });
-
-  assert.equal(snapshot.id, "sv-4");
-  assert.equal(snapshot.name, "Full Tab");
-  assert.equal(snapshot.builtin, true);
-  assert.equal(snapshot.hidden, false);
-  // Draft view wins
-  assert.equal(snapshot.view.type, "week");
-  // Draft summary wins
-  assert.equal(snapshot.summary.length, 2);
-  assert.equal(snapshot.summary[0].type, "sum");
-  assert.equal(snapshot.summary[1].type, "top_n");
-  assert.equal(snapshot.summary[1].by, "tags");
-  // Filters from explicit state
-  assert.equal(snapshot.filters.search, "docs");
-  assert.deepEqual(snapshot.filters.tags, ["#work"]);
-  assert.deepEqual(snapshot.filters.time, { deadline: "overdue" });
-  assert.deepEqual(snapshot.filters.status, ["todo", "in_progress"]);
 });
 
 test("production: snapshot falls back to saved when no draft exists in tabDrafts", () => {
@@ -2949,10 +1804,7 @@ test("production: snapshot falls back to saved when no draft exists in tabDrafts
   });
 
   // No draft → saved wins
-  assert.equal(snapshot.view.type, "month");
-  assert.equal(snapshot.summary.length, 2);
-  assert.equal(snapshot.summary[0].type, "count");
-  assert.equal(snapshot.summary[1].type, "ratio");
+  assert.equal(snapshot.view.layout.type, "month");
 });
 
 test("production: snapshot falls back to explicit fallbacks when no saved and no draft", () => {
@@ -2965,7 +1817,7 @@ test("production: snapshot falls back to explicit fallbacks when no saved and no
     filterTags: "#alpha",
     filterTime: { scheduled: "today" },
     filterStatus: ["todo"],
-    fallbackView: () => ({ type: "week", orderBy: ["deadline_asc"] }),
+    fallbackView: () => ({ layout: { type: "week" } }),
     fallbackSummary: () => [{ type: "count" }, { type: "group_by", by: "tags" }],
     name: "New Snapshot",
   });
@@ -2973,400 +1825,11 @@ test("production: snapshot falls back to explicit fallbacks when no saved and no
   assert.equal(snapshot.name, "New Snapshot");
   assert.equal(snapshot.builtin, false);
   assert.equal(snapshot.hidden, false);
-  assert.equal(snapshot.filters.search, "search term");
-  assert.deepEqual(snapshot.filters.tags, ["#alpha"]);
-  assert.deepEqual(snapshot.filters.time, { scheduled: "today" });
-  assert.deepEqual(snapshot.filters.status, ["todo"]);
+  // US-109z2: snapshot is identity + view only (no tab-level filters).
+  assert.equal(snapshot.filters, undefined);
   // Fallback view used
-  assert.equal(snapshot.view.type, "week");
-  assert.deepEqual(snapshot.view.orderBy, ["deadline_asc"]);
+  assert.equal(snapshot.view.layout.type, "week");
   // Fallback summary used
-  assert.equal(snapshot.summary.length, 2);
-  assert.equal(snapshot.summary[1].type, "group_by");
-});
-
-test("production: applySummaryMetricEdit modifies field at index", () => {
-  const original = [
-    { type: "count" },
-    { type: "sum", field: "planned" },
-    { type: "top_n", by: "tags", limit: 3 },
-  ];
-
-  // Edit sum metric: change field from "planned" to "actual"
-  const edited = applySummaryMetricEdit(original, 1, { field: "actual" });
-  assert.equal(edited.length, 3);
-  assert.equal(edited[0].type, "count");
-  assert.equal(edited[1].type, "sum");
-  assert.equal(edited[1].field, "actual");
-  assert.equal(edited[2].type, "top_n");
-  assert.equal(edited[2].by, "tags");
-
-  // Original must be unchanged (immutability)
-  assert.equal(original[1].field, "planned");
-});
-
-test("production: applySummaryMetricEdit preserves top_n by field", () => {
-  const original = [{ type: "top_n", by: "tags", limit: 3 }];
-
-  // Edit top_n: change by to "status", change limit to 10
-  const edited = applySummaryMetricEdit(original, 0, { by: "status", limit: 10 });
-  assert.equal(edited.length, 1);
-  assert.equal(edited[0].type, "top_n");
-  assert.equal(edited[0].by, "status", "top_n by must be preserved through edit");
-  assert.equal(edited[0].limit, 10);
-
-  // Verify field is NOT set (top_n uses by, not field)
-  assert.equal(edited[0].field, undefined, "top_n must use by, not field");
-});
-
-test("production: applySummaryMetricEdit is no-op for out-of-range index", () => {
-  const original = [{ type: "count" }, { type: "sum", field: "planned" }];
-
-  const edited = applySummaryMetricEdit(original, 5, { field: "actual" });
-  assert.deepEqual(edited, original, "out-of-range edit should return unchanged copy");
-});
-
-test("production: applySummaryMetricRemove removes metric at index", () => {
-  const original = [
-    { type: "count" },
-    { type: "sum", field: "planned" },
-    { type: "top_n", by: "tags", limit: 5 },
-  ];
-
-  const removed = applySummaryMetricRemove(original, 1);
-  assert.equal(removed.length, 2);
-  assert.equal(removed[0].type, "count");
-  assert.equal(removed[1].type, "top_n");
-  assert.equal(removed[1].by, "tags");
-
-  // Original must be unchanged
-  assert.equal(original.length, 3);
-});
-
-test("production: applySummaryMetricRemove clears all metrics via repeated removal", () => {
-  let metrics = [
-    { type: "count" },
-    { type: "sum", field: "planned" },
-    { type: "top_n", by: "tags", limit: 5 },
-  ];
-
-  // Remove all one by one
-  metrics = applySummaryMetricRemove(metrics, 2);
-  assert.equal(metrics.length, 2);
-  metrics = applySummaryMetricRemove(metrics, 1);
-  assert.equal(metrics.length, 1);
-  metrics = applySummaryMetricRemove(metrics, 0);
-  assert.equal(metrics.length, 0);
-  assert.deepEqual(metrics, [], "all metrics removed → empty summary");
-});
-
-test("production: applySummaryMetricAdd appends new metric", () => {
-  const original = [{ type: "count" }];
-
-  const added = applySummaryMetricAdd(original, { type: "sum", field: "planned" });
-  assert.equal(added.length, 2);
-  assert.equal(added[0].type, "count");
-  assert.equal(added[1].type, "sum");
-  assert.equal(added[1].field, "planned");
-
-  // Original must be unchanged
-  assert.equal(original.length, 1);
-});
-
-test("production: applySummaryMetricAdd with top_n uses by not field", () => {
-  const original = [{ type: "count" }];
-
-  const added = applySummaryMetricAdd(original, { type: "top_n", by: "tags", limit: 5 });
-  assert.equal(added.length, 2);
-  assert.equal(added[1].type, "top_n");
-  assert.equal(added[1].by, "tags", "top_n must use by, not field");
-  assert.equal(added[1].limit, 5);
-  assert.equal(added[1].field, undefined, "top_n must NOT have field set");
-});
-
-test("production: full summary add/edit/remove roundtrip through production helpers", () => {
-  // Simulate the exact flow of the Query Editor summary controls:
-  // 1. Start with empty summary
-  // 2. Add count metric
-  // 3. Add sum metric with field="planned"
-  // 4. Edit sum metric: field → "actual"
-  // 5. Add top_n metric with by="tags", limit=5
-  // 6. Remove count metric
-  // 7. Edit top_n: by → "status", limit → 10
-
-  const tabDrafts = new Map();
-
-  // Step 1: empty
-  let summary = [];
-
-  // Step 2: add count
-  summary = applySummaryMetricAdd(summary, { type: "count" });
-  assert.equal(summary.length, 1);
-  assert.equal(summary[0].type, "count");
-
-  // Step 3: add sum
-  summary = applySummaryMetricAdd(summary, { type: "sum", field: "planned" });
-  assert.equal(summary.length, 2);
-  assert.equal(summary[1].type, "sum");
-  assert.equal(summary[1].field, "planned");
-
-  // Step 4: edit sum field
-  summary = applySummaryMetricEdit(summary, 1, { field: "actual" });
-  assert.equal(summary[1].field, "actual");
-
-  // Step 5: add top_n with by (NOT field)
-  summary = applySummaryMetricAdd(summary, { type: "top_n", by: "tags", limit: 5 });
-  assert.equal(summary.length, 3);
-  assert.equal(summary[2].type, "top_n");
-  assert.equal(summary[2].by, "tags");
-  assert.equal(summary[2].limit, 5);
-
-  // Step 6: remove count (index 0)
-  summary = applySummaryMetricRemove(summary, 0);
-  assert.equal(summary.length, 2);
-  assert.equal(summary[0].type, "sum");
-  assert.equal(summary[1].type, "top_n");
-
-  // Step 7: edit top_n
-  summary = applySummaryMetricEdit(summary, 1, { by: "status", limit: 10 });
-  assert.equal(summary[1].by, "status");
-  assert.equal(summary[1].limit, 10);
-
-  // Verify the final state matches what would be persisted
-  const preset = normalizeQueryPreset({
-    id: "sv-edited",
-    name: "Edited",
-    builtin: false,
-    hidden: false,
-    filters: { status: "all" },
-    view: { type: "list" },
-    summary,
-  });
-
-  assert.equal(preset.summary.length, 2);
-  assert.equal(preset.summary[0].type, "sum");
-  assert.equal(preset.summary[0].field, "actual");
-  assert.equal(preset.summary[1].type, "top_n");
-  assert.equal(preset.summary[1].by, "status");
-  assert.equal(preset.summary[1].limit, 10);
-
-  // Persist through upsert — verify full roundtrip
-  const presets = upsertQueryPreset([], preset);
-  assert.equal(presets.length, 1);
-  assert.deepEqual(presets[0].summary, summary,
-    "full add/edit/remove roundtrip must persist through upsert");
-
-  // Verify serialization roundtrip
-  const dsl = stringifyQueryPreset(presets[0]);
-  const reparsed = parseQueryDsl(dsl, { name: "Edited" });
-  assert.ok(sameQueryPresetContent(presets[0], reparsed),
-    "serialize/parse roundtrip must preserve edited summary");
-});
-
-test("production: summary:[] persists through save-as seam via computeQueryPresetSnapshot + upsertQueryPreset", () => {
-  // Simulate the saveCurrentView production path:
-  // 1. computeQueryPresetSnapshot produces a snapshot with summary:[]
-  // 2. upsertQueryPreset saves it
-  // 3. Verify the saved preset has summary:[]
-
-  const tabDrafts = new Map();
-  const saved = normalizeQueryPreset({
-    id: "sv-empty-save",
-    name: "Empty Summary Tab",
-    builtin: false,
-    hidden: false,
-    filters: { status: "all" },
-    view: { type: "list" },
-    summary: [],
-  });
-
-  // Draft also has empty summary (user explicitly cleared all metrics)
-  tabDrafts.set("sv-empty-save", normalizeQueryPreset({
-    ...saved,
-    summary: [],
-  }));
-
-  // Step 1: snapshot via production function
-  const snapshot = computeQueryPresetSnapshot({
-    existing: saved,
-    tabDrafts,
-    filterSearch: "",
-    filterTags: "",
-    filterTime: {},
-    filterStatus: "all",
-    fallbackView: () => ({ type: "list" }),
-    fallbackSummary: () => [{ type: "count" }], // default would be count, but draft wins
-    name: "Empty Summary Tab",
-  });
-
-  assert.deepEqual(snapshot.summary, [],
-    "snapshot must preserve explicit empty summary");
-
-  // Step 2: save-as (new id, like saveCurrentView does)
-  const asNew = normalizeQueryPreset({
-    ...snapshot,
-    id: "sv-new-empty",
-    builtin: false,
-    hidden: false,
-  });
-
-  const presets = upsertQueryPreset([], asNew);
-  assert.equal(presets.length, 1);
-  assert.deepEqual(presets[0].summary, [],
-    "saved preset must preserve explicit empty summary");
-
-  // Step 3: verify serialization preserves empty summary
-  const dsl = stringifyQueryPreset(presets[0]);
-  const reparsed = parseQueryDsl(dsl, { name: "Empty Summary Tab" });
-  assert.deepEqual(reparsed.summary, [],
-    "serialize/parse must preserve empty summary");
-});
-
-test("production: summary:[] persists through update seam via computeQueryPresetSnapshot + updateQueryPresetById", () => {
-  // Simulate the updateCurrentSavedView production path:
-  // 1. User clears all summary metrics in the editor → draft.summary = []
-  // 2. computeQueryPresetSnapshot picks up draft.summary = []
-  // 3. updateQueryPresetById saves the updated preset
-  // 4. Verify the saved preset has summary:[]
-
-  const tabDrafts = new Map();
-  const saved = normalizeQueryPreset({
-    id: "sv-update-empty",
-    name: "Update Empty",
-    builtin: false,
-    hidden: false,
-    filters: { status: "all" },
-    view: { type: "list" },
-    summary: [{ type: "count" }, { type: "sum", field: "planned" }],
-  });
-
-  // User clears all metrics → draft.summary = []
-  const draft = normalizeQueryPreset({
-    ...saved,
-    summary: [],
-  });
-  tabDrafts.set("sv-update-empty", draft);
-
-  // Step 1: snapshot via production function
-  const snapshot = computeQueryPresetSnapshot({
-    existing: saved,
-    tabDrafts,
-    filterSearch: "",
-    filterTags: "",
-    filterTime: {},
-    filterStatus: "all",
-    fallbackView: () => ({ type: "list" }),
-    fallbackSummary: () => [{ type: "count" }],
-  });
-
-  assert.deepEqual(snapshot.summary, [],
-    "snapshot must pick up draft's explicit empty summary");
-
-  // Step 2: update (same id)
-  const updated = normalizeQueryPreset({
-    ...snapshot,
-    id: "sv-update-empty",
-    name: "Update Empty",
-  });
-
-  const presets = updateQueryPresetById([saved], updated);
-  assert.equal(presets.length, 1);
-  assert.deepEqual(presets[0].summary, [],
-    "updated preset must preserve explicit empty summary");
-
-  // Step 3: verify roundtrip
-  const dsl = stringifyQueryPreset(presets[0]);
-  const reparsed = parseQueryDsl(dsl, { name: "Update Empty" });
-  assert.deepEqual(reparsed.summary, [],
-    "serialize/parse must preserve empty summary after update");
-});
-
-test("production: top_n canonical by parameter persists through computeQueryPresetSnapshot + save/update seams", () => {
-  // Verify that top_n uses `by` (not `field`) through the full production path.
-  // This ensures the GUI visual control (which writes `by`) is correctly
-  // consumed by runtime summary (computeTopN reads `by`).
-
-  const tabDrafts = new Map();
-  const saved = normalizeQueryPreset({
-    id: "sv-topn-path",
-    name: "Top N Path",
-    builtin: false,
-    hidden: false,
-    filters: { status: "todo" },
-    view: { type: "list" },
-    summary: [{ type: "count" }],
-  });
-
-  // Draft adds a top_n metric with `by` (the canonical grouping parameter)
-  const draft = normalizeQueryPreset({
-    ...saved,
-    summary: [
-      { type: "count" },
-      { type: "top_n", by: "tags", limit: 5 },
-    ],
-  });
-  tabDrafts.set("sv-topn-path", draft);
-
-  // Snapshot via production function
-  const snapshot = computeQueryPresetSnapshot({
-    existing: saved,
-    tabDrafts,
-    filterSearch: "",
-    filterTags: "",
-    filterTime: {},
-    filterStatus: "todo",
-    fallbackView: () => ({ type: "list" }),
-    fallbackSummary: () => [],
-  });
-
-  assert.equal(snapshot.summary.length, 2);
-  const topnMetric = snapshot.summary[1];
-  assert.equal(topnMetric.type, "top_n");
-  assert.equal(topnMetric.by, "tags", "top_n must use by as canonical grouping parameter");
-  assert.equal(topnMetric.limit, 5);
-  assert.equal(topnMetric.field, undefined, "top_n must NOT use field; canonical parameter is by");
-
-  // Save-as (new id)
-  const asNew = normalizeQueryPreset({
-    ...snapshot,
-    id: "sv-topn-new",
-    builtin: false,
-  });
-  const savedPresets = upsertQueryPreset([], asNew);
-  const savedTopN = savedPresets[0].summary[1];
-  assert.equal(savedTopN.by, "tags", "top_n by must persist through save-as");
-  assert.equal(savedTopN.field, undefined);
-
-  // Update (same id)
-  const updatedSnapshot = computeQueryPresetSnapshot({
-    existing: savedPresets[0],
-    tabDrafts: new Map(), // no draft this time
-    filterSearch: "",
-    filterTags: "",
-    filterTime: {},
-    filterStatus: "todo",
-    fallbackView: () => ({ type: "list" }),
-    fallbackSummary: () => [],
-  });
-
-  // Edit the top_n: change by from "tags" to "status"
-  const edited = normalizeQueryPreset({
-    ...updatedSnapshot,
-    summary: applySummaryMetricEdit(updatedSnapshot.summary, 1, { by: "status", limit: 10 }),
-  });
-
-  const updatedPresets = updateQueryPresetById(savedPresets, edited);
-  const updatedTopN = updatedPresets[0].summary[1];
-  assert.equal(updatedTopN.by, "status", "top_n by must persist through update seam");
-  assert.equal(updatedTopN.limit, 10);
-  assert.equal(updatedTopN.field, undefined, "top_n must not have field after update");
-
-  // Serialization roundtrip
-  const dsl = stringifyQueryPreset(updatedPresets[0]);
-  const reparsed = parseQueryDsl(dsl, { name: "Top N Path" });
-  const reparsedTopN = reparsed.summary[1];
-  assert.equal(reparsedTopN.by, "status", "top_n by must survive serialize/parse roundtrip");
-  assert.equal(reparsedTopN.limit, 10);
 });
 
 test("production: computeQueryPresetSnapshot with name override for save-as flow", () => {
@@ -3407,7 +1870,6 @@ test("production: computeQueryPresetSnapshot with name override for save-as flow
   assert.equal(asNew.id, "sv-new-id");
   assert.equal(asNew.name, "Save As Copy");
   assert.deepEqual(asNew.view, snapshot.view);
-  assert.deepEqual(asNew.summary, snapshot.summary);
 });
 
 // ── fix-m3-query-editor-real-controls-path ──
@@ -3475,604 +1937,116 @@ function makeSummaryDraftParams(stub) {
   };
 }
 
-// ── Handler tests: handleQueryEditorSummaryEdit/Add/Remove ──
+// ── US-414 / US-415: legacy SavedTaskView → QueryPreset migration ──
 
-test("real-path: handleQueryEditorSummaryEdit updates a metric in tabDrafts and returns the draft", () => {
-  const savedPreset = normalizeQueryPreset({
-    id: "sv-real-1",
-    name: "Real Edit Test",
-    builtin: false,
-    hidden: false,
-    filters: { status: "all" },
-    view: { type: "list" },
-    summary: [{ type: "count" }, { type: "sum", field: "planned" }],
-  });
-
-  const stub = buildStubViewState({
-    queryPresets: [savedPreset],
-  });
-  stub.state.savedViewId = "sv-real-1";
-  const params = makeSummaryDraftParams(stub);
-
-  // Edit index 1: change field from "planned" to "actual"
-  const draft = handleQueryEditorSummaryEdit(params, 1, { field: "actual" });
-
-  // Verify the returned draft
-  assert.equal(draft.summary.length, 2);
-  assert.equal(draft.summary[0].type, "count");
-  assert.equal(draft.summary[1].type, "sum");
-  assert.equal(draft.summary[1].field, "actual", "edited field must be reflected");
-
-  // Verify tabDrafts was updated
-  const stored = stub.tabDrafts.get("sv-real-1");
-  assert.ok(stored, "draft must be stored in tabDrafts");
-  assert.equal(stored.summary[1].field, "actual");
-
-  // Verify immutability: saved preset unchanged
-  assert.equal(savedPreset.summary[1].field, "planned", "saved preset must be unchanged");
-
-  // Verify currentQuerySnapshot picks up the draft
-  const snapshot = makeGetSnapshot(stub)(savedPreset);
-  assert.equal(snapshot.summary[1].field, "actual",
-    "currentQuerySnapshot must reflect the draft edit");
+test("US-414: isLegacySavedTaskView detects flat shape, ignores nested filters", () => {
+  // legacy: flat top-level filter fields, no nested `filters`
+  assert.equal(isLegacySavedTaskView({ id: "sv-x", name: "X", search: "", tag: "", status: "all", time: {} }), true);
+  assert.equal(isLegacySavedTaskView({ id: "sv-y", name: "Y", status: ["todo"] }), true);
+  // new: nested filters → not legacy
+  assert.equal(isLegacySavedTaskView({ id: "sv-z", name: "Z", filters: { status: "all" } }), false);
+  // neither → not legacy
+  assert.equal(isLegacySavedTaskView({ id: "sv-w", name: "W" }), false);
+  assert.equal(isLegacySavedTaskView(null), false);
 });
 
-test("real-path: handleQueryEditorSummaryEdit preserves top_n by parameter", () => {
-  const savedPreset = normalizeQueryPreset({
-    id: "sv-real-topn",
-    name: "Top N Edit",
+test("US-414: migrate custom legacy view collapses flat fields into nested filters", () => {
+  const legacy = {
+    id: "sv-custom",
+    name: "My work",
     builtin: false,
-    hidden: false,
-    filters: { status: "all" },
-    view: { type: "list" },
-    summary: [{ type: "count" }, { type: "top_n", by: "tags", limit: 5 }],
-  });
-
-  const stub = buildStubViewState({
-    queryPresets: [savedPreset],
-  });
-  stub.state.savedViewId = "sv-real-topn";
-  const params = makeSummaryDraftParams(stub);
-
-  // Edit top_n: change by from "tags" to "status", limit to 10
-  const draft = handleQueryEditorSummaryEdit(params, 1, { by: "status", limit: 10 });
-
-  assert.equal(draft.summary[1].type, "top_n");
-  assert.equal(draft.summary[1].by, "status", "top_n by must be preserved through edit");
-  assert.equal(draft.summary[1].limit, 10);
-  assert.equal(draft.summary[1].field, undefined, "top_n must NOT have field set");
-
-  // Verify tabDrafts
-  const stored = stub.tabDrafts.get("sv-real-topn");
-  assert.ok(stored);
-  assert.equal(stored.summary[1].by, "status");
-  assert.equal(stored.summary[1].field, undefined);
-});
-
-test("real-path: handleQueryEditorSummaryEdit out-of-range index is no-op", () => {
-  const savedPreset = normalizeQueryPreset({
-    id: "sv-real-oob",
-    name: "OOB",
-    builtin: false,
-    hidden: false,
-    filters: { status: "all" },
-    view: { type: "list" },
-    summary: [{ type: "count" }],
-  });
-
-  const stub = buildStubViewState({
-    queryPresets: [savedPreset],
-  });
-  stub.state.savedViewId = "sv-real-oob";
-  const params = makeSummaryDraftParams(stub);
-
-  const draft = handleQueryEditorSummaryEdit(params, 99, { field: "nope" });
-
-  assert.equal(draft.summary.length, 1);
-  assert.equal(draft.summary[0].type, "count");
-  // tabDrafts should still be set (draft was stored)
-  const stored = stub.tabDrafts.get("sv-real-oob");
-  assert.ok(stored);
-  assert.equal(stored.summary.length, 1);
-  assert.equal(stored.summary[0].type, "count");
-});
-
-test("real-path: handleQueryEditorSummaryAdd appends a metric and stores draft", () => {
-  const savedPreset = normalizeQueryPreset({
-    id: "sv-real-add",
-    name: "Add Test",
-    builtin: false,
-    hidden: false,
-    filters: { status: "all" },
-    view: { type: "list" },
-    summary: [{ type: "count" }],
-  });
-
-  const stub = buildStubViewState({
-    queryPresets: [savedPreset],
-  });
-  stub.state.savedViewId = "sv-real-add";
-  const params = makeSummaryDraftParams(stub);
-
-  // Add a sum metric
-  const draft = handleQueryEditorSummaryAdd(params, { type: "sum", field: "planned" });
-
-  assert.equal(draft.summary.length, 2);
-  assert.equal(draft.summary[0].type, "count");
-  assert.equal(draft.summary[1].type, "sum");
-  assert.equal(draft.summary[1].field, "planned");
-
-  // Verify tabDrafts
-  const stored = stub.tabDrafts.get("sv-real-add");
-  assert.ok(stored);
-  assert.equal(stored.summary.length, 2);
-
-  // Verify immutability: saved preset unchanged
-  assert.equal(savedPreset.summary.length, 1);
-});
-
-test("real-path: handleQueryEditorSummaryAdd with top_n uses by not field", () => {
-  const savedPreset = normalizeQueryPreset({
-    id: "sv-real-add-topn",
-    name: "Add TopN",
-    builtin: false,
-    hidden: false,
-    filters: { status: "all" },
-    view: { type: "list" },
-    summary: [],
-  });
-
-  const stub = buildStubViewState({
-    queryPresets: [savedPreset],
-  });
-  stub.state.savedViewId = "sv-real-add-topn";
-  const params = makeSummaryDraftParams(stub);
-
-  const draft = handleQueryEditorSummaryAdd(params, { type: "top_n", by: "tags", limit: 5 });
-
-  assert.equal(draft.summary.length, 1);
-  assert.equal(draft.summary[0].type, "top_n");
-  assert.equal(draft.summary[0].by, "tags", "top_n must use by");
-  assert.equal(draft.summary[0].limit, 5);
-  assert.equal(draft.summary[0].field, undefined, "top_n must NOT have field");
-});
-
-test("real-path: handleQueryEditorSummaryRemove deletes metric and stores draft", () => {
-  const savedPreset = normalizeQueryPreset({
-    id: "sv-real-remove",
-    name: "Remove Test",
-    builtin: false,
-    hidden: false,
-    filters: { status: "all" },
-    view: { type: "list" },
-    summary: [{ type: "count" }, { type: "sum", field: "planned" }, { type: "top_n", by: "tags", limit: 3 }],
-  });
-
-  const stub = buildStubViewState({
-    queryPresets: [savedPreset],
-  });
-  stub.state.savedViewId = "sv-real-remove";
-  const params = makeSummaryDraftParams(stub);
-
-  // Remove the middle metric (index 1)
-  const draft = handleQueryEditorSummaryRemove(params, 1);
-
-  assert.equal(draft.summary.length, 2);
-  assert.equal(draft.summary[0].type, "count");
-  assert.equal(draft.summary[1].type, "top_n");
-
-  // Verify tabDrafts
-  const stored = stub.tabDrafts.get("sv-real-remove");
-  assert.ok(stored);
-  assert.equal(stored.summary.length, 2);
-
-  // Verify immutability
-  assert.equal(savedPreset.summary.length, 3);
-});
-
-test("real-path: handleQueryEditorSummaryRemove clears all metrics → summary:[]", () => {
-  const savedPreset = normalizeQueryPreset({
-    id: "sv-real-clear",
-    name: "Clear All",
-    builtin: false,
-    hidden: false,
-    filters: { status: "all" },
-    view: { type: "list" },
-    summary: [{ type: "count" }, { type: "sum", field: "planned" }],
-  });
-
-  const stub = buildStubViewState({
-    queryPresets: [savedPreset],
-  });
-  stub.state.savedViewId = "sv-real-clear";
-  const params = makeSummaryDraftParams(stub);
-
-  // Remove all metrics one by one
-  let draft = handleQueryEditorSummaryRemove(params, 1);
-  assert.equal(draft.summary.length, 1);
-  draft = handleQueryEditorSummaryRemove(params, 0);
-  assert.equal(draft.summary.length, 0);
-
-  // Verify tabDrafts has empty summary
-  const stored = stub.tabDrafts.get("sv-real-clear");
-  assert.ok(stored);
-  assert.deepEqual(stored.summary, [], "empty summary must be stored in tabDrafts");
-
-  // Verify currentQuerySnapshot picks up empty summary (draft wins over saved)
-  const snapshot = makeGetSnapshot(stub)(savedPreset);
-  assert.deepEqual(snapshot.summary, [],
-    "currentQuerySnapshot must use draft's empty summary, not saved fallback");
-});
-
-// ── Full production flow: edit → snapshot → save/update ──
-
-test("real-path: full flow — add metrics through handlers → snapshot → save-as preserves summary", () => {
-  const savedPreset = normalizeQueryPreset({
-    id: "sv-real-flow-save",
-    name: "Flow Save",
-    builtin: false,
-    hidden: false,
-    filters: { status: "todo" },
-    view: { type: "list" },
-    summary: [],
-  });
-
-  const stub = buildStubViewState({
-    queryPresets: [savedPreset],
-  });
-  stub.state.savedViewId = "sv-real-flow-save";
-  const params = makeSummaryDraftParams(stub);
-
-  // Step 1: Add count metric through production handler
-  let draft = handleQueryEditorSummaryAdd(params, { type: "count" });
-  assert.equal(draft.summary.length, 1);
-
-  // Step 2: Add sum metric through production handler
-  draft = handleQueryEditorSummaryAdd(params, { type: "sum", field: "planned" });
-  assert.equal(draft.summary.length, 2);
-
-  // Step 3: Add top_n with by (NOT field)
-  draft = handleQueryEditorSummaryAdd(params, { type: "top_n", by: "tags", limit: 5 });
-  assert.equal(draft.summary.length, 3);
-  assert.equal(draft.summary[2].type, "top_n");
-  assert.equal(draft.summary[2].by, "tags");
-
-  // Step 4: Edit sum metric's field
-  draft = handleQueryEditorSummaryEdit(params, 1, { field: "actual" });
-  assert.equal(draft.summary[1].field, "actual");
-
-  // Step 5: currentQuerySnapshot picks up all edits
-  const snapshot = makeGetSnapshot(stub)(savedPreset);
-  assert.equal(snapshot.summary.length, 3);
-  assert.equal(snapshot.summary[0].type, "count");
-  assert.equal(snapshot.summary[1].type, "sum");
-  assert.equal(snapshot.summary[1].field, "actual");
-  assert.equal(snapshot.summary[2].type, "top_n");
-  assert.equal(snapshot.summary[2].by, "tags");
-  assert.equal(snapshot.summary[2].limit, 5);
-
-  // Step 6: Simulate save-as via computeSaveAsFromSnapshot
-  const { saved } = computeSaveAsFromSnapshot({
-    getSnapshot: makeGetSnapshot(stub),
-    savedPreset,
-    newId: "sv-real-flow-new",
-    name: "Flow Save As",
-  });
-
-  // Step 7: Persist via upsertQueryPreset
-  const presets = upsertQueryPreset([], saved);
-  assert.equal(presets.length, 1);
-  assert.equal(presets[0].id, "sv-real-flow-new");
-  assert.equal(presets[0].summary.length, 3);
-  assert.equal(presets[0].summary[0].type, "count");
-  assert.equal(presets[0].summary[1].type, "sum");
-  assert.equal(presets[0].summary[1].field, "actual");
-  assert.equal(presets[0].summary[2].type, "top_n");
-  assert.equal(presets[0].summary[2].by, "tags", "top_n by must persist through save");
-  assert.equal(presets[0].summary[2].field, undefined, "top_n must not have field");
-
-  // Verify serialization roundtrip preserves everything
-  const dsl = stringifyQueryPreset(presets[0]);
-  const reparsed = parseQueryDsl(dsl, { name: "Flow Save As" });
-  assert.ok(sameQueryPresetContent(presets[0], reparsed));
-  assert.equal(reparsed.summary[2].by, "tags");
-});
-
-test("real-path: full flow — edit then remove then add → snapshot → update preserves final state", () => {
-  const savedPreset = normalizeQueryPreset({
-    id: "sv-real-update",
-    name: "Original",
-    builtin: false,
-    hidden: false,
-    filters: { status: "all" },
-    view: { type: "list" },
-    summary: [{ type: "count" }, { type: "sum", field: "planned" }],
-  });
-
-  const stub = buildStubViewState({
-    queryPresets: [savedPreset],
-  });
-  stub.state.savedViewId = "sv-real-update";
-  const params = makeSummaryDraftParams(stub);
-
-  // Step 1: Edit sum field
-  handleQueryEditorSummaryEdit(params, 1, { field: "actual" });
-
-  // Step 2: Remove count
-  handleQueryEditorSummaryRemove(params, 0);
-
-  // Step 3: Add top_n
-  handleQueryEditorSummaryAdd(params, { type: "top_n", by: "status", limit: 10 });
-
-  // Step 4: Snapshot reflects all changes
-  const snapshot = makeGetSnapshot(stub)(savedPreset);
-  assert.equal(snapshot.summary.length, 2);
-  assert.equal(snapshot.summary[0].type, "sum");
-  assert.equal(snapshot.summary[0].field, "actual");
-  assert.equal(snapshot.summary[1].type, "top_n");
-  assert.equal(snapshot.summary[1].by, "status");
-  assert.equal(snapshot.summary[1].limit, 10);
-
-  // Step 5: Simulate update via computeUpdateFromDraftComponents
-  const updated = computeUpdateFromDraftComponents({
-    existing: savedPreset,
-    draftView: snapshot.view ?? { type: "list" },
-    draftSummary: snapshot.summary,
-  });
-
-  assert.equal(updated.summary.length, 2);
-  assert.equal(updated.summary[0].type, "sum");
-  assert.equal(updated.summary[0].field, "actual");
-  assert.equal(updated.summary[1].type, "top_n");
-  assert.equal(updated.summary[1].by, "status");
-
-  // Step 6: Persist via updateQueryPresetById
-  const presets = updateQueryPresetById([savedPreset], updated);
-  assert.equal(presets.length, 1);
-  assert.equal(presets[0].summary.length, 2);
-  assert.equal(presets[0].summary[1].by, "status", "top_n by must persist through update");
-
-  // Verify serialization roundtrip
-  const dsl = stringifyQueryPreset(presets[0]);
-  const reparsed = parseQueryDsl(dsl, { name: "Original" });
-  assert.equal(reparsed.summary[1].by, "status");
-});
-
-test("real-path: summary:[] persists through full delete-all → snapshot → save-as flow", () => {
-  const savedPreset = normalizeQueryPreset({
-    id: "sv-real-empty-save",
-    name: "To Be Emptied",
-    builtin: false,
-    hidden: false,
-    filters: { status: "all" },
-    view: { type: "list" },
-    summary: [{ type: "count" }, { type: "sum", field: "planned" }],
-  });
-
-  const stub = buildStubViewState({
-    queryPresets: [savedPreset],
-  });
-  stub.state.savedViewId = "sv-real-empty-save";
-  const params = makeSummaryDraftParams(stub);
-
-  // Clear all metrics through production handlers
-  handleQueryEditorSummaryRemove(params, 1);
-  handleQueryEditorSummaryRemove(params, 0);
-
-  // Verify tabDrafts has empty summary
-  const draft = stub.tabDrafts.get("sv-real-empty-save");
-  assert.ok(draft);
-  assert.deepEqual(draft.summary, [], "tabDrafts must have explicit empty summary");
-
-  // currentQuerySnapshot must use draft's empty summary (not fall back to saved)
-  const snapshot = makeGetSnapshot(stub)(savedPreset);
-  assert.deepEqual(snapshot.summary, [],
-    "currentQuerySnapshot must use draft empty summary over saved summary");
-
-  // Save-as
-  const { saved } = computeSaveAsFromSnapshot({
-    getSnapshot: makeGetSnapshot(stub),
-    savedPreset,
-    newId: "sv-real-empty-new",
-    name: "Empty Summary Tab",
-  });
-
-  assert.deepEqual(saved.summary, [], "save-as must preserve explicit empty summary");
-
-  const presets = upsertQueryPreset([], saved);
-  assert.deepEqual(presets[0].summary, [],
-    "persisted preset must have explicit empty summary");
-
-  // Serialization roundtrip preserves empty summary
-  const dsl = stringifyQueryPreset(presets[0]);
-  const reparsed = parseQueryDsl(dsl, { name: "Empty Summary Tab" });
-  assert.deepEqual(reparsed.summary, [],
-    "serialize/parse must preserve empty summary");
-});
-
-test("real-path: summary:[] persists through clear-all → snapshot → update flow", () => {
-  const savedPreset = normalizeQueryPreset({
-    id: "sv-real-empty-update",
-    name: "Update Empty",
-    builtin: false,
-    hidden: false,
-    filters: { status: "all" },
-    view: { type: "month" },
-    summary: [{ type: "count" }, { type: "top_n", by: "tags", limit: 5 }],
-  });
-
-  const stub = buildStubViewState({
-    queryPresets: [savedPreset],
-  });
-  stub.state.savedViewId = "sv-real-empty-update";
-  const params = makeSummaryDraftParams(stub);
-
-  // Clear all metrics
-  handleQueryEditorSummaryRemove(params, 1);
-  handleQueryEditorSummaryRemove(params, 0);
-
-  // Snapshot reflects empty summary
-  const snapshot = makeGetSnapshot(stub)(savedPreset);
-  assert.deepEqual(snapshot.summary, [],
-    "snapshot must pick up draft's explicit empty summary");
-
-  // Update
-  const updated = computeUpdateFromDraftComponents({
-    existing: savedPreset,
-    draftView: snapshot.view ?? { type: "month" },
-    draftSummary: snapshot.summary,
-  });
-
-  assert.deepEqual(updated.summary, [],
-    "update must preserve explicit empty summary");
-
-  const presets = updateQueryPresetById([savedPreset], updated);
-  assert.deepEqual(presets[0].summary, [],
-    "persisted updated preset must have explicit empty summary");
-
-  // Serialization roundtrip
-  const dsl = stringifyQueryPreset(presets[0]);
-  const reparsed = parseQueryDsl(dsl, { name: "Update Empty" });
-  assert.deepEqual(reparsed.summary, [],
-    "serialize/parse must preserve empty summary after update");
-});
-
-test("real-path: top_n by parameter flows through handler → snapshot → save → runtime summary compatibility", () => {
-  // Verify that the canonical `by` parameter written by the GUI visual
-  // control is correctly consumed by the runtime summary (computeTopN reads `by`).
-  // This test mimics the exact production path:
-  //   GUI add → tabDrafts → currentQuerySnapshot → save-as → DSL
-
-  const savedPreset = normalizeQueryPreset({
-    id: "sv-real-topn-flow",
-    name: "Top N Flow",
-    builtin: false,
-    hidden: false,
-    filters: { status: "todo" },
-    view: { type: "list" },
-    summary: [{ type: "count" }],
-  });
-
-  const stub = buildStubViewState({
-    queryPresets: [savedPreset],
-  });
-  stub.state.savedViewId = "sv-real-topn-flow";
-  const params = makeSummaryDraftParams(stub);
-
-  // GUI visual control writes top_n with `by` (the canonical grouping parameter)
-  handleQueryEditorSummaryAdd(params, { type: "top_n", by: "tags", limit: 5 });
-
-  // Verify tabDrafts
-  const draft = stub.tabDrafts.get("sv-real-topn-flow");
-  assert.equal(draft.summary[1].type, "top_n");
-  assert.equal(draft.summary[1].by, "tags", "GUI writes by, not field");
-  assert.equal(draft.summary[1].limit, 5);
-  assert.equal(draft.summary[1].field, undefined, "field must not be set");
-
-  // currentQuerySnapshot picks up the draft
-  const snapshot = makeGetSnapshot(stub)(savedPreset);
-  const topnMetric = snapshot.summary[1];
-  assert.equal(topnMetric.type, "top_n");
-  assert.equal(topnMetric.by, "tags", "snapshot must preserve by");
-  assert.equal(topnMetric.field, undefined);
-
-  // Save-as
-  const { saved } = computeSaveAsFromSnapshot({
-    getSnapshot: makeGetSnapshot(stub),
-    savedPreset,
-    newId: "sv-real-topn-saved",
-    name: "Top N Saved",
-  });
-
-  const presets = upsertQueryPreset([], saved);
-  const savedTopN = presets[0].summary[1];
-  assert.equal(savedTopN.by, "tags", "saved preset must preserve by");
-  assert.equal(savedTopN.limit, 5);
-  assert.equal(savedTopN.field, undefined);
-
-  // Verify the saved DSL is compatible with runtime summary (computeTopN reads `by`)
-  const dsl = stringifyQueryPreset(presets[0]);
-  const reparsed = parseQueryDsl(dsl, { name: "Top N Saved" });
-  const reparsedTopN = reparsed.summary[1];
-  assert.equal(reparsedTopN.by, "tags",
-    "runtime summary must read by from DSL");
-  assert.equal(reparsedTopN.limit, 5);
-  assert.equal(reparsedTopN.field, undefined,
-    "runtime summary ignores field — canonical parameter is by");
-});
-
-test("real-path: draft view and summary both flow through currentQuerySnapshot", () => {
-  // Verify that when both view and summary are edited via the Query Editor,
-  // currentQuerySnapshot merges both into the snapshot correctly.
-
-  const savedPreset = normalizeQueryPreset({
-    id: "sv-real-both",
-    name: "Both Draft",
-    builtin: false,
-    hidden: false,
-    filters: { status: "todo" },
-    view: { type: "list", preset: "today" },
-    summary: [{ type: "count" }],
-  });
-
-  const stub = buildStubViewState({
-    queryPresets: [savedPreset],
-  });
-  stub.state.savedViewId = "sv-real-both";
-
-  // Simulate view edit: change type to "week"
-  // (In production, the view button click handler writes draft.view)
-  const viewDraft = normalizeQueryPreset({
-    ...savedPreset,
+    hidden: true,
+    search: "report",
+    tag: "work, urgent",
+    status: ["todo", "done"],
+    time: { scheduled: "2026-01-01..2026-01-31" },
     view: { type: "week" },
-  });
-  stub.tabDrafts.set("sv-real-both", viewDraft);
+    summary: [{ type: "count" }],
+  };
+  const migrated = migrateLegacySavedTaskView(legacy);
 
-  // Simulate summary edit: add a sum metric
-  const params = makeSummaryDraftParams(stub);
-  handleQueryEditorSummaryAdd(params, { type: "sum", field: "planned" });
-
-  // currentQuerySnapshot merges both
-  const snapshot = makeGetSnapshot(stub)(savedPreset);
-
-  // Identity from saved
-  assert.equal(snapshot.id, "sv-real-both");
-  assert.equal(snapshot.name, "Both Draft");
-
-  // Draft view wins
-  assert.equal(snapshot.view.type, "week", "draft view must win");
-
-  // Draft summary wins (count from viewDraft + sum from summaryAdd)
-  assert.equal(snapshot.summary.length, 2);
-  assert.equal(snapshot.summary[0].type, "count");
-  assert.equal(snapshot.summary[1].type, "sum");
-  assert.equal(snapshot.summary[1].field, "planned");
-
-  // Filters from state (not draft)
-  assert.deepEqual(snapshot.filters.status, "all");
+  assert.equal(migrated.id, "sv-custom");
+  assert.equal(migrated.name, "My work");
+  assert.equal(migrated.hidden, true);
+  assert.equal(migrated.builtin, false);
+  // US-109z2: the legacy flat tab-level filters are dropped (no tab filter).
+  assert.equal(migrated.filters, undefined);
+  // legacy view {type} migrated to a layout tree
+  assert.ok(migrated.view.layout, "view.layout exists after migration");
 });
 
-test("real-path: snapshot falls back to saved when no draft exists in tabDrafts", () => {
-  const savedPreset = normalizeQueryPreset({
-    id: "sv-real-no-draft",
-    name: "No Draft",
-    builtin: false,
-    hidden: false,
-    filters: { status: "done" },
-    view: { type: "month" },
-    summary: [{ type: "count" }, { type: "ratio", numerator: "actual", denominator: "estimate" }],
-  });
+test("US-414: migrate is robust to garbage fields and never throws", () => {
+  const migrated = migrateLegacySavedTaskView({ status: 12345, tag: 999, time: "nope", view: 7 });
+  assert.ok(migrated.id, "id falls back to a generated id");
+  assert.equal(migrated.filters, undefined, "no tab-level filters");
+  assert.ok(migrated.view.layout, "view.layout always present");
+});
 
-  const stub = buildStubViewState({
-    queryPresets: [savedPreset],
-  });
-  stub.state.savedViewId = "sv-real-no-draft";
-  // tabDrafts is empty — no draft
+test("US-414: legacy builtin view keeps user edits but refreshes layout from factory", () => {
+  // user had renamed + hidden the builtin Today tab in the old flat shape
+  const legacyToday = {
+    id: "preset-today",
+    name: "我的今天",
+    builtin: true,
+    hidden: true,
+    search: "",
+    tag: "",
+    status: ["todo"],
+    time: {},
+    view: { type: "list", preset: "today" },
+    summary: [],
+  };
+  const migrated = migrateLegacySavedTaskView(legacyToday);
+  const presets = ensureBuiltinQueryPresets([migrated]);
+  const today = presets.find((p) => p.id === "preset-today");
 
-  const snapshot = makeGetSnapshot(stub)(savedPreset);
+  assert.ok(today, "builtin today preset present");
+  assert.equal(today.name, "我的今天", "user rename preserved");
+  assert.equal(today.hidden, true, "user hidden flag preserved");
+  assert.equal(today.builtin, true);
+  // layout comes from the factory JSON, not the degraded legacy {type:list}
+  assert.ok(today.view.layout, "factory layout applied");
+});
 
-  assert.equal(snapshot.view.type, "month", "saved view wins when no draft");
-  assert.equal(snapshot.summary.length, 2, "saved summary wins when no draft");
-  assert.equal(snapshot.summary[0].type, "count");
-  assert.equal(snapshot.summary[1].type, "ratio");
+test("US-414: full settings-shaped migration keeps builtins + custom views", () => {
+  const rawViews = [
+    { id: "preset-week", name: "Week", builtin: true, hidden: false, search: "", tag: "", status: ["todo"], time: {}, view: { type: "week" }, summary: [] },
+    { id: "sv-mine", name: "Mine", builtin: false, hidden: false, search: "x", tag: "deep", status: "all", time: {}, view: { type: "list" }, summary: [] },
+  ];
+  const migratedViews = rawViews.map((v) => (isLegacySavedTaskView(v) ? migrateLegacySavedTaskView(v) : v));
+  const presets = ensureBuiltinQueryPresets(migratedViews);
+
+  // all 7 builtins present + the 1 custom view
+  assert.ok(presets.some((p) => p.id === "sv-mine"), "custom view survives migration");
+  const mine = presets.find((p) => p.id === "sv-mine");
+  assert.equal(mine.filters, undefined, "custom view migrated without tab-level filters");
+  assert.equal(presets.filter((p) => p.builtin).length >= 7, true);
+
+  // re-running detection on migrated output finds nothing legacy (idempotent)
+  assert.equal(presets.filter((p) => isLegacySavedTaskView(p)).length, 0, "migration is idempotent");
+});
+
+// ── US-414: broader legacy detection — old DSL view (no `layout`) ──
+
+test("US-414: isLegacyQueryPresetShape flags old-DSL view even with nested filters", () => {
+  // old DSL: nested filters present, but `view` uses {type} not {layout}
+  assert.equal(isLegacyQueryPresetShape({ id: "q", name: "Q", filters: { status: "all" }, view: { type: "week" } }), true);
+  assert.equal(isLegacyQueryPresetShape({ id: "q", name: "Q", filters: {}, view: { preset: "today" } }), true);
+  assert.equal(isLegacyQueryPresetShape({ id: "q", name: "Q", filters: {}, view: { sections: [] } }), true);
+  // flat SavedTaskView still flagged
+  assert.equal(isLegacyQueryPresetShape({ id: "q", name: "Q", status: ["todo"] }), true);
+  // modern preset (view.layout) → not legacy
+  assert.equal(isLegacyQueryPresetShape({ id: "q", name: "Q", filters: { status: "all" }, view: { layout: { type: "list" } } }), false);
+  // empty view object is not "legacy" (normalizes to default layout)
+  assert.equal(isLegacyQueryPresetShape({ id: "q", name: "Q", filters: {}, view: {} }), false);
+  assert.equal(isLegacyQueryPresetShape(null), false);
+});
+
+test("US-414: detection is idempotent after a full normalize+ensure pass", () => {
+  const oldDsl = { id: "sv-old-dsl", name: "Old DSL", builtin: false, hidden: false, filters: { status: ["todo"] }, view: { type: "month" }, summary: [] };
+  assert.equal(isLegacyQueryPresetShape(oldDsl), true, "old DSL flagged before migration");
+  const presets = ensureBuiltinQueryPresets([normalizeQueryPreset(oldDsl)]);
+  const migrated = presets.find((p) => p.id === "sv-old-dsl");
+  assert.ok(migrated.view.layout, "old DSL view migrated to layout");
+  assert.equal(isLegacyQueryPresetShape(migrated), false, "no longer legacy after migration");
 });

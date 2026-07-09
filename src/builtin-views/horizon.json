@@ -1,0 +1,45 @@
+{
+  "id": "preset-horizon",
+  "name": "Horizon",
+  "builtin": true,
+  "hidden": false,
+  "view": {
+    "layout": {
+      "dir": "col",
+      "children": [
+        {
+          "type": "horizon",
+          "when": {
+            "status": ["todo"]
+          }
+        },
+        {
+          "dir": "row",
+          "children": [
+            {
+              "type": "grid",
+              "id": "unscheduled-tray",
+              "title": "Unscheduled",
+              "when": {
+                "time": {
+                  "scheduled": "unscheduled"
+                },
+                "status": ["todo"]
+              },
+              "onDrop": {
+                "clearScheduled": true
+              }
+            },
+            {
+              "type": "drop",
+              "title": "Drop",
+              "onDrop": {
+                "setStatus": "dropped"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

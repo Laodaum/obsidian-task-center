@@ -59,6 +59,15 @@ async function writeAndWait(path: string, body: string) {
     path,
     body,
   );
+  // Rebuild the plugin TaskCache for this path: write verbs resolve refs via
+  // cache.resolveRef, and repeated rewrites of the same path otherwise leave a
+  // stale path:Ln→hash entry → "not a task line". See _journeys.writeAndWait.
+  await browser.executeObsidian(async ({ app }, p: string) => {
+    // @ts-expect-error — runtime plugin
+    await (app as any).plugins.plugins["task-center"].cache.invalidateFile(p);
+    // @ts-expect-error — runtime plugin
+    await (app as any).plugins.plugins["task-center"].__forFlush();
+  }, path);
 }
 
 async function forFlush() {
@@ -180,8 +189,9 @@ describe("Task Center — 拖拽 (US-121/123)", function () {
       return {
         minHeight: getComputedStyle(tray).minHeight,
         height: Math.round(rect.height),
-        hasHead: !!tray.querySelector(".bt-unscheduled-head"),
-        hasList: !!tray.querySelector(".bt-unscheduled-list"),
+        // The tray is a plain list/grid area now (no bespoke bt-unscheduled-*).
+        hasHead: !!tray.querySelector(".bt-area-head"),
+        hasList: !!tray.querySelector(".bt-list-view"),
       };
     }, traySel);
     expect(trayShape).not.toBeNull();
